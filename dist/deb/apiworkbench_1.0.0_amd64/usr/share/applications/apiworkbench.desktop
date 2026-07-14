@@ -1,0 +1,9 @@
+[Desktop Entry]
+Name=ApiWorkbench
+Comment=API client for building and testing HTTP requests
+Exec=apiworkbench
+Icon=apiworkbench
+Terminal=false
+Type=Application
+Categories=Development;Network;
+Keywords=API;REST;HTTP;client;postman;
