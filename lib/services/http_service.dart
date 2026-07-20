@@ -1,10 +1,14 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
 import 'package:dio/io.dart';
+import 'package:dio_http2_adapter/dio_http2_adapter.dart';
+import 'package:native_dio_adapter/native_dio_adapter.dart';
 
 import '../models/models.dart';
+import 'curl_engine.dart';
 
 /// Replaces {{variable}} placeholders using the active environment.
 String substituteVars(String input, Map<String, String> vars) {
@@ -30,24 +34,65 @@ class HttpService {
 
   AppSettings _settings = AppSettings();
 
-  /// Applies TLS verification and timeout settings to the client.
+  /// Applies TLS verification, HTTP version and timeout settings.
   void configure(AppSettings settings) {
     _settings = settings;
     _dio.options.connectTimeout = Duration(seconds: settings.connectTimeoutS);
     _dio.options.receiveTimeout = Duration(seconds: settings.receiveTimeoutS);
-    _dio.httpClientAdapter = IOHttpClientAdapter(createHttpClient: () {
-      final client = HttpClient();
-      if (!settings.verifySsl) {
-        client.badCertificateCallback = (cert, host, port) => true;
-      }
-      return client;
-    });
+
+    HttpClientAdapter h1() => IOHttpClientAdapter(createHttpClient: () {
+          final client = HttpClient();
+          if (!settings.verifySsl) {
+            client.badCertificateCallback = (cert, host, port) => true;
+          }
+          return client;
+        });
+
+    switch (settings.httpVersion) {
+      case HttpVersionPref.v1:
+        _dio.httpClientAdapter = h1();
+      case HttpVersionPref.v2:
+        // HTTP/2 via ALPN for https; servers that only speak HTTP/1.1 fall
+        // back through the adapter. Plain http:// is routed straight to
+        // HTTP/1.1 (h2c prior-knowledge would break normal servers).
+        final h2 = Http2Adapter(
+          ConnectionManager(
+            idleTimeout: const Duration(seconds: 15),
+            onClientCreate: (_, config) {
+              if (!settings.verifySsl) {
+                config.onBadCertificate = (_) => true;
+              }
+            },
+          ),
+          fallbackAdapter: h1(),
+        );
+        _dio.httpClientAdapter = _SchemeRoutingAdapter(h2: h2, h1: h1());
+      case HttpVersionPref.v3:
+        if (_platformHasNativeH3) {
+          // Cronet (Android) / NSURLSession (iOS, macOS) negotiate HTTP/3
+          // themselves and fall back to h2/h1 per server support.
+          _dio.httpClientAdapter = NativeAdapter();
+        } else {
+          // Desktop: requests are routed to the curl engine in send();
+          // keep a plain adapter so nothing else breaks.
+          _dio.httpClientAdapter = h1();
+        }
+    }
   }
+
+  static final bool _platformHasNativeH3 =
+      Platform.isAndroid || Platform.isIOS || Platform.isMacOS;
+
+  final CurlH3Engine _curl = CurlH3Engine();
+
+  bool get _useCurlH3 =>
+      _settings.httpVersion == HttpVersionPref.v3 && !_platformHasNativeH3;
 
   final Map<String, CancelToken> _inflight = {};
 
   void cancel(String tabId) {
     _inflight.remove(tabId)?.cancel('Cancelled by user');
+    _curl.cancel(tabId);
   }
 
   Future<ResponseData> send(
@@ -146,6 +191,30 @@ class HttpService {
         }
       }
 
+      if (_useCurlH3) {
+        final res = await _curl.send(
+          uri: uri,
+          method: r.method,
+          headers: headers.map((k, v) => MapEntry(k, v.toString())),
+          body: data as String?,
+          verifySsl: _settings.verifySsl,
+          connectTimeoutS: _settings.connectTimeoutS,
+          receiveTimeoutS: _settings.receiveTimeoutS,
+          tabId: tabId,
+        );
+        sw.stop();
+        return ResponseData(
+          statusCode: res.statusCode,
+          statusMessage: res.statusMessage,
+          headers: res.headers,
+          bodyBytes: res.bodyBytes,
+          durationMs: sw.elapsedMilliseconds,
+          error: res.error,
+          finalUrl: res.finalUrl,
+          protocol: res.protocol,
+        );
+      }
+
       final resp = await _dio.requestUri(
         uri,
         data: data,
@@ -188,5 +257,30 @@ class HttpService {
     } finally {
       _inflight.remove(tabId);
     }
+  }
+}
+
+/// Routes https to the HTTP/2 adapter (which itself falls back to HTTP/1.1
+/// when the server doesn't negotiate h2) and plain http to HTTP/1.1.
+class _SchemeRoutingAdapter implements HttpClientAdapter {
+  _SchemeRoutingAdapter({required this.h2, required this.h1});
+
+  final HttpClientAdapter h2;
+  final HttpClientAdapter h1;
+
+  @override
+  Future<ResponseBody> fetch(
+    RequestOptions options,
+    Stream<Uint8List>? requestStream,
+    Future<void>? cancelFuture,
+  ) {
+    final adapter = options.uri.scheme == 'https' ? h2 : h1;
+    return adapter.fetch(options, requestStream, cancelFuture);
+  }
+
+  @override
+  void close({bool force = false}) {
+    h2.close(force: force);
+    h1.close(force: force);
   }
 }

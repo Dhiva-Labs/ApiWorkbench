@@ -15,6 +15,7 @@ abstract final class Palette {
   static const put = Color(0xFF5CA8F5);
   static const patch = Color(0xFFB78AF7);
   static const delete = Color(0xFFEF6A6A);
+  static const query = Color(0xFF55C6D8);
   static const other = Color(0xFF9AA3B5);
 }
 
@@ -24,6 +25,7 @@ Color methodColor(String method) => switch (method.toUpperCase()) {
       'PUT' => Palette.put,
       'PATCH' => Palette.patch,
       'DELETE' => Palette.delete,
+      'QUERY' => Palette.query,
       _ => Palette.other,
     };
 

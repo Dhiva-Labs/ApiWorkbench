@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import '../models/models.dart';
 import '../services/assertions.dart';
 import '../services/http_service.dart';
+import '../services/sound_service.dart';
 import '../services/storage.dart';
 
 /// One open editor tab: a working copy of a request plus its latest response.
@@ -25,6 +26,7 @@ class AppState extends ChangeNotifier {
 
   final Storage _storage;
   final HttpService http = HttpService();
+  final SoundService sounds = SoundService();
 
   bool loaded = false;
 
@@ -64,6 +66,9 @@ class AppState extends ChangeNotifier {
     loaded = true;
     notifyListeners();
   }
+
+  /// Lets UI trigger a rebuild after mutating owned services (sound library).
+  void notifyRefresh() => notifyListeners();
 
   void updateSettings(AppSettings s) {
     settings = s;
@@ -151,6 +156,12 @@ class AppState extends ChangeNotifier {
     tab.loading = false;
     tab.response = res;
     tab.assertionResults = evaluateAssertions(tab.request, res);
+
+    if (settings.chaosMode) {
+      // Fire and forget — a missing player must never block the response.
+      sounds.playForStatus(settings.chaosRules, res.statusCode,
+          isError: res.error != null);
+    }
 
     history.insert(
         0,

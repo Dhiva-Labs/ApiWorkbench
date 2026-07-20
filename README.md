@@ -7,9 +7,9 @@ codebase for **Linux, Windows, macOS, Android and iOS**.
 
 - **Request tabs** — work on several requests at once; unsaved changes are
   marked with a dot.
-- **Full request builder** — all HTTP methods, query params, headers,
-  JSON / text / XML / form-urlencoded / GraphQL bodies (query + variables)
-  with a JSON beautifier.
+- **Full request builder** — all HTTP methods including the new QUERY
+  (safe method with body), query params, headers, JSON / text / XML /
+  form-urlencoded / GraphQL bodies (query + variables) with a JSON beautifier.
 - **Auth helpers** — Bearer token, Basic auth, API key (header or query).
 - **Environments** — define `{{variables}}` once, switch environments from the
   sidebar; substitution applies to URL, params, headers, body and auth.
@@ -36,10 +36,20 @@ codebase for **Linux, Windows, macOS, Android and iOS**.
   (headers, bodies, cURL); auth tokens are masked automatically.
 - **SSL & timeouts** — optionally accept self-signed certificates for local
   dev servers; connect/response timeouts configurable in Settings.
+- **HTTP/2 & HTTP/3** — pick the protocol in Settings. HTTP/2 negotiates
+  h2 via ALPN with automatic HTTP/1.1 fallback. HTTP/3 (QUIC) uses the
+  platform network stack on Android/iOS/macOS (Cronet / NSURLSession) and
+  the system curl on Linux/Windows (needs a curl built with HTTP3); the
+  response bar shows the negotiated version.
 - **cURL interop** — copy any request as a cURL command, or import one.
 - **Robust networking** — every status code is shown (no exceptions on 4xx/5xx),
   30 s connect / 60 s receive timeouts, redirect following, cancellable
   in-flight requests, readable messages for DNS/TLS/timeout failures.
+- **Chaos Mode** 🎲 — optional (Settings): plays a sound per status class
+  (success fanfare, sad trombone on 4xx, dramatic strings on 5xx, siren on
+  network errors — original clips), confetti on 2xx, screen-shake on errors,
+  and status emoji. Import your own meme clips from a local file or a
+  myinstants.com URL and map them to status classes or exact codes.
 - **Responsive UI** — three-pane desktop layout with a draggable
   editor/response splitter; drawer + request/response tabs on phones.
   Shortcuts: Ctrl+Enter send, Ctrl+T new tab, Ctrl+W close tab.

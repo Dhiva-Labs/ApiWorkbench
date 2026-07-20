@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:provider/provider.dart';
 
 import '../models/models.dart';
 import '../services/doc_export.dart';
@@ -175,10 +176,24 @@ class ResponseView extends StatelessWidget {
 
   Widget _statusBar(BuildContext context, ResponseData res) {
     final color = statusColor(res.statusCode);
+    final fun = context.watch<AppState>().settings.chaosMode;
     return Padding(
       padding: const EdgeInsets.fromLTRB(14, 12, 8, 6),
       child: Row(
         children: [
+          if (fun) ...[
+            Text(
+              switch (res.statusCode) {
+                >= 200 && < 300 => '🎉',
+                >= 300 && < 400 => '↪️',
+                >= 400 && < 500 => '🤦',
+                >= 500 => '🔥',
+                _ => '🚨',
+              },
+              style: const TextStyle(fontSize: 15),
+            ),
+            const SizedBox(width: 8),
+          ],
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
             decoration: BoxDecoration(
@@ -192,6 +207,27 @@ class ResponseView extends StatelessWidget {
                   color: color, fontWeight: FontWeight.w700, fontSize: 12.5),
             ),
           ),
+          if (res.protocol != null) ...[
+            const SizedBox(width: 8),
+            Tooltip(
+              message: 'Negotiated HTTP version',
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                decoration: BoxDecoration(
+                  color: Palette.query.withValues(alpha: 0.14),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Text(
+                  'HTTP/${res.protocol}',
+                  style: const TextStyle(
+                      color: Palette.query,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 11.5),
+                ),
+              ),
+            ),
+          ],
           const SizedBox(width: 14),
           _metric(Icons.timer_outlined, _fmtDuration(res.durationMs)),
           const SizedBox(width: 12),

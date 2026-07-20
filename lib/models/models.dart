@@ -57,7 +57,11 @@ extension AuthTypeLabel on AuthType {
       };
 }
 
-const httpMethods = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'];
+// QUERY is the IETF "safe method with body" (draft-ietf-httpbis-safe-method-w-body):
+// GET-like semantics, but the query lives in the request body.
+const httpMethods = [
+  'GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'QUERY', 'HEAD', 'OPTIONS',
+];
 
 /// Declarative response tests, evaluated after every send.
 enum AssertKind { statusEquals, bodyContains, jsonEquals, headerContains, timeBelow }
@@ -113,30 +117,136 @@ class AssertionResult {
 }
 
 /// Global app settings (persisted).
+/// Preferred HTTP protocol version.
+enum HttpVersionPref { v1, v2, v3 }
+
+extension HttpVersionPrefLabel on HttpVersionPref {
+  String get label => switch (this) {
+        HttpVersionPref.v1 => 'HTTP/1.1',
+        HttpVersionPref.v2 => 'HTTP/2',
+        HttpVersionPref.v3 => 'HTTP/3',
+      };
+}
+
+/// Default Chaos Mode sound rules — the real meme clips per status code,
+/// synthesized originals as class fallbacks.
+Map<String, String> defaultChaosRules() => {
+      // exact codes (bundled meme clips; 301 stays synthesized — no good
+      // "imma head out" clip was findable on myinstants)
+      '200': 'meme_200',
+      '201': 'meme_201',
+      '204': 'meme_204',
+      '301': 'head_out',
+      '302': 'meme_302',
+      '304': 'meme_304',
+      '400': 'meme_400',
+      '401': 'meme_401',
+      '403': 'meme_403',
+      '404': 'meme_404',
+      '405': 'meme_405',
+      '408': 'meme_408',
+      '409': 'meme_409',
+      '410': 'meme_410',
+      '418': 'meme_418',
+      '422': 'meme_422',
+      '429': 'meme_429',
+      '500': 'meme_500',
+      '501': 'meme_501',
+      '502': 'meme_502',
+      '503': 'meme_503',
+      '504': 'meme_504',
+      '505': 'meme_505',
+      // class fallbacks for everything else
+      '2xx': 'tada',
+      '3xx': 'whoosh',
+      '4xx': 'fail',
+      '5xx': 'dramatic',
+      'error': 'alarm',
+    };
+
+/// Older default rule sets; a saved config that still matches one of these
+/// was never customized and upgrades to the current defaults.
+const legacyChaosRuleSets = [
+  // v1: class-only synthesized rules
+  {
+    '2xx': 'tada', '3xx': 'whoosh', '4xx': 'fail',
+    '5xx': 'dramatic', 'error': 'alarm',
+  },
+  // v2: per-status synthesized rules
+  {
+    '200': 'mission_passed', '201': 'boom_applause', '204': 'crickets',
+    '301': 'head_out', '302': 'slide_whistle', '304': 'ding',
+    '400': 'bruh', '401': 'access_denied', '403': 'open_up', '404': 'fail',
+    '405': 'nope', '408': 'thinking', '409': 'metal_pipe',
+    '410': 'its_gone', '418': 'kettle', '422': 'task_failed',
+    '429': 'alarm', '500': 'this_is_fine', '501': 'construction',
+    '502': 'record_scratch', '503': 'flatline', '504': 'phone_ring',
+    '505': 'retro_startup',
+    '2xx': 'tada', '3xx': 'whoosh', '4xx': 'fail',
+    '5xx': 'dramatic', 'error': 'alarm',
+  },
+];
+
 class AppSettings {
   AppSettings({
     this.verifySsl = true,
+    this.httpVersion = HttpVersionPref.v1,
     this.connectTimeoutS = 30,
     this.receiveTimeoutS = 60,
-  });
+    this.chaosMode = false,
+    Map<String, String>? chaosRules,
+  }) : chaosRules = chaosRules ?? defaultChaosRules();
 
   /// When false, self-signed / invalid TLS certificates are accepted —
   /// intended for local development servers only.
   bool verifySsl;
+
+  /// v2: ALPN-negotiated HTTP/2 for https with automatic HTTP/1.1 fallback.
+  /// v3: QUIC via the platform network stack (Android/iOS/macOS) or the
+  /// system curl (Linux/Windows, needs a curl built with HTTP3).
+  HttpVersionPref httpVersion;
   int connectTimeoutS;
   int receiveTimeoutS;
 
+  /// Chaos Mode: status-code meme sounds + confetti/shake effects.
+  bool chaosMode;
+
+  /// Sound rules: keys are '2xx'…'5xx', 'error', or exact codes ('404').
+  /// Values are sound ids from the sound library; '' disables that rule.
+  Map<String, String> chaosRules;
+
   Map<String, dynamic> toJson() => {
         'verifySsl': verifySsl,
+        'httpVersion': httpVersion.name,
         'connectTimeoutS': connectTimeoutS,
         'receiveTimeoutS': receiveTimeoutS,
+        'chaosMode': chaosMode,
+        'chaosRules': chaosRules,
       };
 
   factory AppSettings.fromJson(Map<String, dynamic> j) => AppSettings(
         verifySsl: j['verifySsl'] as bool? ?? true,
+        httpVersion: HttpVersionPref.values.asNameMap()[j['httpVersion']] ??
+            // Migration from the earlier boolean setting.
+            (j['useHttp2'] == true ? HttpVersionPref.v2 : HttpVersionPref.v1),
         connectTimeoutS: (j['connectTimeoutS'] as num?)?.toInt() ?? 30,
         receiveTimeoutS: (j['receiveTimeoutS'] as num?)?.toInt() ?? 60,
+        chaosMode: j['chaosMode'] as bool? ?? j['funMode'] as bool? ?? false,
+        chaosRules: _migrateChaosRules(
+            (j['chaosRules'] ?? j['funRules']) as Map<String, dynamic>?),
       );
+
+  static Map<String, String> _migrateChaosRules(Map<String, dynamic>? raw) {
+    if (raw == null) return defaultChaosRules();
+    final rules = raw.map((k, v) => MapEntry(k, v.toString()));
+    for (final legacy in legacyChaosRuleSets) {
+      if (rules.length == legacy.length &&
+          legacy.entries.every((e) => rules[e.key] == e.value)) {
+        return defaultChaosRules();
+      }
+    }
+    return rules;
+  }
 }
 
 class RequestModel {
@@ -341,6 +451,7 @@ class ResponseData {
     this.durationMs = 0,
     this.error,
     this.finalUrl,
+    this.protocol,
   });
 
   final int statusCode;
@@ -350,6 +461,10 @@ class ResponseData {
   final int durationMs;
   final String? error;
   final String? finalUrl;
+
+  /// Negotiated HTTP version ("3", "2", "1.1") when the transport reports
+  /// it (currently the curl HTTP/3 engine); null when unknown.
+  final String? protocol;
 
   int get sizeBytes => bodyBytes.length;
 

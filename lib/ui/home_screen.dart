@@ -5,9 +5,26 @@ import 'package:provider/provider.dart';
 import '../state/app_state.dart';
 import '../theme.dart';
 import 'app_menu.dart';
+import 'chaos_effects.dart';
+import 'mode_toggle.dart';
 import 'request_editor.dart';
 import 'response_view.dart';
 import 'sidebar.dart';
+
+Widget _responseArea(AppState state, RequestTab tab) => ChaosEffects(
+      enabled: state.settings.chaosMode,
+      trigger: tab.response,
+      statusCode: tab.response?.statusCode ?? 0,
+      isError: tab.response?.error != null,
+      child: AnimatedSwitcher(
+        duration: const Duration(milliseconds: 180),
+        child: KeyedSubtree(
+          key: ValueKey(
+              '${tab.id}-${tab.loading}-${identityHashCode(tab.response)}'),
+          child: ResponseView(tab: tab),
+        ),
+      ),
+    );
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
@@ -119,14 +136,7 @@ class _DesktopLayoutState extends State<_DesktopLayout> {
                           Expanded(
                             child: ColoredBox(
                               color: Palette.surface,
-                              child: AnimatedSwitcher(
-                                duration: const Duration(milliseconds: 180),
-                                child: KeyedSubtree(
-                                  key: ValueKey(
-                                      '${tab.id}-${tab.loading}-${identityHashCode(tab.response)}'),
-                                  child: ResponseView(tab: tab),
-                                ),
-                              ),
+                              child: _responseArea(state, tab),
                             ),
                           ),
                         ],
@@ -151,40 +161,48 @@ class _BrandHeader extends StatelessWidget {
     final state = context.watch<AppState>();
     return Container(
       padding: const EdgeInsets.fromLTRB(14, 14, 14, 8),
-      child: Row(
+      child: Column(
         children: [
-          Container(
-            width: 30,
-            height: 30,
-            decoration: BoxDecoration(
-              gradient: const LinearGradient(
-                  colors: [Palette.accent, Palette.patch]),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: const Icon(Icons.sync_alt, size: 18, color: Colors.white),
-          ),
-          const SizedBox(width: 10),
-          const Text('ApiWorkbench',
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
-          const Spacer(),
-          if (state.activeEnvironment != null)
-            Tooltip(
-              message: 'Active environment',
-              child: Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+          Row(
+            children: [
+              Container(
+                width: 30,
+                height: 30,
                 decoration: BoxDecoration(
-                  color: Palette.accent.withValues(alpha: 0.15),
-                  borderRadius: BorderRadius.circular(20),
+                  gradient: const LinearGradient(
+                      colors: [Palette.accent, Palette.patch]),
+                  borderRadius: BorderRadius.circular(8),
                 ),
-                child: Text(
-                  state.activeEnvironment!.name,
-                  style:
-                      const TextStyle(fontSize: 11, color: Palette.accent),
-                ),
+                child:
+                    const Icon(Icons.sync_alt, size: 18, color: Colors.white),
+              ),
+              const SizedBox(width: 10),
+              const Text('ApiWorkbench',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+              const Spacer(),
+              const ModeToggle(compact: true),
+              const SizedBox(width: 2),
+              const AppMenuButton(),
+            ],
+          ),
+          if (state.activeEnvironment != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Row(
+                children: [
+                  const Icon(Icons.public, size: 12, color: Palette.accent),
+                  const SizedBox(width: 5),
+                  Expanded(
+                    child: Text(
+                      state.activeEnvironment!.name,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                          fontSize: 11, color: Palette.accent),
+                    ),
+                  ),
+                ],
               ),
             ),
-          const AppMenuButton(),
         ],
       ),
     );
@@ -216,6 +234,7 @@ class _MobileLayout extends StatelessWidget {
                           fontSize: 12, color: Palette.accent)),
                 ),
               ),
+            const Center(child: ModeToggle(compact: true)),
             const AppMenuButton(),
           ],
           bottom: const TabBar(
@@ -237,7 +256,7 @@ class _MobileLayout extends StatelessWidget {
               child: TabBarView(
                 children: [
                   RequestEditor(key: ValueKey(tab.id), tab: tab),
-                  ResponseView(tab: tab),
+                  _responseArea(state, tab),
                 ],
               ),
             ),
