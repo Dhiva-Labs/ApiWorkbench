@@ -82,9 +82,10 @@ parts:
     stage-packages:
       - libgtk-3-0
       # A confined app cannot run the host's audio players, so Chaos Mode's
-      # player ships inside the snap (SoundService looks for gst-play-1.0
-      # first). plugins-good decodes the bundled mp3 and wav clips.
-      - gstreamer1.0-tools
+      # player ships inside the snap. SoundService looks for gst-play-1.0
+      # first; on core22 that binary is in plugins-base-apps, not tools.
+      # plugins-good decodes the bundled mp3 and wav clips.
+      - gstreamer1.0-plugins-base-apps
       - gstreamer1.0-plugins-base
       - gstreamer1.0-plugins-good
       - gstreamer1.0-pulseaudio
