@@ -43,3 +43,9 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# Build output — regenerate with flutter build, do not commit
+dist/
+
+# Kotlin build session cache
+android/.kotlin/

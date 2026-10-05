@@ -66,8 +66,10 @@ class _RunnerScreenState extends State<RunnerScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text('Run • ${widget.title}',
-            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+        title: Text(
+          'Run • ${widget.title}',
+          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+        ),
       ),
       body: AnimatedBuilder(
         animation: _runner,
@@ -93,8 +95,10 @@ class _RunnerScreenState extends State<RunnerScreen> {
         runSpacing: 10,
         crossAxisAlignment: WrapCrossAlignment.center,
         children: [
-          Text('${widget.requests.length} request(s)',
-              style: const TextStyle(color: Palette.textDim, fontSize: 12.5)),
+          Text(
+            '${widget.requests.length} request(s)',
+            style: const TextStyle(color: Palette.textDim, fontSize: 12.5),
+          ),
           if (!_recurring && _dataRows == null)
             _numField('Iterations', _iterCtrl, enabled: !running),
           _numField('Delay between (ms)', _delayCtrl, enabled: !running),
@@ -103,8 +107,9 @@ class _RunnerScreenState extends State<RunnerScreen> {
             children: [
               Switch(
                 value: _recurring,
-                onChanged:
-                    running ? null : (v) => setState(() => _recurring = v),
+                onChanged: running
+                    ? null
+                    : (v) => setState(() => _recurring = v),
               ),
               const Text('Recurring', style: TextStyle(fontSize: 13)),
             ],
@@ -114,11 +119,12 @@ class _RunnerScreenState extends State<RunnerScreen> {
           TextButton.icon(
             onPressed: () => setState(() => _showData = !_showData),
             icon: Icon(
-                _showData ? Icons.expand_less : Icons.table_rows_outlined,
-                size: 16),
-            label: Text(_dataRows == null
-                ? 'Data'
-                : 'Data (${_dataRows!.length} rows)'),
+              _showData ? Icons.expand_less : Icons.table_rows_outlined,
+              size: 16,
+            ),
+            label: Text(
+              _dataRows == null ? 'Data' : 'Data (${_dataRows!.length} rows)',
+            ),
           ),
           FilledButton.icon(
             style: FilledButton.styleFrom(
@@ -135,8 +141,10 @@ class _RunnerScreenState extends State<RunnerScreen> {
               style: const TextStyle(color: Palette.textDim, fontSize: 12),
             )
           else if (running)
-            Text('running pass ${_runner.currentIteration}…',
-                style: const TextStyle(color: Palette.textDim, fontSize: 12)),
+            Text(
+              'running pass ${_runner.currentIteration}…',
+              style: const TextStyle(color: Palette.textDim, fontSize: 12),
+            ),
         ],
       ),
     );
@@ -158,7 +166,8 @@ class _RunnerScreenState extends State<RunnerScreen> {
             maxLines: 5,
             style: const TextStyle(fontFamily: 'monospace', fontSize: 12.5),
             decoration: const InputDecoration(
-              hintText: 'JSON array — one variable set per iteration:\n'
+              hintText:
+                  'JSON array — one variable set per iteration:\n'
                   '[{"userId": "1"}, {"userId": "2"}, {"userId": "3"}]\n'
                   'Use them in requests as {{userId}}.',
             ),
@@ -169,23 +178,25 @@ class _RunnerScreenState extends State<RunnerScreen> {
             !hasText
                 ? 'Leave empty to run without per-iteration data.'
                 : rows == null
-                    ? 'Not valid yet — expected a JSON array of objects.'
-                    : _recurring
-                        ? '${rows.length} rows — cycled across recurring passes.'
-                        : '${rows.length} rows — the run will do ${rows.length} iterations.',
+                ? 'Not valid yet — expected a JSON array of objects.'
+                : _recurring
+                ? '${rows.length} rows — cycled across recurring passes.'
+                : '${rows.length} rows — the run will do ${rows.length} iterations.',
             style: TextStyle(
-                fontSize: 11.5,
-                color: hasText && rows == null
-                    ? Palette.delete
-                    : Palette.textDim),
+              fontSize: 11.5,
+              color: hasText && rows == null ? Palette.delete : Palette.textDim,
+            ),
           ),
         ],
       ),
     );
   }
 
-  Widget _numField(String label, TextEditingController ctrl,
-      {required bool enabled}) {
+  Widget _numField(
+    String label,
+    TextEditingController ctrl, {
+    required bool enabled,
+  }) {
     return SizedBox(
       width: 150,
       child: TextField(
@@ -194,9 +205,9 @@ class _RunnerScreenState extends State<RunnerScreen> {
         keyboardType: TextInputType.number,
         style: const TextStyle(fontSize: 13),
         decoration: InputDecoration(
-            labelText: label,
-            labelStyle:
-                const TextStyle(fontSize: 12, color: Palette.textDim)),
+          labelText: label,
+          labelStyle: const TextStyle(fontSize: 12, color: Palette.textDim),
+        ),
       ),
     );
   }
@@ -206,11 +217,19 @@ class _RunnerScreenState extends State<RunnerScreen> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
       color: Palette.surface,
-      child: Row(
+      child: Wrap(
+        runSpacing: 8,
         children: [
+          Text(
+            "Showing ${r.results.length} of ${r.total} results",
+            style: const TextStyle(color: Palette.textDim),
+          ),
           _stat('Passed', '${r.passed}', Palette.get_),
-          _stat('Failed', '${r.failed}',
-              r.failed == 0 ? Palette.textDim : Palette.delete),
+          _stat(
+            'Failed',
+            '${r.failed}',
+            r.failed == 0 ? Palette.textDim : Palette.delete,
+          ),
           _stat('Avg', '${r.avgMs} ms', Palette.textDim),
           _stat('Min', '${r.minMs} ms', Palette.textDim),
           _stat('Max', '${r.maxMs} ms', Palette.textDim),
@@ -220,25 +239,34 @@ class _RunnerScreenState extends State<RunnerScreen> {
   }
 
   Widget _stat(String label, String value, Color color) => Padding(
-        padding: const EdgeInsets.only(right: 22),
-        child: Row(
-          children: [
-            Text('$label ',
-                style:
-                    const TextStyle(fontSize: 12, color: Palette.textDim)),
-            Text(value,
-                style: TextStyle(
-                    fontSize: 13, fontWeight: FontWeight.w700, color: color)),
-          ],
+    padding: const EdgeInsets.only(right: 22),
+    child: Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          '$label ',
+          style: const TextStyle(fontSize: 12, color: Palette.textDim),
         ),
-      );
+        Text(
+          value,
+          style: TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w700,
+            color: color,
+          ),
+        ),
+      ],
+    ),
+  );
 
   Widget _resultsList() {
     final results = _runner.results;
     if (results.isEmpty) {
       return const Center(
-        child: Text('Press Run to execute the requests.',
-            style: TextStyle(color: Palette.textDim)),
+        child: Text(
+          'Press Run to execute the requests.',
+          style: TextStyle(color: Palette.textDim),
+        ),
       );
     }
     return ListView.builder(
@@ -251,20 +279,28 @@ class _RunnerScreenState extends State<RunnerScreen> {
         return ExpansionTile(
           dense: true,
           shape: const Border(),
-          leading: Icon(r.pass ? Icons.check_circle : Icons.cancel,
-              size: 17, color: r.pass ? Palette.get_ : Palette.delete),
+          leading: Icon(
+            r.pass ? Icons.check_circle : Icons.cancel,
+            size: 17,
+            color: r.pass ? Palette.get_ : Palette.delete,
+          ),
           title: Row(
             children: [
-              Text(r.request.method,
-                  style: TextStyle(
-                      color: methodColor(r.request.method),
-                      fontSize: 11,
-                      fontWeight: FontWeight.w800)),
+              Text(
+                r.request.method,
+                style: TextStyle(
+                  color: methodColor(r.request.method),
+                  fontSize: 11,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
               const SizedBox(width: 8),
               Expanded(
-                child: Text(r.request.name,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontSize: 13)),
+                child: Text(
+                  r.request.name,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontSize: 13),
+                ),
               ),
             ],
           ),
@@ -274,8 +310,9 @@ class _RunnerScreenState extends State<RunnerScreen> {
             '${res.durationMs} ms'
             '${r.assertions.isNotEmpty ? ' • ${r.assertions.length - failedAsserts.length}/${r.assertions.length} tests' : ''}',
             style: TextStyle(
-                fontSize: 11.5,
-                color: r.pass ? Palette.textDim : Palette.delete),
+              fontSize: 11.5,
+              color: r.pass ? Palette.textDim : Palette.delete,
+            ),
           ),
           children: [
             if (res.error != null)
@@ -283,14 +320,16 @@ class _RunnerScreenState extends State<RunnerScreen> {
             else ...[
               for (final a in r.assertions)
                 _detailLine(
-                    '${a.pass ? '✓' : '✗'} ${a.assertion.kind.label}'
-                    '${a.assertion.kind.hasTarget ? ' ${a.assertion.target}' : ''}'
-                    ' — ${a.message}',
-                    a.pass ? Palette.get_ : Palette.delete),
+                  '${a.pass ? '✓' : '✗'} ${a.assertion.kind.label}'
+                  '${a.assertion.kind.hasTarget ? ' ${a.assertion.target}' : ''}'
+                  ' — ${a.message}',
+                  a.pass ? Palette.get_ : Palette.delete,
+                ),
               if (r.assertions.isEmpty)
                 _detailLine(
-                    'No tests on this request — judged by status code.',
-                    Palette.textDim),
+                  'No tests on this request — judged by status code.',
+                  Palette.textDim,
+                ),
             ],
           ],
         );
@@ -299,12 +338,13 @@ class _RunnerScreenState extends State<RunnerScreen> {
   }
 
   Widget _detailLine(String text, Color color) => Padding(
-        padding: const EdgeInsets.fromLTRB(52, 0, 16, 8),
-        child: Align(
-          alignment: Alignment.centerLeft,
-          child: SelectableText(text,
-              style: TextStyle(
-                  fontSize: 12, color: color, fontFamily: 'monospace')),
-        ),
-      );
+    padding: const EdgeInsets.fromLTRB(52, 0, 16, 8),
+    child: Align(
+      alignment: Alignment.centerLeft,
+      child: SelectableText(
+        text,
+        style: TextStyle(fontSize: 12, color: color, fontFamily: 'monospace'),
+      ),
+    ),
+  );
 }

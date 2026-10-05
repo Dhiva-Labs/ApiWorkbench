@@ -1,0 +1,100 @@
+# Snap Store packaging for ApiWorkbench.
+#
+# Same pattern as BranchPilot and Mock Studio: `plugin: flutter` + the
+# `gnome` extension under strict confinement, built from source in a core22
+# container so the binary matches the snap's runtime libraries.
+#
+#   snapcraft --use-lxd
+#   snapcraft upload --release=stable apiworkbench_<version>_amd64.snap
+name: apiworkbench
+title: ApiWorkbench
+base: core22
+version: '1.1.0'
+summary: API client for building, testing and load testing HTTP requests
+description: |
+  ApiWorkbench is a fast, keyboard-friendly API client in the spirit of
+  Postman.
+
+  - Request tabs and a full request builder: every HTTP method including
+    QUERY, params, headers, JSON / XML / form / GraphQL bodies, Bearer /
+    Basic / API-key auth
+  - Environments with {{variables}}, collections and request history
+  - Response assertions and a collection runner with recurring and
+    data-driven runs
+  - Load testing: hit one request or a whole collection with up to 1,000
+    parallel users, for a number of iterations, a duration, or until you
+    stop it, with live throughput and p50/p95/p99 latency; every call can
+    be logged with its response and saved as an HTML, CSV or JSON report
+  - cURL import/export, workspace import/export, Markdown docs export
+  - HTTP/1.1 and HTTP/2, self-signed certificate support
+  - Chaos Mode: a sound per status code, confetti and screen shake
+
+  A Dhiva Labs project.
+
+grade: stable
+confinement: strict
+icon: snap/gui/apiworkbench.png
+license: MIT
+website: https://github.com/Dhiva-Labs/ApiWorkbench
+source-code: https://github.com/Dhiva-Labs/ApiWorkbench
+issues: https://github.com/Dhiva-Labs/ApiWorkbench/issues
+contact: dhivakar1010@gmail.com
+
+architectures:
+  - build-on: amd64
+
+apps:
+  apiworkbench:
+    command: apiworkbench
+    extensions:
+      - gnome
+    desktop: usr/share/applications/apiworkbench.desktop
+    plugs:
+      - home
+      - removable-media
+      - network
+      - network-bind
+      # Chaos Mode plays sounds through the bundled gst-play-1.0.
+      - audio-playback
+
+parts:
+  apiworkbench:
+    plugin: flutter
+    source: .
+    flutter-target: lib/main.dart
+    # A build/ left by a host-side `flutter build linux` carries a
+    # CMakeCache.txt naming host paths, which CMake refuses to reuse.
+    override-pull: |
+      craftctl default
+      rm -rf build .dart_tool .flutter .pub-cache dist parts prime stage \
+        linux/flutter/ephemeral linux/packaging/snap/bundle test_artifacts
+    build-packages:
+      - clang
+      - cmake
+      - ninja-build
+      - pkg-config
+      - libgtk-3-dev
+      - liblzma-dev
+      - curl
+      - unzip
+      - xz-utils
+      - git
+    stage-packages:
+      - libgtk-3-0
+      # A confined app cannot run the host's audio players, so Chaos Mode's
+      # player ships inside the snap (SoundService looks for gst-play-1.0
+      # first). plugins-good decodes the bundled mp3 and wav clips.
+      - gstreamer1.0-tools
+      - gstreamer1.0-plugins-base
+      - gstreamer1.0-plugins-good
+      - gstreamer1.0-pulseaudio
+
+  desktop-assets:
+    plugin: dump
+    source: snap/gui
+    organize:
+      apiworkbench.desktop: usr/share/applications/apiworkbench.desktop
+      apiworkbench.png: usr/share/icons/hicolor/256x256/apps/apiworkbench.png
+    stage:
+      - usr/share/applications/apiworkbench.desktop
+      - usr/share/icons/hicolor/256x256/apps/apiworkbench.png

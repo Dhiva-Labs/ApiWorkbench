@@ -28,8 +28,17 @@ class ChaosEffects extends StatefulWidget {
 
 class _ChaosEffectsState extends State<ChaosEffects>
     with SingleTickerProviderStateMixin {
-  late final AnimationController _ctrl = AnimationController(
-      vsync: this, duration: const Duration(milliseconds: 1400));
+  late final AnimationController _ctrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1400),
+    );
+  }
+
   List<_Particle> _particles = [];
   bool _celebrate = false;
 
@@ -38,9 +47,8 @@ class _ChaosEffectsState extends State<ChaosEffects>
     super.didUpdateWidget(old);
     if (!widget.enabled || widget.trigger == null) return;
     if (old.trigger == widget.trigger) return;
-    final ok = !widget.isError &&
-        widget.statusCode >= 200 &&
-        widget.statusCode < 300;
+    final ok =
+        !widget.isError && widget.statusCode >= 200 && widget.statusCode < 300;
     final bad = widget.isError || widget.statusCode >= 400;
     if (ok) {
       _celebrate = true;
@@ -55,8 +63,12 @@ class _ChaosEffectsState extends State<ChaosEffects>
   List<_Particle> _burst() {
     final rnd = Random();
     const colors = [
-      Palette.accent, Palette.get_, Palette.post,
-      Palette.patch, Palette.query, Palette.delete,
+      Palette.accent,
+      Palette.get_,
+      Palette.post,
+      Palette.patch,
+      Palette.query,
+      Palette.delete,
     ];
     return List.generate(90, (_) {
       final angle = -pi / 2 + (rnd.nextDouble() - 0.5) * pi * 1.1;
@@ -98,14 +110,14 @@ class _ChaosEffectsState extends State<ChaosEffects>
             body,
             if (active && _celebrate)
               IgnorePointer(
-                child: CustomPaint(
-                    painter: _ConfettiPainter(_particles, t)),
+                child: CustomPaint(painter: _ConfettiPainter(_particles, t)),
               ),
             if (active && !_celebrate)
               IgnorePointer(
                 child: Container(
-                  color: Palette.delete
-                      .withValues(alpha: 0.16 * (1 - t) * (1 - t)),
+                  color: Palette.delete.withValues(
+                    alpha: 0.16 * (1 - t) * (1 - t),
+                  ),
                 ),
               ),
           ],
@@ -149,9 +161,13 @@ class _ConfettiPainter extends CustomPainter {
       canvas.rotate(p.spin * t);
       canvas.drawRRect(
         RRect.fromRectAndRadius(
-            Rect.fromCenter(
-                center: Offset.zero, width: p.size, height: p.size * 0.62),
-            const Radius.circular(1.5)),
+          Rect.fromCenter(
+            center: Offset.zero,
+            width: p.size,
+            height: p.size * 0.62,
+          ),
+          const Radius.circular(1.5),
+        ),
         paint,
       );
       canvas.restore();

@@ -1,0 +1,10 @@
+[Desktop Entry]
+Name=ApiWorkbench
+Comment=API client for building and testing HTTP requests
+Exec=apiworkbench
+Icon=${SNAP}/meta/gui/apiworkbench.png
+Terminal=false
+Type=Application
+Categories=Development;Network;
+Keywords=API;REST;HTTP;client;postman;
+StartupWMClass=com.dhivalabs.api_workbench

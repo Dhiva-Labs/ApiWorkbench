@@ -24,29 +24,34 @@ class HttpService {
     configure(AppSettings());
   }
 
-  final Dio _dio = Dio(BaseOptions(
-    followRedirects: true,
-    maxRedirects: 10,
-    // We want every status code back, never an exception for 4xx/5xx.
-    validateStatus: (_) => true,
-    responseType: ResponseType.bytes,
-  ));
+  final Dio _dio = Dio(
+    BaseOptions(
+      followRedirects: true,
+      maxRedirects: 10,
+      // We want every status code back, never an exception for 4xx/5xx.
+      validateStatus: (_) => true,
+      responseType: ResponseType.bytes,
+    ),
+  );
 
   AppSettings _settings = AppSettings();
 
   /// Applies TLS verification, HTTP version and timeout settings.
   void configure(AppSettings settings) {
+    _dio.httpClientAdapter.close();
     _settings = settings;
     _dio.options.connectTimeout = Duration(seconds: settings.connectTimeoutS);
     _dio.options.receiveTimeout = Duration(seconds: settings.receiveTimeoutS);
 
-    HttpClientAdapter h1() => IOHttpClientAdapter(createHttpClient: () {
-          final client = HttpClient();
-          if (!settings.verifySsl) {
-            client.badCertificateCallback = (cert, host, port) => true;
-          }
-          return client;
-        });
+    HttpClientAdapter h1() => IOHttpClientAdapter(
+      createHttpClient: () {
+        final client = HttpClient();
+        if (!settings.verifySsl) {
+          client.badCertificateCallback = (cert, host, port) => true;
+        }
+        return client;
+      },
+    );
 
     switch (settings.httpVersion) {
       case HttpVersionPref.v1:
@@ -95,6 +100,13 @@ class HttpService {
     _curl.cancel(tabId);
   }
 
+  void dispose() {
+    for (final id in _inflight.keys.toList()) {
+      cancel(id);
+    }
+    _dio.close(force: true);
+  }
+
   Future<ResponseData> send(
     RequestModel r,
     Map<String, String> vars, {
@@ -138,8 +150,11 @@ class HttpService {
           headers['Authorization'] =
               'Bearer ${substituteVars(r.bearerToken, vars)}';
         case AuthType.basic:
-          final cred = base64Encode(utf8.encode(
-              '${substituteVars(r.basicUser, vars)}:${substituteVars(r.basicPassword, vars)}'));
+          final cred = base64Encode(
+            utf8.encode(
+              '${substituteVars(r.basicUser, vars)}:${substituteVars(r.basicPassword, vars)}',
+            ),
+          );
           headers['Authorization'] = 'Basic $cred';
         case AuthType.apiKey:
           final k = substituteVars(r.apiKeyName, vars);
@@ -158,18 +173,22 @@ class HttpService {
       }
 
       Object? data;
-      final hasBody = r.bodyType != BodyType.none &&
+      final hasBody =
+          r.bodyType != BodyType.none &&
           !{'GET', 'HEAD'}.contains(r.method.toUpperCase());
       if (hasBody) {
         final ct = r.bodyType.contentType;
-        final hasCt =
-            headers.keys.any((k) => k.toLowerCase() == 'content-type');
+        final hasCt = headers.keys.any(
+          (k) => k.toLowerCase() == 'content-type',
+        );
         if (ct != null && !hasCt) headers['Content-Type'] = ct;
         if (r.bodyType == BodyType.formUrlEncoded) {
           data = r.formFields
               .where((f) => f.enabled && f.key.isNotEmpty)
-              .map((f) =>
-                  '${Uri.encodeQueryComponent(substituteVars(f.key, vars))}=${Uri.encodeQueryComponent(substituteVars(f.value, vars))}')
+              .map(
+                (f) =>
+                    '${Uri.encodeQueryComponent(substituteVars(f.key, vars))}=${Uri.encodeQueryComponent(substituteVars(f.value, vars))}',
+              )
               .join('&');
         } else if (r.bodyType == BodyType.graphql) {
           Object? gqlVars;
@@ -179,7 +198,8 @@ class HttpService {
               gqlVars = jsonDecode(rawVars);
             } catch (e) {
               return ResponseData(
-                  error: 'GraphQL variables are not valid JSON: $e');
+                error: 'GraphQL variables are not valid JSON: $e',
+              );
             }
           }
           data = jsonEncode({
@@ -253,9 +273,11 @@ class HttpService {
     } catch (e) {
       sw.stop();
       return ResponseData(
-          error: e.toString(), durationMs: sw.elapsedMilliseconds);
+        error: e.toString(),
+        durationMs: sw.elapsedMilliseconds,
+      );
     } finally {
-      _inflight.remove(tabId);
+      if (identical(_inflight[tabId], token)) _inflight.remove(tabId);
     }
   }
 }

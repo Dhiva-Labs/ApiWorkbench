@@ -29,6 +29,15 @@ class AppState extends ChangeNotifier {
   final SoundService sounds = SoundService();
 
   bool loaded = false;
+  bool _disposed = false;
+
+  @override
+  void dispose() {
+    _disposed = true;
+    http.dispose();
+    tabs.clear();
+    super.dispose();
+  }
 
   final List<RequestTab> tabs = [];
   int activeTabIndex = 0;
@@ -50,9 +59,9 @@ class AppState extends ChangeNotifier {
   }
 
   Map<String, String> get activeVars => {
-        for (final v in activeEnvironment?.variables ?? <KV>[])
-          if (v.enabled && v.key.isNotEmpty) v.key: v.value,
-      };
+    for (final v in activeEnvironment?.variables ?? <KV>[])
+      if (v.enabled && v.key.isNotEmpty) v.key: v.value,
+  };
 
   Future<void> _init() async {
     collections = await _storage.loadCollections();
@@ -61,6 +70,7 @@ class AppState extends ChangeNotifier {
     activeEnvironmentId = activeId;
     history = await _storage.loadHistory();
     settings = await _storage.loadSettings();
+    if (_disposed) return;
     http.configure(settings);
     if (tabs.isEmpty) newTab();
     loaded = true;
@@ -80,7 +90,9 @@ class AppState extends ChangeNotifier {
   /// Merges an imported workspace: same-id items are replaced, new ones
   /// added. Returns (collections, environments) counts actually imported.
   (int, int) mergeWorkspace(
-      List<CollectionModel> cols, List<EnvironmentModel> envs) {
+    List<CollectionModel> cols,
+    List<EnvironmentModel> envs,
+  ) {
     for (final c in cols) {
       collections.removeWhere((x) => x.id == c.id);
       collections.add(c);
@@ -100,9 +112,12 @@ class AppState extends ChangeNotifier {
   // ---------------- Tabs ----------------
 
   void newTab([RequestModel? request, String? sourceCollectionId]) {
-    tabs.add(RequestTab(
+    tabs.add(
+      RequestTab(
         request: request ?? RequestModel(),
-        sourceCollectionId: sourceCollectionId));
+        sourceCollectionId: sourceCollectionId,
+      ),
+    );
     activeTabIndex = tabs.length - 1;
     notifyListeners();
   }
@@ -153,24 +168,29 @@ class AppState extends ChangeNotifier {
     notifyListeners();
 
     final res = await http.send(tab.request, activeVars, tabId: tab.id);
+    if (_disposed || !tabs.contains(tab)) return;
     tab.loading = false;
     tab.response = res;
     tab.assertionResults = evaluateAssertions(tab.request, res);
 
     if (settings.chaosMode) {
       // Fire and forget — a missing player must never block the response.
-      sounds.playForStatus(settings.chaosRules, res.statusCode,
-          isError: res.error != null);
+      sounds.playForStatus(
+        settings.chaosRules,
+        res.statusCode,
+        isError: res.error != null,
+      );
     }
 
     history.insert(
-        0,
-        HistoryEntry(
-          request: tab.request.clone(),
-          statusCode: res.statusCode,
-          durationMs: res.durationMs,
-          at: DateTime.now(),
-        ));
+      0,
+      HistoryEntry(
+        request: tab.request.clone(),
+        statusCode: res.statusCode,
+        durationMs: res.durationMs,
+        at: DateTime.now(),
+      ),
+    );
     if (history.length > 100) history.removeRange(100, history.length);
     _storage.saveHistory(history);
     notifyListeners();

@@ -1,0 +1,21 @@
+Source: apiworkbench
+Section: devel
+Priority: optional
+Maintainer: Dhivakar R <dhivakar1010@gmail.com>
+Build-Depends: debhelper-compat (= 13)
+Standards-Version: 4.6.2
+Homepage: https://github.com/Dhiva-Labs/ApiWorkbench
+Rules-Requires-Root: no
+
+Package: apiworkbench
+Architecture: amd64
+Depends: ${misc:Depends}, libgtk-3-0, libglib2.0-0
+Description: Cross-platform API client for building and testing HTTP requests
+ ApiWorkbench is a fast, keyboard-friendly API client in the spirit of
+ Postman. It provides request tabs, a full request builder (all HTTP
+ methods, query params, headers, JSON/XML/form/GraphQL bodies), auth
+ helpers, environments with {{variables}}, collections, request history,
+ response assertions, and a collection runner with recurring interval
+ runs for endpoint monitoring.
+ .
+ Published by Dhiva-Labs.

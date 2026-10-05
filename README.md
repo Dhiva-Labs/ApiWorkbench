@@ -51,7 +51,8 @@ codebase for **Linux, Windows, macOS, Android and iOS**.
   and status emoji. Import your own meme clips from a local file or a
   myinstants.com URL and map them to status classes or exact codes.
 - **Responsive UI** — three-pane desktop layout with a draggable
-  editor/response splitter; drawer + request/response tabs on phones.
+  editor/response splitter; drawer + bottom request/response navigation on phones.
+  Phone layouts include a full-width URL field, progress feedback and status badges.
   Shortcuts: Ctrl+Enter send, Ctrl+T new tab, Ctrl+W close tab.
 
 ## Run
@@ -92,3 +93,10 @@ lib/
   ui/                       # home, sidebar, request editor, response view,
                             # runner screen
 ```
+
+## Memory and mobile update
+
+Response previews are capped at 64 KiB; copying and exporting still use the full
+response. The runner retains the latest 200 summaries while keeping aggregate
+statistics for the complete run. See [implementation notes and feature ideas](IMPROVEMENTS.md)
+for behavior changes, remaining memory limits and the suggested roadmap.

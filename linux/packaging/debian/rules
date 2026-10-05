@@ -1,0 +1,23 @@
+#!/usr/bin/make -f
+# ApiWorkbench ships a prebuilt Flutter Linux bundle, so there is nothing to
+# compile: we simply install the payload tree. Flutter cannot be built on
+# Launchpad's builders, so a from-source build is intentionally not used here.
+
+%:
+	dh $@
+
+override_dh_auto_configure:
+override_dh_auto_build:
+override_dh_auto_test:
+
+override_dh_auto_install:
+	mkdir -p debian/apiworkbench
+	cp -a usr debian/apiworkbench/
+
+# The bundled libflutter_linux_gtk.so / libapp.so are private to the app and
+# must not be scanned for system dependencies.
+override_dh_shlibdeps:
+
+# Do not strip or compress the Flutter engine assets.
+override_dh_strip:
+override_dh_strip_nondeterminism:

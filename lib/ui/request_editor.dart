@@ -9,6 +9,7 @@ import '../services/curl.dart' as curl;
 import '../state/app_state.dart';
 import '../theme.dart';
 import 'kv_editor.dart';
+import 'load_test_screen.dart';
 import 'runner_screen.dart';
 
 /// The main editor for one request tab. Give it `key: ValueKey(tab.id)` so
@@ -47,10 +48,15 @@ class _RequestEditorState extends State<RequestEditor> {
 
   void _touch() => context.read<AppState>().touchActive();
 
+  void _send(AppState state) {
+    FocusManager.instance.primaryFocus?.unfocus();
+    state.sendActive();
+  }
+
   @override
   Widget build(BuildContext context) {
     final state = context.watch<AppState>();
-    return Column(
+    final editor = Column(
       children: [
         Padding(
           padding: const EdgeInsets.fromLTRB(12, 12, 12, 8),
@@ -65,22 +71,27 @@ class _RequestEditorState extends State<RequestEditor> {
                   isScrollable: true,
                   tabAlignment: TabAlignment.start,
                   labelStyle: const TextStyle(
-                      fontSize: 13, fontWeight: FontWeight.w600),
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                  ),
                   tabs: [
                     Tab(text: _counted('Params', req.params)),
                     Tab(text: _counted('Headers', req.headers)),
                     Tab(
-                        text: req.bodyType == BodyType.none
-                            ? 'Body'
-                            : 'Body • ${req.bodyType.label}'),
+                      text: req.bodyType == BodyType.none
+                          ? 'Body'
+                          : 'Body • ${req.bodyType.label}',
+                    ),
                     Tab(
-                        text: req.authType == AuthType.none
-                            ? 'Auth'
-                            : 'Auth • ${req.authType.label}'),
+                      text: req.authType == AuthType.none
+                          ? 'Auth'
+                          : 'Auth • ${req.authType.label}',
+                    ),
                     Tab(
-                        text: req.assertions.where((a) => a.enabled).isEmpty
-                            ? 'Tests'
-                            : 'Tests (${req.assertions.where((a) => a.enabled).length})'),
+                      text: req.assertions.where((a) => a.enabled).isEmpty
+                          ? 'Tests'
+                          : 'Tests (${req.assertions.where((a) => a.enabled).length})',
+                    ),
                   ],
                 ),
                 Expanded(
@@ -110,6 +121,14 @@ class _RequestEditorState extends State<RequestEditor> {
         ),
       ],
     );
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (constraints.maxHeight >= 280) return editor;
+        return SingleChildScrollView(
+          child: SizedBox(height: 360, child: editor),
+        );
+      },
+    );
   }
 
   String _counted(String label, List<KV> rows) {
@@ -121,93 +140,137 @@ class _RequestEditorState extends State<RequestEditor> {
 
   Widget _urlBar(AppState state) {
     final loading = widget.tab.loading;
-    return Row(
-      children: [
-        Container(
-          decoration: BoxDecoration(
-            color: Palette.surfaceAlt,
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: Palette.border),
+    final compact = MediaQuery.sizeOf(context).width < 600;
+    final methodPicker = Container(
+      decoration: BoxDecoration(
+        color: Palette.surfaceAlt,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Palette.border),
+      ),
+      child: DropdownButtonHideUnderline(
+        child: DropdownButton<String>(
+          value: req.method,
+          padding: const EdgeInsets.symmetric(horizontal: 10),
+          borderRadius: BorderRadius.circular(8),
+          style: TextStyle(
+            fontWeight: FontWeight.w700,
+            fontSize: 13,
+            color: methodColor(req.method),
           ),
-          child: DropdownButtonHideUnderline(
-            child: DropdownButton<String>(
-              value: req.method,
-              padding: const EdgeInsets.symmetric(horizontal: 10),
-              borderRadius: BorderRadius.circular(8),
-              style: TextStyle(
-                fontWeight: FontWeight.w700,
-                fontSize: 13,
-                color: methodColor(req.method),
-              ),
-              items: [
-                for (final m in httpMethods)
-                  DropdownMenuItem(
-                    value: m,
-                    child: Text(m,
-                        style: TextStyle(
-                            color: methodColor(m),
-                            fontWeight: FontWeight.w700)),
+          items: [
+            for (final m in httpMethods)
+              DropdownMenuItem(
+                value: m,
+                child: Text(
+                  m,
+                  style: TextStyle(
+                    color: methodColor(m),
+                    fontWeight: FontWeight.w700,
                   ),
-              ],
-              onChanged: (m) {
-                if (m != null) {
-                  req.method = m;
-                  _touch();
-                }
-              },
+                ),
+              ),
+          ],
+          onChanged: (m) {
+            if (m != null) {
+              req.method = m;
+              _touch();
+            }
+          },
+        ),
+      ),
+    );
+    final urlField = TextField(
+      controller: _urlCtrl,
+      keyboardType: TextInputType.url,
+      autocorrect: false,
+      enableSuggestions: false,
+      textInputAction: TextInputAction.go,
+      style: const TextStyle(fontSize: 13.5, fontFamily: 'monospace'),
+      decoration: const InputDecoration(
+        hintText: 'https://api.example.com/v1/users  —  {{vars}} allowed',
+      ),
+      onChanged: (v) {
+        req.url = v;
+        _touch();
+      },
+      onSubmitted: (_) => _send(state),
+    );
+    final sendButton = FilledButton.icon(
+      style: FilledButton.styleFrom(
+        backgroundColor: loading ? Palette.delete : Palette.accent,
+        foregroundColor: Colors.white,
+        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+      ),
+      onPressed: loading ? state.cancelActive : () => _send(state),
+      icon: Icon(loading ? Icons.stop : Icons.send, size: 16),
+      label: Text(loading ? 'Cancel' : 'Send'),
+    );
+    final moreButton = PopupMenuButton<String>(
+      tooltip: 'More',
+      icon: const Icon(Icons.more_vert, color: Palette.textDim),
+      onSelected: (v) => switch (v) {
+        'save' => _saveDialog(state),
+        'run' => Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder: (_) => RunnerScreen(
+              title: req.name == 'Untitled request' && req.url.isNotEmpty
+                  ? req.url
+                  : req.name,
+              requests: [req.clone()],
             ),
           ),
         ),
-        const SizedBox(width: 8),
-        Expanded(
-          child: TextField(
-            controller: _urlCtrl,
-            style: const TextStyle(fontSize: 13.5, fontFamily: 'monospace'),
-            decoration: const InputDecoration(
-                hintText: 'https://api.example.com/v1/users  —  {{vars}} allowed'),
-            onChanged: (v) {
-              req.url = v;
-              _touch();
-            },
-            onSubmitted: (_) => state.sendActive(),
+        'load' => Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder: (_) => LoadTestScreen(
+              title: req.name == 'Untitled request' && req.url.isNotEmpty
+                  ? req.url
+                  : req.name,
+              requests: [req.clone()],
+            ),
           ),
         ),
-        const SizedBox(width: 8),
-        FilledButton.icon(
-          style: FilledButton.styleFrom(
-            backgroundColor: loading ? Palette.delete : Palette.accent,
-            foregroundColor: Colors.white,
-            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
-          ),
-          onPressed: loading ? state.cancelActive : state.sendActive,
-          icon: Icon(loading ? Icons.stop : Icons.send, size: 16),
-          label: Text(loading ? 'Cancel' : 'Send'),
+        'copy_curl' => _copyCurl(),
+        'import_curl' => _importCurl(state),
+        _ => null,
+      },
+      itemBuilder: (_) => const [
+        PopupMenuItem(value: 'save', child: Text('Save to collection…')),
+        PopupMenuItem(
+          value: 'run',
+          child: Text('Run repeatedly / on interval…'),
         ),
-        const SizedBox(width: 4),
-        PopupMenuButton<String>(
-          tooltip: 'More',
-          icon: const Icon(Icons.more_vert, color: Palette.textDim),
-          onSelected: (v) => switch (v) {
-            'save' => _saveDialog(state),
-            'run' => Navigator.of(context).push(MaterialPageRoute<void>(
-                  builder: (_) => RunnerScreen(
-                      title: req.name == 'Untitled request' && req.url.isNotEmpty
-                          ? req.url
-                          : req.name,
-                      requests: [req.clone()]),
-                )),
-            'copy_curl' => _copyCurl(),
-            'import_curl' => _importCurl(state),
-            _ => null,
-          },
-          itemBuilder: (_) => const [
-            PopupMenuItem(value: 'save', child: Text('Save to collection…')),
-            PopupMenuItem(
-                value: 'run', child: Text('Run repeatedly / on interval…')),
-            PopupMenuItem(value: 'copy_curl', child: Text('Copy as cURL')),
-            PopupMenuItem(value: 'import_curl', child: Text('Import cURL…')),
-          ],
+        PopupMenuItem(
+          value: 'load',
+          child: Text('Load test (parallel calls)…'),
         ),
+        PopupMenuItem(value: 'copy_curl', child: Text('Copy as cURL')),
+        PopupMenuItem(value: 'import_curl', child: Text('Import cURL…')),
+      ],
+    );
+    if (!compact) {
+      return Row(
+        children: [
+          methodPicker,
+          const SizedBox(width: 8),
+          Expanded(child: urlField),
+          const SizedBox(width: 8),
+          sendButton,
+          const SizedBox(width: 4),
+          moreButton,
+        ],
+      );
+    }
+    return Column(
+      children: [
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: [methodPicker, sendButton, moreButton],
+        ),
+        const SizedBox(height: 10),
+        SizedBox(width: double.infinity, child: urlField),
       ],
     );
   }
@@ -215,7 +278,8 @@ class _RequestEditorState extends State<RequestEditor> {
   void _copyCurl() {
     Clipboard.setData(ClipboardData(text: curl.toCurl(req)));
     ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('cURL command copied to clipboard')));
+      const SnackBar(content: Text('cURL command copied to clipboard')),
+    );
   }
 
   Future<void> _importCurl(AppState state) async {
@@ -231,25 +295,31 @@ class _RequestEditorState extends State<RequestEditor> {
             maxLines: 8,
             autofocus: true,
             style: const TextStyle(fontFamily: 'monospace', fontSize: 12.5),
-            decoration:
-                const InputDecoration(hintText: "curl -X POST 'https://…'"),
+            decoration: const InputDecoration(
+              hintText: "curl -X POST 'https://…'",
+            ),
           ),
         ),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('Cancel')),
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
           FilledButton(
-              onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('Import')),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Import'),
+          ),
         ],
       ),
     );
+    final input = ctrl.text;
+    ctrl.dispose();
     if (ok != true || !mounted) return;
-    final parsed = curl.fromCurl(ctrl.text);
+    final parsed = curl.fromCurl(input);
     if (parsed == null) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('Could not parse that cURL command.')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not parse that cURL command.')),
+      );
       return;
     }
     state.newTab(parsed);
@@ -258,7 +328,8 @@ class _RequestEditorState extends State<RequestEditor> {
   Future<void> _saveDialog(AppState state) async {
     final nameCtrl = TextEditingController(text: req.name);
     final newColCtrl = TextEditingController();
-    String? selectedId = widget.tab.sourceCollectionId ??
+    String? selectedId =
+        widget.tab.sourceCollectionId ??
         (state.collections.isNotEmpty ? state.collections.first.id : null);
 
     final ok = await showDialog<bool>(
@@ -275,15 +346,13 @@ class _RequestEditorState extends State<RequestEditor> {
                 TextField(
                   controller: nameCtrl,
                   autofocus: true,
-                  decoration:
-                      const InputDecoration(labelText: 'Request name'),
+                  decoration: const InputDecoration(labelText: 'Request name'),
                 ),
                 const SizedBox(height: 16),
                 if (state.collections.isNotEmpty) ...[
                   DropdownButtonFormField<String>(
                     initialValue: selectedId,
-                    decoration:
-                        const InputDecoration(labelText: 'Collection'),
+                    decoration: const InputDecoration(labelText: 'Collection'),
                     items: [
                       for (final c in state.collections)
                         DropdownMenuItem(value: c.id, child: Text(c.name)),
@@ -305,30 +374,37 @@ class _RequestEditorState extends State<RequestEditor> {
           ),
           actions: [
             TextButton(
-                onPressed: () => Navigator.pop(ctx, false),
-                child: const Text('Cancel')),
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel'),
+            ),
             FilledButton(
-                onPressed: () => Navigator.pop(ctx, true),
-                child: const Text('Save')),
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Save'),
+            ),
           ],
         ),
       ),
     );
-    if (ok != true) return;
+    final collectionName = newColCtrl.text.trim();
+    final requestName = nameCtrl.text.trim();
+    nameCtrl.dispose();
+    newColCtrl.dispose();
+    if (ok != true || !mounted) return;
 
     CollectionModel? target;
-    if (newColCtrl.text.trim().isNotEmpty) {
-      target = state.addCollection(newColCtrl.text.trim());
+    if (collectionName.isNotEmpty) {
+      target = state.addCollection(collectionName);
     } else {
       for (final c in state.collections) {
         if (c.id == selectedId) target = c;
       }
     }
     if (target == null) return;
-    state.saveActiveTo(target, name: nameCtrl.text.trim());
+    state.saveActiveTo(target, name: requestName);
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Saved to "${target.name}"')));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Saved to "${target.name}"')));
     }
   }
 
@@ -348,8 +424,10 @@ class _RequestEditorState extends State<RequestEditor> {
                   children: [
                     for (final t in BodyType.values)
                       ChoiceChip(
-                        label: Text(t.label,
-                            style: const TextStyle(fontSize: 12)),
+                        label: Text(
+                          t.label,
+                          style: const TextStyle(fontSize: 12),
+                        ),
                         selected: req.bodyType == t,
                         visualDensity: VisualDensity.compact,
                         onSelected: (_) {
@@ -371,77 +449,85 @@ class _RequestEditorState extends State<RequestEditor> {
         Expanded(
           child: switch (req.bodyType) {
             BodyType.none => const Center(
-                child: Text('This request has no body',
-                    style: TextStyle(color: Palette.textDim))),
+              child: Text(
+                'This request has no body',
+                style: TextStyle(color: Palette.textDim),
+              ),
+            ),
             BodyType.formUrlEncoded => KVEditor(
-                rows: req.formFields,
-                onChanged: _touch,
-                keyHint: 'Field',
-                addLabel: 'Add field',
-              ),
+              rows: req.formFields,
+              onChanged: _touch,
+              keyHint: 'Field',
+              addLabel: 'Add field',
+            ),
             BodyType.graphql => Padding(
-                padding: const EdgeInsets.all(12),
-                child: Column(
-                  children: [
-                    Expanded(
-                      flex: 3,
-                      child: TextField(
-                        controller: _bodyCtrl,
-                        maxLines: null,
-                        expands: true,
-                        textAlignVertical: TextAlignVertical.top,
-                        style: const TextStyle(
-                            fontFamily: 'monospace', fontSize: 13),
-                        decoration: const InputDecoration(
-                            hintText:
-                                'query Users(\$limit: Int) {\n  users(limit: \$limit) { id name }\n}'),
-                        onChanged: (v) {
-                          req.body = v;
-                          _touch();
-                        },
+              padding: const EdgeInsets.all(12),
+              child: Column(
+                children: [
+                  Expanded(
+                    flex: 3,
+                    child: TextField(
+                      controller: _bodyCtrl,
+                      maxLines: null,
+                      expands: true,
+                      textAlignVertical: TextAlignVertical.top,
+                      style: const TextStyle(
+                        fontFamily: 'monospace',
+                        fontSize: 13,
                       ),
-                    ),
-                    const SizedBox(height: 8),
-                    Expanded(
-                      flex: 2,
-                      child: TextField(
-                        controller: _gqlVarsCtrl,
-                        maxLines: null,
-                        expands: true,
-                        textAlignVertical: TextAlignVertical.top,
-                        style: const TextStyle(
-                            fontFamily: 'monospace', fontSize: 13),
-                        decoration: const InputDecoration(
-                            hintText: 'Variables (JSON): {"limit": 10}'),
-                        onChanged: (v) {
-                          req.graphqlVariables = v;
-                          _touch();
-                        },
+                      decoration: const InputDecoration(
+                        hintText:
+                            'query Users(\$limit: Int) {\n  users(limit: \$limit) { id name }\n}',
                       ),
+                      onChanged: (v) {
+                        req.body = v;
+                        _touch();
+                      },
                     ),
-                  ],
-                ),
-              ),
-            _ => Padding(
-                padding: const EdgeInsets.all(12),
-                child: TextField(
-                  controller: _bodyCtrl,
-                  maxLines: null,
-                  expands: true,
-                  textAlignVertical: TextAlignVertical.top,
-                  style:
-                      const TextStyle(fontFamily: 'monospace', fontSize: 13),
-                  decoration: InputDecoration(
-                    hintText: req.bodyType == BodyType.json
-                        ? '{\n  "key": "value"\n}'
-                        : 'Raw request body',
                   ),
-                  onChanged: (v) {
-                    req.body = v;
-                    _touch();
-                  },
-                ),
+                  const SizedBox(height: 8),
+                  Expanded(
+                    flex: 2,
+                    child: TextField(
+                      controller: _gqlVarsCtrl,
+                      maxLines: null,
+                      expands: true,
+                      textAlignVertical: TextAlignVertical.top,
+                      style: const TextStyle(
+                        fontFamily: 'monospace',
+                        fontSize: 13,
+                      ),
+                      decoration: const InputDecoration(
+                        hintText: 'Variables (JSON): {"limit": 10}',
+                      ),
+                      onChanged: (v) {
+                        req.graphqlVariables = v;
+                        _touch();
+                      },
+                    ),
+                  ),
+                ],
               ),
+            ),
+            _ => Padding(
+              padding: const EdgeInsets.all(12),
+              child: TextField(
+                controller: _bodyCtrl,
+                maxLines: null,
+                expands: true,
+                textAlignVertical: TextAlignVertical.top,
+                style: const TextStyle(fontFamily: 'monospace', fontSize: 13),
+                decoration: InputDecoration(
+                  hintText: req.bodyType == BodyType.json
+                      ? '{\n  "key": "value"\n}'
+                      : 'Raw request body',
+                ),
+                onChanged: (v) {
+                  req.body = v;
+                  _touch();
+                },
+              ),
+            ),
           },
         ),
       ],
@@ -451,8 +537,9 @@ class _RequestEditorState extends State<RequestEditor> {
   void _beautifyJson() {
     final pretty = _tryFormat(req.body);
     if (pretty == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Body is not valid JSON')));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Body is not valid JSON')));
       return;
     }
     setState(() {
@@ -488,39 +575,51 @@ class _RequestEditorState extends State<RequestEditor> {
         const SizedBox(height: 16),
         ...switch (req.authType) {
           AuthType.none => [
-              const Text('No authentication will be applied.',
-                  style: TextStyle(color: Palette.textDim)),
-            ],
+            const Text(
+              'No authentication will be applied.',
+              style: TextStyle(color: Palette.textDim),
+            ),
+          ],
           AuthType.bearer => [
-              _authField('Token', req.bearerToken, (v) => req.bearerToken = v,
-                  obscure: true),
-            ],
+            _authField(
+              'Token',
+              req.bearerToken,
+              (v) => req.bearerToken = v,
+              obscure: true,
+            ),
+          ],
           AuthType.basic => [
-              _authField('Username', req.basicUser, (v) => req.basicUser = v),
-              const SizedBox(height: 12),
-              _authField(
-                  'Password', req.basicPassword, (v) => req.basicPassword = v,
-                  obscure: true),
-            ],
+            _authField('Username', req.basicUser, (v) => req.basicUser = v),
+            const SizedBox(height: 12),
+            _authField(
+              'Password',
+              req.basicPassword,
+              (v) => req.basicPassword = v,
+              obscure: true,
+            ),
+          ],
           AuthType.apiKey => [
-              _authField(
-                  'Key name', req.apiKeyName, (v) => req.apiKeyName = v),
-              const SizedBox(height: 12),
-              _authField('Value', req.apiKeyValue, (v) => req.apiKeyValue = v,
-                  obscure: true),
-              const SizedBox(height: 12),
-              SegmentedButton<bool>(
-                segments: const [
-                  ButtonSegment(value: true, label: Text('Header')),
-                  ButtonSegment(value: false, label: Text('Query param')),
-                ],
-                selected: {req.apiKeyInHeader},
-                onSelectionChanged: (s) {
-                  setState(() => req.apiKeyInHeader = s.first);
-                  _touch();
-                },
-              ),
-            ],
+            _authField('Key name', req.apiKeyName, (v) => req.apiKeyName = v),
+            const SizedBox(height: 12),
+            _authField(
+              'Value',
+              req.apiKeyValue,
+              (v) => req.apiKeyValue = v,
+              obscure: true,
+            ),
+            const SizedBox(height: 12),
+            SegmentedButton<bool>(
+              segments: const [
+                ButtonSegment(value: true, label: Text('Header')),
+                ButtonSegment(value: false, label: Text('Query param')),
+              ],
+              selected: {req.apiKeyInHeader},
+              onSelectionChanged: (s) {
+                setState(() => req.apiKeyInHeader = s.first);
+                _touch();
+              },
+            ),
+          ],
         },
       ],
     );
@@ -560,89 +659,103 @@ class _RequestEditorState extends State<RequestEditor> {
   Widget _assertionRow(AssertionModel a) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
-      child: Row(
-        children: [
-          Checkbox(
-            value: a.enabled,
-            visualDensity: VisualDensity.compact,
-            onChanged: (v) {
-              setState(() => a.enabled = v ?? true);
-              _touch();
-            },
-          ),
-          SizedBox(
-            width: 180,
-            child: DropdownButtonFormField<AssertKind>(
-              initialValue: a.kind,
-              style: const TextStyle(fontSize: 12.5, color: Palette.text),
-              items: [
-                for (final k in AssertKind.values)
-                  DropdownMenuItem(value: k, child: Text(k.label)),
-              ],
-              onChanged: (k) {
-                if (k != null) {
-                  setState(() => a.kind = k);
-                  _touch();
-                }
-              },
-            ),
-          ),
-          const SizedBox(width: 8),
-          if (a.kind.hasTarget) ...[
-            Expanded(
-              flex: 2,
-              child: TextFormField(
-                key: ValueKey('t-${a.hashCode}'),
-                initialValue: a.target,
-                style: const TextStyle(fontSize: 13, fontFamily: 'monospace'),
-                decoration: InputDecoration(
-                  hintText: a.kind == AssertKind.jsonEquals
-                      ? 'JSON path'
-                      : 'Header name',
-                ),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: SizedBox(
+          width: (MediaQuery.sizeOf(context).width - 48).clamp(600.0, 1000.0),
+          child: Row(
+            children: [
+              Checkbox(
+                value: a.enabled,
+                visualDensity: VisualDensity.compact,
                 onChanged: (v) {
-                  a.target = v;
+                  setState(() => a.enabled = v ?? true);
                   _touch();
                 },
               ),
-            ),
-            const SizedBox(width: 8),
-          ],
-          Expanded(
-            flex: 2,
-            child: TextFormField(
-              key: ValueKey('x-${a.hashCode}'),
-              initialValue: a.expected,
-              style: const TextStyle(fontSize: 13, fontFamily: 'monospace'),
-              decoration: InputDecoration(
-                hintText: switch (a.kind) {
-                  AssertKind.statusEquals => '200',
-                  AssertKind.timeBelow => '1500',
-                  AssertKind.headerContains => 'value (empty = just exists)',
-                  _ => 'Expected value',
+              SizedBox(
+                width: 180,
+                child: DropdownButtonFormField<AssertKind>(
+                  initialValue: a.kind,
+                  style: const TextStyle(fontSize: 12.5, color: Palette.text),
+                  items: [
+                    for (final k in AssertKind.values)
+                      DropdownMenuItem(value: k, child: Text(k.label)),
+                  ],
+                  onChanged: (k) {
+                    if (k != null) {
+                      setState(() => a.kind = k);
+                      _touch();
+                    }
+                  },
+                ),
+              ),
+              const SizedBox(width: 8),
+              if (a.kind.hasTarget) ...[
+                Expanded(
+                  flex: 2,
+                  child: TextFormField(
+                    key: ValueKey('t-${a.hashCode}'),
+                    initialValue: a.target,
+                    style: const TextStyle(
+                      fontSize: 13,
+                      fontFamily: 'monospace',
+                    ),
+                    decoration: InputDecoration(
+                      hintText: a.kind == AssertKind.jsonEquals
+                          ? 'JSON path'
+                          : 'Header name',
+                    ),
+                    onChanged: (v) {
+                      a.target = v;
+                      _touch();
+                    },
+                  ),
+                ),
+                const SizedBox(width: 8),
+              ],
+              Expanded(
+                flex: 2,
+                child: TextFormField(
+                  key: ValueKey('x-${a.hashCode}'),
+                  initialValue: a.expected,
+                  style: const TextStyle(fontSize: 13, fontFamily: 'monospace'),
+                  decoration: InputDecoration(
+                    hintText: switch (a.kind) {
+                      AssertKind.statusEquals => '200',
+                      AssertKind.timeBelow => '1500',
+                      AssertKind.headerContains =>
+                        'value (empty = just exists)',
+                      _ => 'Expected value',
+                    },
+                  ),
+                  onChanged: (v) {
+                    a.expected = v;
+                    _touch();
+                  },
+                ),
+              ),
+              IconButton(
+                tooltip: 'Remove test',
+                icon: const Icon(Icons.close, size: 16, color: Palette.textDim),
+                onPressed: () {
+                  setState(() => req.assertions.remove(a));
+                  _touch();
                 },
               ),
-              onChanged: (v) {
-                a.expected = v;
-                _touch();
-              },
-            ),
+            ],
           ),
-          IconButton(
-            tooltip: 'Remove test',
-            icon: const Icon(Icons.close, size: 16, color: Palette.textDim),
-            onPressed: () {
-              setState(() => req.assertions.remove(a));
-              _touch();
-            },
-          ),
-        ],
+        ),
       ),
     );
   }
 
-  Widget _authField(String label, String value, ValueChanged<String> onChanged,
-      {bool obscure = false}) {
+  Widget _authField(
+    String label,
+    String value,
+    ValueChanged<String> onChanged, {
+    bool obscure = false,
+  }) {
     return SizedBox(
       width: 420,
       child: TextFormField(

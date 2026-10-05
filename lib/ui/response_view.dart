@@ -24,12 +24,12 @@ class ResponseView extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             SizedBox(
-                width: 28,
-                height: 28,
-                child: CircularProgressIndicator(strokeWidth: 2.5)),
+              width: 28,
+              height: 28,
+              child: CircularProgressIndicator(strokeWidth: 2.5),
+            ),
             SizedBox(height: 14),
-            Text('Sending request…',
-                style: TextStyle(color: Palette.textDim)),
+            Text('Sending request…', style: TextStyle(color: Palette.textDim)),
           ],
         ),
       );
@@ -42,8 +42,10 @@ class ResponseView extends StatelessWidget {
           children: [
             Icon(Icons.bolt_outlined, size: 42, color: Palette.border),
             SizedBox(height: 10),
-            Text('Hit Send to see the response here',
-                style: TextStyle(color: Palette.textDim)),
+            Text(
+              'Hit Send to see the response here',
+              style: TextStyle(color: Palette.textDim),
+            ),
           ],
         ),
       );
@@ -57,22 +59,26 @@ class ResponseView extends StatelessWidget {
           decoration: BoxDecoration(
             color: Palette.delete.withValues(alpha: 0.08),
             borderRadius: BorderRadius.circular(12),
-            border:
-                Border.all(color: Palette.delete.withValues(alpha: 0.4)),
+            border: Border.all(color: Palette.delete.withValues(alpha: 0.4)),
           ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
               const Icon(Icons.error_outline, color: Palette.delete, size: 30),
               const SizedBox(height: 10),
-              SelectableText(res.error!,
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(color: Palette.text, height: 1.4)),
+              SelectableText(
+                res.error!,
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: Palette.text, height: 1.4),
+              ),
             ],
           ),
         ),
       );
     }
+    final preview = res.previewTruncated
+        ? '${res.bodyPreview}\n\n[Preview limited to 64 KB. Copy or export for the full body.]'
+        : res.bodyPreview;
     final tests = tab.assertionResults;
     final testsPassed = tests.where((t) => t.pass).length;
     return DefaultTabController(
@@ -84,8 +90,10 @@ class ResponseView extends StatelessWidget {
           TabBar(
             isScrollable: true,
             tabAlignment: TabAlignment.start,
-            labelStyle:
-                const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+            labelStyle: const TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+            ),
             tabs: [
               const Tab(text: 'Pretty'),
               const Tab(text: 'Raw'),
@@ -93,26 +101,32 @@ class ResponseView extends StatelessWidget {
               Tab(
                 child: tests.isEmpty
                     ? const Text('Tests')
-                    : Text('Tests ($testsPassed/${tests.length})',
+                    : Text(
+                        'Tests ($testsPassed/${tests.length})',
                         style: TextStyle(
-                            color: testsPassed == tests.length
-                                ? Palette.get_
-                                : Palette.delete)),
+                          color: testsPassed == tests.length
+                              ? Palette.get_
+                              : Palette.delete,
+                        ),
+                      ),
               ),
             ],
           ),
           Expanded(
             child: TabBarView(
               children: [
-                _scroll(JsonView(text: res.bodyText)),
-                _scroll(SelectableText(
-                  res.bodyText.isEmpty ? '(empty body)' : res.bodyText,
-                  style: const TextStyle(
+                _scroll(JsonView(text: preview)),
+                _scroll(
+                  SelectableText(
+                    preview.isEmpty ? '(empty body)' : preview,
+                    style: const TextStyle(
                       fontFamily: 'monospace',
                       fontSize: 13,
                       height: 1.5,
-                      color: Palette.text),
-                )),
+                      color: Palette.text,
+                    ),
+                  ),
+                ),
                 _headersTable(res),
                 _testsList(tests),
               ],
@@ -144,8 +158,11 @@ class ResponseView extends StatelessWidget {
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Icon(t.pass ? Icons.check_circle : Icons.cancel,
-                  size: 17, color: color),
+              Icon(
+                t.pass ? Icons.check_circle : Icons.cancel,
+                size: 17,
+                color: color,
+              ),
               const SizedBox(width: 8),
               Expanded(
                 child: Column(
@@ -155,10 +172,14 @@ class ResponseView extends StatelessWidget {
                       '${t.assertion.kind.label}'
                       '${t.assertion.kind.hasTarget ? ' • ${t.assertion.target}' : ''}',
                       style: const TextStyle(
-                          fontSize: 13, fontWeight: FontWeight.w600),
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
-                    Text(t.message,
-                        style: TextStyle(fontSize: 12, color: color)),
+                    Text(
+                      t.message,
+                      style: TextStyle(fontSize: 12, color: color),
+                    ),
                   ],
                 ),
               ),
@@ -170,28 +191,28 @@ class ResponseView extends StatelessWidget {
   }
 
   Widget _scroll(Widget child) => SingleChildScrollView(
-        padding: const EdgeInsets.all(14),
-        child: Align(alignment: Alignment.topLeft, child: child),
-      );
+    padding: const EdgeInsets.all(14),
+    child: Align(alignment: Alignment.topLeft, child: child),
+  );
 
   Widget _statusBar(BuildContext context, ResponseData res) {
     final color = statusColor(res.statusCode);
     final fun = context.watch<AppState>().settings.chaosMode;
     return Padding(
       padding: const EdgeInsets.fromLTRB(14, 12, 8, 6),
-      child: Row(
+      child: Wrap(
+        spacing: 8,
+        runSpacing: 8,
+        crossAxisAlignment: WrapCrossAlignment.center,
         children: [
           if (fun) ...[
-            Text(
-              switch (res.statusCode) {
-                >= 200 && < 300 => '🎉',
-                >= 300 && < 400 => '↪️',
-                >= 400 && < 500 => '🤦',
-                >= 500 => '🔥',
-                _ => '🚨',
-              },
-              style: const TextStyle(fontSize: 15),
-            ),
+            Text(switch (res.statusCode) {
+              >= 200 && < 300 => '🎉',
+              >= 300 && < 400 => '↪️',
+              >= 400 && < 500 => '🤦',
+              >= 500 => '🔥',
+              _ => '🚨',
+            }, style: const TextStyle(fontSize: 15)),
             const SizedBox(width: 8),
           ],
           Container(
@@ -204,7 +225,10 @@ class ResponseView extends StatelessWidget {
               '${res.statusCode}'
               '${res.statusMessage.isNotEmpty ? ' ${res.statusMessage}' : ''}',
               style: TextStyle(
-                  color: color, fontWeight: FontWeight.w700, fontSize: 12.5),
+                color: color,
+                fontWeight: FontWeight.w700,
+                fontSize: 12.5,
+              ),
             ),
           ),
           if (res.protocol != null) ...[
@@ -212,8 +236,7 @@ class ResponseView extends StatelessWidget {
             Tooltip(
               message: 'Negotiated HTTP version',
               child: Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
                 decoration: BoxDecoration(
                   color: Palette.query.withValues(alpha: 0.14),
                   borderRadius: BorderRadius.circular(6),
@@ -221,9 +244,10 @@ class ResponseView extends StatelessWidget {
                 child: Text(
                   'HTTP/${res.protocol}',
                   style: const TextStyle(
-                      color: Palette.query,
-                      fontWeight: FontWeight.w700,
-                      fontSize: 11.5),
+                    color: Palette.query,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 11.5,
+                  ),
                 ),
               ),
             ),
@@ -232,11 +256,14 @@ class ResponseView extends StatelessWidget {
           _metric(Icons.timer_outlined, _fmtDuration(res.durationMs)),
           const SizedBox(width: 12),
           _metric(Icons.straighten, _fmtSize(res.sizeBytes)),
-          const Spacer(),
+
           IconButton(
             tooltip: 'Save request + response as Markdown doc',
-            icon: const Icon(Icons.description_outlined,
-                size: 16, color: Palette.textDim),
+            icon: const Icon(
+              Icons.description_outlined,
+              size: 16,
+              color: Palette.textDim,
+            ),
             onPressed: () => _saveDoc(context, res),
           ),
           IconButton(
@@ -244,8 +271,11 @@ class ResponseView extends StatelessWidget {
             icon: const Icon(Icons.copy, size: 16, color: Palette.textDim),
             onPressed: () {
               Clipboard.setData(ClipboardData(text: res.bodyText));
-              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-                  content: Text('Response body copied to clipboard')));
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Response body copied to clipboard'),
+                ),
+              );
             },
           ),
         ],
@@ -266,26 +296,34 @@ class ResponseView extends StatelessWidget {
         bytes: utf8.encode(md),
       );
       if (path != null && context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
             content: Text(
-                'Documentation saved (auth tokens are masked automatically).')));
+              'Documentation saved (auth tokens are masked automatically).',
+            ),
+          ),
+        );
       }
     } catch (e) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('Could not save doc: $e')));
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Could not save doc: $e')));
       }
     }
   }
 
   Widget _metric(IconData icon, String text) => Row(
-        children: [
-          Icon(icon, size: 14, color: Palette.textDim),
-          const SizedBox(width: 4),
-          Text(text,
-              style: const TextStyle(color: Palette.textDim, fontSize: 12.5)),
-        ],
-      );
+    mainAxisSize: MainAxisSize.min,
+    children: [
+      Icon(icon, size: 14, color: Palette.textDim),
+      const SizedBox(width: 4),
+      Text(
+        text,
+        style: const TextStyle(color: Palette.textDim, fontSize: 12.5),
+      ),
+    ],
+  );
 
   Widget _headersTable(ResponseData res) {
     final entries = res.headers.entries.toList()
@@ -300,20 +338,26 @@ class ResponseView extends StatelessWidget {
         return Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            SizedBox(
-              width: 220,
-              child: SelectableText(e.key,
-                  style: const TextStyle(
-                      color: Palette.put,
-                      fontFamily: 'monospace',
-                      fontSize: 12.5)),
+            Expanded(
+              flex: 2,
+              child: SelectableText(
+                e.key,
+                style: const TextStyle(
+                  color: Palette.put,
+                  fontFamily: 'monospace',
+                  fontSize: 12.5,
+                ),
+              ),
             ),
             Expanded(
-              child: SelectableText(e.value.join('\n'),
-                  style: const TextStyle(
-                      color: Palette.text,
-                      fontFamily: 'monospace',
-                      fontSize: 12.5)),
+              child: SelectableText(
+                e.value.join('\n'),
+                style: const TextStyle(
+                  color: Palette.text,
+                  fontFamily: 'monospace',
+                  fontSize: 12.5,
+                ),
+              ),
             ),
           ],
         );

@@ -16,9 +16,10 @@ void main() {
       authType: AuthType.bearer,
       bearerToken: 'abc',
     );
-    final res = await svc.send(req,
-        {'base': 'https://postman-echo.com', 'term': 'hello'},
-        tabId: 't1');
+    final res = await svc.send(req, {
+      'base': 'https://postman-echo.com',
+      'term': 'hello',
+    }, tabId: 't1');
     expect(res.error, isNull);
     expect(res.statusCode, 200);
     final body = jsonDecode(res.bodyText) as Map<String, dynamic>;
@@ -57,7 +58,10 @@ void main() {
       assertions: [
         AssertionModel(kind: AssertKind.statusEquals, expected: '200'),
         AssertionModel(
-            kind: AssertKind.jsonEquals, target: 'args.v', expected: '1'),
+          kind: AssertKind.jsonEquals,
+          target: 'args.v',
+          expected: '1',
+        ),
       ],
     );
     await runner.start(requests: [req], vars: {}, iterations: 2);
@@ -96,6 +100,11 @@ void main() {
       params: [KV(key: 'rid', value: '{{rid}}')],
       assertions: [
         AssertionModel(kind: AssertKind.statusEquals, expected: '200'),
+        AssertionModel(
+          kind: AssertKind.jsonEquals,
+          target: 'args.rid',
+          expected: 'alpha',
+        ),
       ],
     );
     await runner.start(
@@ -107,9 +116,12 @@ void main() {
       ],
     );
     expect(runner.results.length, 2); // iterations follow the data rows
-    expect(runner.passed, 2);
-    expect(runner.results[0].response.bodyText, contains('alpha'));
-    expect(runner.results[1].response.bodyText, contains('beta'));
+    // Assert on evaluated outcomes: runner deliberately releases raw bodies.
+    expect(runner.passed, 1);
+    expect(runner.results[0].assertions.last.pass, isTrue);
+    expect(runner.results[1].assertions.last.message, contains('got "beta"'));
+    expect(runner.results.every((r) => r.response.bodyBytes.isEmpty), isTrue);
+    runner.dispose();
   });
 
   test('live GraphQL body posts query + variables JSON envelope', () async {
@@ -129,17 +141,19 @@ void main() {
     expect(echoed['variables'], {'limit': 7});
   });
 
-  test('invalid GraphQL variables produce a readable error, no crash',
-      () async {
-    final svc = HttpService();
-    final req = RequestModel(
-      method: 'POST',
-      url: 'https://postman-echo.com/post',
-      bodyType: BodyType.graphql,
-      body: 'query {}',
-      graphqlVariables: '{not json',
-    );
-    final res = await svc.send(req, {}, tabId: 'gql2');
-    expect(res.error, contains('GraphQL variables'));
-  });
+  test(
+    'invalid GraphQL variables produce a readable error, no crash',
+    () async {
+      final svc = HttpService();
+      final req = RequestModel(
+        method: 'POST',
+        url: 'https://postman-echo.com/post',
+        bodyType: BodyType.graphql,
+        body: 'query {}',
+        graphqlVariables: '{not json',
+      );
+      final res = await svc.send(req, {}, tabId: 'gql2');
+      expect(res.error, contains('GraphQL variables'));
+    },
+  );
 }

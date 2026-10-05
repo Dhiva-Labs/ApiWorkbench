@@ -1,0 +1,47 @@
+name: apiworkbench
+title: ApiWorkbench
+version: '1.1.0'
+summary: Cross-platform API client for building and testing HTTP requests
+description: |
+  ApiWorkbench is a fast, keyboard-friendly API client in the spirit of
+  Postman: request tabs, a full request builder (all HTTP methods, query
+  params, headers, JSON / XML / form / GraphQL bodies), auth helpers,
+  environments with {{variables}}, collections, request history, response
+  assertions, and a collection runner with recurring interval runs for
+  endpoint monitoring.
+
+  Published by Dhiva-Labs.
+license: MIT
+website: https://github.com/Dhiva-Labs/ApiWorkbench
+contact: dhivakar1010@gmail.com
+source-code: https://github.com/Dhiva-Labs/ApiWorkbench
+issues: https://github.com/Dhiva-Labs/ApiWorkbench/issues
+
+grade: stable
+confinement: strict
+base: core22
+compression: lzo
+
+apps:
+  apiworkbench:
+    command: apiworkbench
+    extensions: [gnome]
+    plugs:
+      - home
+      - network
+      - network-bind
+      - desktop
+      - desktop-legacy
+      - wayland
+      - x11
+      - opengl
+      - removable-media
+
+parts:
+  apiworkbench:
+    plugin: dump
+    # Self-contained: this folder holds the prebuilt Flutter Linux bundle
+    # (the apiworkbench binary + data/ + lib/). To ship a new build, run
+    #   flutter build linux --release
+    # and copy build/linux/x64/release/bundle/* over ./bundle/ .
+    source: ./bundle

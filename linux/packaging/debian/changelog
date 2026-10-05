@@ -1,0 +1,21 @@
+apiworkbench (1.1.0) noble; urgency=medium
+
+  * Load testing: run one request or a collection with up to 1,000
+    parallel users, by iterations, duration or until stopped, with live
+    throughput and latency percentiles. Every call can be logged with
+    its response and saved as an HTML, CSV or JSON report.
+  * Lower memory use: bounded runner history and response previews,
+    cached JSON rendering, network clients closed when replaced.
+  * Phone layout improvements.
+
+ -- Dhivakar R <dhivakar1010@gmail.com>  Tue, 06 Oct 2026 02:30:00 +0530
+
+apiworkbench (1.0.1) noble; urgency=medium
+
+  * Fix broken 1.0.0 package: the Flutter engine libraries
+    (libflutter_linux_gtk.so, libapp.so) were stripped from the source
+    tarball by dpkg-source's default ignore rules, so the app failed to
+    launch. Override the ignore list via debian/source/options so the
+    bundled libraries ship in the package.
+
+ -- Dhivakar R <dhivakar1010@gmail.com>  Tue, 21 Jul 2026 03:15:00 +0530

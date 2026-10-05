@@ -29,8 +29,11 @@ List<Map<String, String>>? parseDataRows(String input) {
   }
 }
 
-String _plain(Object? v) =>
-    v is String ? v : v == null ? '' : jsonEncode(v);
+String _plain(Object? v) => v is String
+    ? v
+    : v == null
+    ? ''
+    : jsonEncode(v);
 
 class RunResult {
   RunResult({
@@ -59,7 +62,12 @@ class RunResult {
 /// Runs a list of requests sequentially: a fixed number of iterations, or
 /// recurring passes on an interval until [stop] is called.
 class RunnerService extends ChangeNotifier {
-  RunnerService(this._http);
+  RunnerService(this._http, {this.maxResults = 200}) : assert(maxResults > 0);
+
+  final int maxResults;
+  bool _disposed = false;
+  bool _starting = false;
+  int _generation = 0;
 
   final HttpService _http;
   final String _runId = newId();
@@ -69,21 +77,13 @@ class RunnerService extends ChangeNotifier {
   int currentIteration = 0;
   DateTime? nextPassAt; // set while waiting between recurring passes
 
-  int get passed => results.where((r) => r.pass).length;
-  int get failed => results.length - passed;
-
-  int get avgMs => results.isEmpty
-      ? 0
-      : results.map((r) => r.response.durationMs).reduce((a, b) => a + b) ~/
-          results.length;
-
-  int get minMs => results.isEmpty
-      ? 0
-      : results.map((r) => r.response.durationMs).reduce((a, b) => a < b ? a : b);
-
-  int get maxMs => results.isEmpty
-      ? 0
-      : results.map((r) => r.response.durationMs).reduce((a, b) => a > b ? a : b);
+  int total = 0;
+  int passed = 0;
+  int _totalMs = 0;
+  int minMs = 0;
+  int maxMs = 0;
+  int get failed => total - passed;
+  int get avgMs => total == 0 ? 0 : _totalMs ~/ total;
 
   Future<void> start({
     required List<RequestModel> requests,
@@ -93,12 +93,15 @@ class RunnerService extends ChangeNotifier {
     Duration? repeatEvery, // recurring mode: iterate forever until stopped
     List<Map<String, String>>? dataRows, // per-iteration variable overrides
   }) async {
-    if (running || requests.isEmpty) return;
+    if (_disposed || _starting || requests.isEmpty) return;
+    _starting = true;
+    final generation = ++_generation;
     if (dataRows != null && dataRows.isNotEmpty && repeatEvery == null) {
       iterations = dataRows.length; // one pass per data row
     }
     running = true;
     results.clear();
+    total = passed = _totalMs = minMs = maxMs = 0;
     currentIteration = 0;
     notifyListeners();
 
@@ -112,22 +115,37 @@ class RunnerService extends ChangeNotifier {
       for (final req in requests) {
         if (!running) break;
         final res = await _http.send(req, iterVars, tabId: 'runner-$_runId');
-        if (!running) break; // stopped mid-flight: drop the cancelled result
-        results.add(RunResult(
+        if (!running || _disposed || generation != _generation) break;
+        final assertions = evaluateAssertions(req, res);
+        // The runner displays metadata and assertions, never response bodies.
+        final summary = ResponseData(
+          statusCode: res.statusCode,
+          statusMessage: res.statusMessage,
+          durationMs: res.durationMs,
+          error: res.error,
+          protocol: res.protocol,
+        );
+        final result = RunResult(
           request: req,
           iteration: currentIteration,
-          response: res,
-          assertions: evaluateAssertions(req, res),
+          response: summary,
+          assertions: assertions,
           at: DateTime.now(),
-        ));
+        );
+        total++;
+        if (result.pass) passed++;
+        _totalMs += res.durationMs;
+        if (total == 1 || res.durationMs < minMs) minMs = res.durationMs;
+        if (res.durationMs > maxMs) maxMs = res.durationMs;
+        if (results.length == maxResults) results.removeAt(0);
+        results.add(result);
         notifyListeners();
         if (delayBetween > Duration.zero && running) {
           await Future<void>.delayed(delayBetween);
         }
       }
 
-      final morePlanned =
-          repeatEvery != null || currentIteration < iterations;
+      final morePlanned = repeatEvery != null || currentIteration < iterations;
       if (!running || !morePlanned) break;
 
       if (repeatEvery != null) {
@@ -141,6 +159,8 @@ class RunnerService extends ChangeNotifier {
       }
     }
 
+    _starting = false;
+    if (_disposed) return;
     running = false;
     nextPassAt = null;
     notifyListeners();
@@ -156,6 +176,8 @@ class RunnerService extends ChangeNotifier {
   @override
   void dispose() {
     stop();
+    _disposed = true;
+    results.clear();
     super.dispose();
   }
 }
