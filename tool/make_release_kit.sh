@@ -85,7 +85,10 @@ if [ "$UPLOAD" = 1 ]; then
   say "Building signed source package (GPG passphrase expected)..."
   (cd "$PPA" && debuild -S -sa -k"$KEY") || die "debuild failed"
   TARBALL="$OUT/ppa/apiworkbench_${VER}.tar.xz"
-  tar tJf "$TARBALL" | grep -q 'libflutter_linux_gtk\.so$' \
+  # grep -c reads the whole stream; grep -q would exit early, tar would get
+  # SIGPIPE, and `set -o pipefail` would misread that as a missing library.
+  SO_COUNT=$(tar tJf "$TARBALL" | grep -c 'libflutter_linux_gtk\.so$' || true)
+  [ "$SO_COUNT" -ge 1 ] \
     || die "SAFETY STOP: $TARBALL does not contain libflutter_linux_gtk.so — not uploading a broken package"
   say "Tarball verified (.so files included). Uploading..."
   (cd "$OUT/ppa" && dput ppa:dhiva-labs/apps "apiworkbench_${VER}_source.changes") \
