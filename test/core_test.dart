@@ -6,13 +6,16 @@ import 'package:api_workbench/services/http_service.dart';
 void main() {
   test('variable substitution replaces known vars and keeps unknown ones', () {
     final vars = {'base': 'https://api.dev', 'id': '42'};
-    expect(substituteVars('{{base}}/users/{{id}}/{{nope}}', vars),
-        'https://api.dev/users/42/{{nope}}');
+    expect(
+      substituteVars('{{base}}/users/{{id}}/{{nope}}', vars),
+      'https://api.dev/users/42/{{nope}}',
+    );
   });
 
   test('cURL import parses method, headers, data and url', () {
     final r = fromCurl(
-        "curl -X POST 'https://api.example.com/login' -H 'Content-Type: application/json' -d '{\"user\":\"a\"}'");
+      "curl -X POST 'https://api.example.com/login' -H 'Content-Type: application/json' -d '{\"user\":\"a\"}'",
+    );
     expect(r, isNotNull);
     expect(r!.method, 'POST');
     expect(r.url, 'https://api.example.com/login');

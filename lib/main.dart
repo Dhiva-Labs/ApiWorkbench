@@ -29,9 +29,10 @@ class ApiWorkbenchApp extends StatelessWidget {
   }
 }
 
-/// Resolves the palette from Settings and the system brightness, and
-/// rebuilds every widget when it changes so colours read through [Palette]
-/// update in place without losing any state.
+/// Resolves the palette from Settings and the system brightness. Colours
+/// read through [Palette] are not inherited, so [_PaletteScope] rebuilds the
+/// whole tree in the same frame when the palette changes, without losing
+/// any state.
 class _ThemedApp extends StatefulWidget {
   const _ThemedApp();
 
@@ -55,15 +56,6 @@ class _ThemedAppState extends State<_ThemedApp> with WidgetsBindingObserver {
   @override
   void didChangePlatformBrightness() => setState(() {});
 
-  void _rebuildAll() {
-    void walk(Element e) {
-      e.markNeedsBuild();
-      e.visitChildren(walk);
-    }
-
-    if (mounted) (context as Element).visitChildren(walk);
-  }
-
   @override
   Widget build(BuildContext context) {
     final (theme, mode) = context.select<AppState, (AppThemeId, ThemeModePref)>(
@@ -74,15 +66,65 @@ class _ThemedAppState extends State<_ThemedApp> with WidgetsBindingObserver {
       mode,
       WidgetsBinding.instance.platformDispatcher.platformBrightness,
     );
-    if (palette.id != Palette.current.id) {
-      Palette.use(palette);
-      WidgetsBinding.instance.addPostFrameCallback((_) => _rebuildAll());
-    }
+    Palette.use(palette);
     return MaterialApp(
       title: 'ApiWorkbench',
       debugShowCheckedModeBanner: false,
-      theme: buildTheme(palette),
+      theme: _forPlatform(buildTheme(palette)),
+      // Switch in one frame. A cross-fade would blend the inherited theme
+      // colours over 200 ms while every Palette colour flips at once.
+      themeAnimationDuration: Duration.zero,
+      builder: (context, child) =>
+          _PaletteScope(paletteId: palette.id, child: child!),
       home: const HomeScreen(),
     );
   }
+}
+
+/// Touch platforms get the standard (larger) density for controls the base
+/// theme makes compact, so every tap target is at least 44 px. Desktop
+/// keeps the compact look.
+ThemeData _forPlatform(ThemeData t) => switch (t.platform) {
+  TargetPlatform.android ||
+  TargetPlatform.iOS ||
+  TargetPlatform.fuchsia => t.copyWith(
+    segmentedButtonTheme: SegmentedButtonThemeData(
+      style: t.segmentedButtonTheme.style?.copyWith(
+        visualDensity: VisualDensity.standard,
+      ),
+    ),
+  ),
+  _ => t,
+};
+
+/// Rebuilds everything below it when the palette changes, in the same
+/// frame: the subtree is being built right now, so marking descendants
+/// dirty is allowed and they rebuild before this frame paints. (Doing it
+/// in a post-frame callback showed one frame of stale colours on widgets
+/// that do not depend on anything that changed, such as const ones.)
+class _PaletteScope extends StatefulWidget {
+  const _PaletteScope({required this.paletteId, required this.child});
+
+  final String paletteId;
+  final Widget child;
+
+  @override
+  State<_PaletteScope> createState() => _PaletteScopeState();
+}
+
+class _PaletteScopeState extends State<_PaletteScope> {
+  @override
+  void didUpdateWidget(_PaletteScope old) {
+    super.didUpdateWidget(old);
+    if (old.paletteId == widget.paletteId) return;
+    void walk(Element e) {
+      e.markNeedsBuild();
+      e.visitChildren(walk);
+    }
+
+    (context as Element).visitChildren(walk);
+  }
+
+  @override
+  Widget build(BuildContext context) => widget.child;
 }

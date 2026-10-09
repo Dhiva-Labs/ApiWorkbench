@@ -29,16 +29,24 @@ void main() {
 
   group('myinstants URL extraction', () {
     test('direct audio URLs pass through', () {
-      expect(extractAudioUrl('https://x.com/a/faaak.mp3'),
-          'https://x.com/a/faaak.mp3');
+      expect(
+        extractAudioUrl('https://x.com/a/faaak.mp3'),
+        'https://x.com/a/faaak.mp3',
+      );
     });
 
     test('instant page HTML yields the media URL', () {
-      const html = '<html><button class="small-button" '
+      const html =
+          '<html><button class="small-button" '
           "onclick=\"play('/media/sounds/fbi-open-up.mp3', ...)\">"
           '</button></html>';
-      expect(extractAudioUrl(html, pageUrl: 'https://www.myinstants.com/en/instant/fbi'),
-          'https://www.myinstants.com/media/sounds/fbi-open-up.mp3');
+      expect(
+        extractAudioUrl(
+          html,
+          pageUrl: 'https://www.myinstants.com/en/instant/fbi',
+        ),
+        'https://www.myinstants.com/media/sounds/fbi-open-up.mp3',
+      );
     });
 
     test('pages without audio return null', () {
@@ -46,10 +54,13 @@ void main() {
     });
 
     test('absolute og:audio URLs are found', () {
-      const html = '<meta property="og:audio" '
+      const html =
+          '<meta property="og:audio" '
           'content="https://www.myinstants.com/media/sounds/sad-violin.mp3">';
-      expect(extractAudioUrl(html),
-          'https://www.myinstants.com/media/sounds/sad-violin.mp3');
+      expect(
+        extractAudioUrl(html),
+        'https://www.myinstants.com/media/sounds/sad-violin.mp3',
+      );
     });
   });
 
@@ -124,10 +135,14 @@ void main() {
       expect(f.existsSync(), isTrue, reason: '$file missing');
       final head = f.openSync().readSync(3);
       if (file.endsWith('.wav')) {
-        expect(String.fromCharCodes(f.openSync().readSync(4)), 'RIFF',
-            reason: '$file not RIFF');
+        expect(
+          String.fromCharCodes(f.openSync().readSync(4)),
+          'RIFF',
+          reason: '$file not RIFF',
+        );
       } else {
-        final isMp3 = String.fromCharCodes(head) == 'ID3' ||
+        final isMp3 =
+            String.fromCharCodes(head) == 'ID3' ||
             (head[0] == 0xFF && (head[1] & 0xE0) == 0xE0);
         expect(isMp3, isTrue, reason: '$file ($id) is not mp3');
       }

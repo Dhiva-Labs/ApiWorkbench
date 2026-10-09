@@ -9,7 +9,7 @@
 name: apiworkbench
 title: ApiWorkbench
 base: core22
-version: '1.2.0'
+version: '1.3.0'
 summary: API client for building, testing and load testing HTTP requests
 description: |
   ApiWorkbench is a fast, keyboard-friendly API client in the spirit of
@@ -30,6 +30,8 @@ description: |
     variables, auth and checks carried over
   - Captures: save response values into variables for later requests
   - Teal light/dark and Graphite and orange themes
+  - Hover help on every field, tab and button, with examples (can be
+    turned off), and a phone-friendly layout
   - cURL import/export, workspace import/export, Markdown docs export
   - HTTP/1.1 and HTTP/2, self-signed certificate support
   - Chaos Mode: a sound per status code, confetti and screen shake

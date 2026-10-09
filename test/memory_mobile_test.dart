@@ -131,7 +131,11 @@ void main() {
       await tester.tap(find.text('Settings…'));
       await tester.pumpAndSettle();
       expect(tester.takeException(), isNull);
-      await tester.tap(find.widgetWithText(TextButton, 'Cancel'));
+      // Phones get the full-screen dialog, closed from its app bar.
+      final cancel = find.widgetWithText(TextButton, 'Cancel');
+      await tester.tap(
+        cancel.evaluate().isNotEmpty ? cancel : find.byType(CloseButton),
+      );
       await tester.pumpAndSettle();
 
       await tester.tap(find.text('Response'));

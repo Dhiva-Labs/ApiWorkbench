@@ -4,7 +4,8 @@ import 'package:flutter/material.dart';
 
 import '../theme.dart';
 
-final _mono = TextStyle(
+// A getter, not a final: the palette can change at runtime.
+TextStyle get _mono => TextStyle(
   fontFamily: 'monospace',
   fontSize: 13,
   height: 1.5,
@@ -33,16 +34,13 @@ class JsonView extends StatefulWidget {
 class _JsonViewState extends State<JsonView> {
   late Widget _content;
 
-  @override
-  void initState() {
-    super.initState();
-    _prepare();
-  }
+  /// The palette [_content] was coloured with; a theme switch recolours it.
+  String? _paletteId;
 
   @override
   void didUpdateWidget(JsonView oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.text != widget.text) _prepare();
+    if (oldWidget.text != widget.text) _paletteId = null;
   }
 
   void _prepare() {
@@ -51,10 +49,14 @@ class _JsonViewState extends State<JsonView> {
     _content = pretty == null || pretty.length > 64 * 1024
         ? SelectableText(text, style: _mono)
         : SelectableText.rich(TextSpan(children: _highlight(pretty)));
+    _paletteId = Palette.current.id;
   }
 
   @override
-  Widget build(BuildContext context) => _content;
+  Widget build(BuildContext context) {
+    if (_paletteId != Palette.current.id) _prepare();
+    return _content;
+  }
 
   List<TextSpan> _highlight(String src) {
     final spans = <TextSpan>[];

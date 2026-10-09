@@ -271,7 +271,11 @@ class AppSettings {
     Map<String, String>? chaosRules,
     this.theme = AppThemeId.teal,
     this.themeMode = ThemeModePref.system,
+    this.hoverHelp = true,
   }) : chaosRules = chaosRules ?? defaultChaosRules();
+
+  /// Explanation cards when pointing at fields, buttons and badges.
+  bool hoverHelp;
 
   AppThemeId theme;
   ThemeModePref themeMode;
@@ -303,6 +307,7 @@ class AppSettings {
     'chaosRules': chaosRules,
     'theme': theme.name,
     'themeMode': themeMode.name,
+    'hoverHelp': hoverHelp,
   };
 
   factory AppSettings.fromJson(Map<String, dynamic> j) => AppSettings(
@@ -321,6 +326,7 @@ class AppSettings {
     themeMode:
         ThemeModePref.values.asNameMap()[j['themeMode']] ??
         ThemeModePref.system,
+    hoverHelp: j['hoverHelp'] as bool? ?? true,
   );
 
   static Map<String, String> _migrateChaosRules(Map<String, dynamic>? raw) {

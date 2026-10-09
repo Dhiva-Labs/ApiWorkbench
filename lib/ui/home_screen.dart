@@ -5,8 +5,10 @@ import 'package:provider/provider.dart';
 import '../models/models.dart';
 import '../state/app_state.dart';
 import '../theme.dart';
+import 'adaptive.dart';
 import 'app_menu.dart';
 import 'chaos_effects.dart';
+import 'help_tip.dart';
 import 'import_dialog.dart';
 import 'logo.dart';
 import 'mode_toggle.dart';
@@ -16,16 +18,19 @@ import 'sidebar.dart';
 
 Widget _responseArea(AppState state, RequestTab tab) => ChaosEffects(
   enabled: state.settings.chaosMode,
+  scope: tab.id,
   trigger: tab.response,
   statusCode: tab.response?.statusCode ?? 0,
   isError: tab.response?.error != null,
+  // Fades only when the tab, its loading state or its response changes;
+  // ResponseView keeps a snapshot, so the outgoing view shows the old state.
   child: AnimatedSwitcher(
     duration: const Duration(milliseconds: 180),
-    child: KeyedSubtree(
+    child: ResponseView(
       key: ValueKey(
         '${tab.id}-${tab.loading}-${identityHashCode(tab.response)}',
       ),
-      child: ResponseView(tab: tab),
+      tab: tab,
     ),
   ),
 );
@@ -98,8 +103,19 @@ class _DesktopLayout extends StatefulWidget {
 class _DesktopLayoutState extends State<_DesktopLayout> {
   SidebarSection _section = SidebarSection.collections;
   bool _panelOpen = true;
-  double _panelWidth = 300;
-  double _split = 0.55; // fraction of height given to the request editor
+
+  // Drag state lives in notifiers so a drag rebuilds only the sized boxes,
+  // not the side panel, editor and response (a large response would make
+  // every drag frame expensive).
+  final _panelWidth = ValueNotifier<double>(300);
+  final _split = ValueNotifier<double>(0.55); // editor's share of the height
+
+  @override
+  void dispose() {
+    _panelWidth.dispose();
+    _split.dispose();
+    super.dispose();
+  }
 
   void _select(SidebarSection s) => setState(() {
     if (s == _section) {
@@ -114,13 +130,23 @@ class _DesktopLayoutState extends State<_DesktopLayout> {
   Widget build(BuildContext context) {
     final state = context.watch<AppState>();
     final tab = state.activeTab!;
+    final editor = ColoredBox(
+      color: Palette.surface,
+      child: RequestEditor(key: ValueKey(tab.id), tab: tab),
+    );
+    final response = ColoredBox(
+      color: Palette.surface,
+      child: _responseArea(state, tab),
+    );
     return Scaffold(
       body: Row(
         children: [
           _NavRail(section: _section, panelOpen: _panelOpen, onSelect: _select),
           if (_panelOpen) ...[
-            SizedBox(
-              width: _panelWidth,
+            ValueListenableBuilder<double>(
+              valueListenable: _panelWidth,
+              builder: (context, width, panel) =>
+                  SizedBox(width: width, child: panel),
               child: ColoredBox(
                 color: Palette.surface,
                 child: Sidebar(section: _section),
@@ -131,9 +157,8 @@ class _DesktopLayoutState extends State<_DesktopLayout> {
               cursor: SystemMouseCursors.resizeColumn,
               child: GestureDetector(
                 behavior: HitTestBehavior.opaque,
-                onHorizontalDragUpdate: (d) => setState(() {
-                  _panelWidth = (_panelWidth + d.delta.dx).clamp(220.0, 520.0);
-                }),
+                onHorizontalDragUpdate: (d) => _panelWidth.value =
+                    (_panelWidth.value + d.delta.dx).clamp(220.0, 520.0),
                 child: SizedBox(
                   width: 5,
                   child: Center(
@@ -152,67 +177,33 @@ class _DesktopLayoutState extends State<_DesktopLayout> {
                 ),
                 Expanded(
                   child: LayoutBuilder(
-                    builder: (context, box) {
-                      final editorH = ((box.maxHeight - 9) * _split).clamp(
-                        120.0,
-                        box.maxHeight - 129,
-                      );
-                      return Column(
-                        children: [
-                          SizedBox(
-                            height: editorH,
-                            child: ColoredBox(
-                              color: Palette.surface,
-                              child: RequestEditor(
-                                key: ValueKey(tab.id),
-                                tab: tab,
+                    builder: (context, box) => ValueListenableBuilder<double>(
+                      valueListenable: _split,
+                      builder: (context, split, _) {
+                        final editorH = ((box.maxHeight - 9) * split).clamp(
+                          120.0,
+                          box.maxHeight - 129,
+                        );
+                        return Column(
+                          children: [
+                            SizedBox(height: editorH, child: editor),
+                            // Draggable splitter between editor and response.
+                            MouseRegion(
+                              cursor: SystemMouseCursors.resizeRow,
+                              child: GestureDetector(
+                                behavior: HitTestBehavior.opaque,
+                                onVerticalDragUpdate: (d) => _split.value =
+                                    (_split.value +
+                                            d.delta.dy / (box.maxHeight - 9))
+                                        .clamp(0.2, 0.85),
+                                child: const _SplitHandle(),
                               ),
                             ),
-                          ),
-                          // Draggable splitter between editor and response.
-                          MouseRegion(
-                            cursor: SystemMouseCursors.resizeRow,
-                            child: GestureDetector(
-                              behavior: HitTestBehavior.opaque,
-                              onVerticalDragUpdate: (d) => setState(() {
-                                _split =
-                                    (_split + d.delta.dy / (box.maxHeight - 9))
-                                        .clamp(0.2, 0.85);
-                              }),
-                              child: Container(
-                                height: 9,
-                                decoration: BoxDecoration(
-                                  color: Palette.bg,
-                                  border: Border.symmetric(
-                                    horizontal: BorderSide(
-                                      color: Palette.border,
-                                    ),
-                                  ),
-                                ),
-                                child: Center(
-                                  child: Container(
-                                    width: 36,
-                                    height: 3,
-                                    decoration: BoxDecoration(
-                                      color: Palette.textDim.withValues(
-                                        alpha: 0.4,
-                                      ),
-                                      borderRadius: BorderRadius.circular(2),
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ),
-                          Expanded(
-                            child: ColoredBox(
-                              color: Palette.surface,
-                              child: _responseArea(state, tab),
-                            ),
-                          ),
-                        ],
-                      );
-                    },
+                            Expanded(child: response),
+                          ],
+                        );
+                      },
+                    ),
                   ),
                 ),
               ],
@@ -222,6 +213,29 @@ class _DesktopLayoutState extends State<_DesktopLayout> {
       ),
     );
   }
+}
+
+class _SplitHandle extends StatelessWidget {
+  const _SplitHandle();
+
+  @override
+  Widget build(BuildContext context) => Container(
+    height: 9,
+    decoration: BoxDecoration(
+      color: Palette.bg,
+      border: Border.symmetric(horizontal: BorderSide(color: Palette.border)),
+    ),
+    child: Center(
+      child: Container(
+        width: 36,
+        height: 3,
+        decoration: BoxDecoration(
+          color: Palette.textDim.withValues(alpha: 0.4),
+          borderRadius: BorderRadius.circular(2),
+        ),
+      ),
+    ),
+  );
 }
 
 /// Far-left navigation: sections on top, workspace actions at the bottom.
@@ -255,6 +269,21 @@ class _NavRail extends StatelessWidget {
               icon: s.icon,
               label: s == SidebarSection.environments ? 'Envs' : s.label,
               tooltip: s.label,
+              help:
+                  switch (s) {
+                    SidebarSection.collections =>
+                      'Your saved requests, organised in collections and '
+                          'folders. Open, run or load-test them from here.',
+                    SidebarSection.environments =>
+                      'Sets of {{variables}} like baseUrl or token. Pick one to '
+                          'send the same requests to a different server.',
+                    SidebarSection.history =>
+                      'The last 100 requests you sent, with status and time. '
+                          'Click one to reopen it.',
+                  } +
+                  (panelOpen && s == section
+                      ? ' Click again to hide the side panel.'
+                      : ''),
               selected: panelOpen && s == section,
               badge:
                   s == SidebarSection.environments &&
@@ -267,13 +296,19 @@ class _NavRail extends StatelessWidget {
           _RailItem(
             icon: Icons.download_outlined,
             label: 'Import',
-            tooltip: 'Import from Postman or a workspace (Ctrl+O)',
+            tooltip: 'Import',
+            help:
+                'Bring in Postman collections, environments and data '
+                'exports, or an ApiWorkbench workspace. Shortcut: Ctrl+O.',
             onTap: () => showImportDialog(context),
           ),
           _RailItem(
             icon: Icons.upload_outlined,
             label: 'Export',
-            tooltip: 'Export workspace',
+            tooltip: 'Export',
+            help:
+                'Save all collections and environments to one JSON file, '
+                'to back up or share with a teammate.',
             onTap: () => exportWorkspace(context),
           ),
           _RailItem(
@@ -281,7 +316,10 @@ class _NavRail extends StatelessWidget {
                 ? Icons.light_mode_outlined
                 : Icons.dark_mode_outlined,
             label: Palette.isDark ? 'Light' : 'Dark',
-            tooltip: Palette.isDark ? 'Switch to light' : 'Switch to dark',
+            tooltip: Palette.isDark ? 'Light mode' : 'Dark mode',
+            help:
+                'Switch the Teal theme between light and dark. More '
+                'options are in Settings.',
             onTap: () {
               final s = state.settings
                 ..theme = AppThemeId.teal
@@ -295,6 +333,9 @@ class _NavRail extends StatelessWidget {
             icon: Icons.settings_outlined,
             label: 'Settings',
             tooltip: 'Settings',
+            help:
+                'Theme, HTTP version, timeouts, certificate checks and '
+                'Focus or Chaos mode.',
             onTap: () => showSettingsDialog(context),
           ),
           const SizedBox(height: 10),
@@ -310,9 +351,13 @@ class _RailItem extends StatelessWidget {
     required this.label,
     required this.tooltip,
     required this.onTap,
+    this.help = '',
     this.selected = false,
     this.badge,
   });
+
+  /// Explanation shown under [tooltip] in the hover card.
+  final String help;
 
   final IconData icon;
   final String label;
@@ -324,9 +369,10 @@ class _RailItem extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final color = selected ? Palette.accent : Palette.textDim;
-    return Tooltip(
-      message: tooltip,
-      preferBelow: false,
+    return HelpHover(
+      help,
+      title: tooltip,
+      essential: true,
       child: Padding(
         padding: const EdgeInsets.symmetric(vertical: 3, horizontal: 8),
         child: Material(
@@ -409,7 +455,10 @@ class EnvironmentPicker extends StatelessWidget {
     final state = context.watch<AppState>();
     final env = state.activeEnvironment;
     return PopupMenuButton<String>(
-      tooltip: 'Environment',
+      tooltip:
+          'Environment: the set of {{variables}} your requests use, such as '
+          'baseUrl or token. Switch to send the same requests to local, '
+          'staging or production.',
       onSelected: (v) {
         if (v == '__manage') {
           onManage?.call();
@@ -437,39 +486,43 @@ class EnvironmentPicker extends StatelessWidget {
           ),
         ],
       ],
-      child: Container(
-        height: 30,
-        constraints: BoxConstraints(maxWidth: maxWidth),
-        padding: const EdgeInsets.symmetric(horizontal: 10),
-        decoration: BoxDecoration(
-          color: env == null ? Colors.transparent : Palette.accentSoft,
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(
-            color: env == null ? Palette.border : Palette.accent,
-          ),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              Icons.public,
-              size: 15,
-              color: env == null ? Palette.textDim : Palette.accent,
+      child: Padding(
+        // A 44 px tap target on touch screens around the 30 px pill.
+        padding: EdgeInsets.symmetric(vertical: isTouch(context) ? 7 : 0),
+        child: Container(
+          height: 30,
+          constraints: BoxConstraints(maxWidth: maxWidth),
+          padding: const EdgeInsets.symmetric(horizontal: 10),
+          decoration: BoxDecoration(
+            color: env == null ? Colors.transparent : Palette.accentSoft,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(
+              color: env == null ? Palette.border : Palette.accent,
             ),
-            const SizedBox(width: 6),
-            Flexible(
-              child: Text(
-                env?.name ?? 'No environment',
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontSize: 12.5,
-                  color: env == null ? Palette.textDim : Palette.text,
-                  fontWeight: env == null ? FontWeight.w400 : FontWeight.w600,
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                Icons.public,
+                size: 15,
+                color: env == null ? Palette.textDim : Palette.accent,
+              ),
+              const SizedBox(width: 6),
+              Flexible(
+                child: Text(
+                  env?.name ?? 'No environment',
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    color: env == null ? Palette.textDim : Palette.text,
+                    fontWeight: env == null ? FontWeight.w400 : FontWeight.w600,
+                  ),
                 ),
               ),
-            ),
-            Icon(Icons.arrow_drop_down, size: 18, color: Palette.textDim),
-          ],
+              Icon(Icons.arrow_drop_down, size: 18, color: Palette.textDim),
+            ],
+          ),
         ),
       ),
     );
@@ -568,7 +621,8 @@ class _MobileLayoutState extends State<_MobileLayout> {
           children: [
             if (!compactKeyboard)
               Container(
-                height: 48,
+                // Tabs get the strip's height minus 6 px: 46 on touch.
+                height: isTouch(context) ? 52 : 48,
                 color: Palette.bg,
                 child: const _TabStrip(),
               ),
@@ -599,6 +653,7 @@ class _TabStrip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final state = context.watch<AppState>();
+    final touch = isTouch(context);
     return Row(
       children: [
         Flexible(
@@ -632,68 +687,81 @@ class _TabStrip extends StatelessWidget {
                       top: Radius.circular(8),
                     ),
                     onTap: () => state.selectTab(i),
-                    child: Container(
-                      constraints: const BoxConstraints(maxWidth: 230),
-                      padding: const EdgeInsets.only(left: 12, right: 2),
-                      decoration: BoxDecoration(
-                        border: Border(
-                          top: BorderSide(
-                            width: 2,
-                            color: active ? Palette.accent : Colors.transparent,
+                    child: HelpHover(
+                      [
+                        httpMethodHelp(t.request.method).message,
+                        t.request.url.isEmpty
+                            ? 'No URL yet.'
+                            : 'Address: ${t.request.url}',
+                        if (t.dirty) 'Has unsaved changes (Ctrl+S to save).',
+                      ].join('\n'),
+                      title: '${t.request.method} ${t.request.name}',
+                      child: Container(
+                        constraints: const BoxConstraints(maxWidth: 230),
+                        padding: const EdgeInsets.only(left: 12, right: 2),
+                        decoration: BoxDecoration(
+                          border: Border(
+                            top: BorderSide(
+                              width: 2,
+                              color: active
+                                  ? Palette.accent
+                                  : Colors.transparent,
+                            ),
                           ),
                         ),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(
-                            t.request.method == 'DELETE'
-                                ? 'DEL'
-                                : t.request.method,
-                            style: TextStyle(
-                              color: methodColor(t.request.method),
-                              fontSize: 10.5,
-                              fontWeight: FontWeight.w800,
-                            ),
-                          ),
-                          const SizedBox(width: 7),
-                          Flexible(
-                            child: Text(
-                              title,
-                              overflow: TextOverflow.ellipsis,
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              t.request.method == 'DELETE'
+                                  ? 'DEL'
+                                  : t.request.method,
                               style: TextStyle(
-                                fontSize: 12.5,
-                                color: active ? Palette.text : Palette.textDim,
-                                fontWeight: active
-                                    ? FontWeight.w600
-                                    : FontWeight.w400,
+                                color: methodColor(t.request.method),
+                                fontSize: 10.5,
+                                fontWeight: FontWeight.w800,
                               ),
                             ),
-                          ),
-                          if (t.dirty)
-                            Padding(
-                              padding: const EdgeInsets.only(left: 5),
-                              child: Icon(
-                                Icons.circle,
-                                size: 7,
-                                color: Palette.warning,
+                            const SizedBox(width: 7),
+                            Flexible(
+                              child: Text(
+                                title,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontSize: 12.5,
+                                  color: active
+                                      ? Palette.text
+                                      : Palette.textDim,
+                                  fontWeight: active
+                                      ? FontWeight.w600
+                                      : FontWeight.w400,
+                                ),
                               ),
                             ),
-                          IconButton(
-                            tooltip: 'Close (Ctrl+W)',
-                            padding: EdgeInsets.zero,
-                            constraints: const BoxConstraints(
-                              minWidth: 32,
-                              minHeight: 32,
+                            if (t.dirty)
+                              Padding(
+                                padding: const EdgeInsets.only(left: 5),
+                                child: Icon(
+                                  Icons.circle,
+                                  size: 7,
+                                  color: Palette.warning,
+                                ),
+                              ),
+                            IconButton(
+                              tooltip: 'Close (Ctrl+W)',
+                              padding: EdgeInsets.zero,
+                              constraints: BoxConstraints.tight(
+                                Size.square(touch ? minTouchTarget : 32),
+                              ),
+                              icon: Icon(
+                                Icons.close,
+                                size: 14,
+                                color: Palette.textDim,
+                              ),
+                              onPressed: () => state.closeTab(i),
                             ),
-                            icon: Icon(
-                              Icons.close,
-                              size: 14,
-                              color: Palette.textDim,
-                            ),
-                            onPressed: () => state.closeTab(i),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
                     ),
                   ),
@@ -703,7 +771,7 @@ class _TabStrip extends StatelessWidget {
           ),
         ),
         IconButton(
-          tooltip: 'New request (Ctrl+T)',
+          tooltip: 'New request tab (Ctrl+T)',
           icon: Icon(Icons.add, size: 19, color: Palette.textDim),
           onPressed: () => state.newTab(),
         ),

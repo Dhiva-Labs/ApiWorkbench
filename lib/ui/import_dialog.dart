@@ -5,9 +5,12 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../models/models.dart';
 import '../services/postman_import.dart';
 import '../state/app_state.dart';
 import '../theme.dart';
+import 'adaptive.dart';
+import 'help_tip.dart';
 
 /// Import Postman collections (v1, v2.0, v2.1), environments, globals and
 /// data exports, or an ApiWorkbench workspace, from files or pasted JSON.
@@ -166,48 +169,39 @@ class _ImportDialogState extends State<_ImportDialog> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          DropdownButtonFormField<String>(
-            initialValue: target?.id ?? '',
-            isExpanded: true,
-            decoration: const InputDecoration(labelText: 'Import into'),
-            items: [
-              DropdownMenuItem(
-                value: '',
-                child: Text(
-                  r.collections.length > 1
-                      ? 'New collections'
-                      : 'A new collection',
-                ),
+          Row(
+            children: [
+              Expanded(child: _targetDropdown(r, state, target)),
+              const HelpTip(
+                'A new collection keeps the import separate. An existing one '
+                'gets the requests added; its own requests and variable values '
+                'are not changed.',
+                title: 'Import into',
+                example: 'Existing: Shop API',
               ),
-              for (final c in state.collections)
-                DropdownMenuItem(
-                  value: c.id,
-                  child: Text(
-                    'Existing: ${c.name}',
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
             ],
-            onChanged: (v) => setState(() {
-              _target = (v == null || v.isEmpty) ? null : v;
-              if (_target != widget.collectionId) _folder = '';
-            }),
           ),
           if (target != null && _folder.isNotEmpty)
             Padding(
               padding: const EdgeInsets.only(top: 8),
-              child: InputChip(
-                avatar: Icon(
-                  Icons.folder_outlined,
-                  size: 16,
-                  color: Palette.textDim,
+              child: HelpHover(
+                'Requests go inside this folder of the collection. Remove the '
+                'chip to import at the top level instead.',
+                title: 'Destination folder',
+                example: 'Shop API › Orders',
+                child: InputChip(
+                  avatar: Icon(
+                    Icons.folder_outlined,
+                    size: 16,
+                    color: Palette.textDim,
+                  ),
+                  label: Text(
+                    'In folder ${_folder.replaceAll('/', ' › ')}',
+                    style: const TextStyle(fontSize: 12.5),
+                  ),
+                  onDeleted: () => setState(() => _folder = ''),
+                  deleteButtonTooltipMessage: 'Import at the collection root',
                 ),
-                label: Text(
-                  'In folder ${_folder.replaceAll('/', ' › ')}',
-                  style: const TextStyle(fontSize: 12.5),
-                ),
-                onDeleted: () => setState(() => _folder = ''),
-                deleteButtonTooltipMessage: 'Import at the collection root',
               ),
             ),
           if (target != null)
@@ -217,12 +211,25 @@ class _ImportDialogState extends State<_ImportDialog> {
               dense: true,
               value: _groupFor(r),
               onChanged: (v) => setState(() => _group = v),
-              title: Text(
-                r.collections.length == 1
-                    ? 'Put the requests in a folder named '
-                          '"${r.collections.single.name}"'
-                    : 'Put each imported collection in its own folder',
-                style: const TextStyle(fontSize: 13),
+              title: Row(
+                children: [
+                  Flexible(
+                    child: Text(
+                      r.collections.length == 1
+                          ? 'Put the requests in a folder named '
+                                '"${r.collections.single.name}"'
+                          : 'Put each imported collection in its own folder',
+                      style: const TextStyle(fontSize: 13),
+                    ),
+                  ),
+                  const HelpTip(
+                    'Keeps imported requests together in their own folder, '
+                    'so they do not mix with requests already in the '
+                    'collection.',
+                    title: 'Group in a folder',
+                    example: 'Shop API › Petstore › Get pet',
+                  ),
+                ],
               ),
               subtitle: Text(
                 'Existing requests and variable values are left as they are.',
@@ -234,13 +241,44 @@ class _ImportDialogState extends State<_ImportDialog> {
     );
   }
 
+  Widget _targetDropdown(
+    ImportReport r,
+    AppState state,
+    CollectionModel? target,
+  ) => DropdownButtonFormField<String>(
+    initialValue: target?.id ?? '',
+    isExpanded: true,
+    decoration: const InputDecoration(labelText: 'Import into'),
+    items: [
+      DropdownMenuItem(
+        value: '',
+        child: Text(
+          r.collections.length > 1 ? 'New collections' : 'A new collection',
+        ),
+      ),
+      for (final c in state.collections)
+        DropdownMenuItem(
+          value: c.id,
+          child: Text('Existing: ${c.name}', overflow: TextOverflow.ellipsis),
+        ),
+    ],
+    onChanged: (v) => setState(() {
+      _target = (v == null || v.isEmpty) ? null : v;
+      if (_target != widget.collectionId) _folder = '';
+    }),
+  );
+
   @override
   Widget build(BuildContext context) {
     final r = _report;
     final ready = r != null && !r.isEmpty;
     final preset = context.read<AppState>().collectionById(widget.collectionId);
-    return AlertDialog(
-      titlePadding: const EdgeInsets.fromLTRB(24, 20, 24, 0),
+    return AdaptiveDialog(
+      width: 640,
+      primary: FilledButton(
+        onPressed: ready ? _import : null,
+        child: const Text('Import'),
+      ),
       title: Row(
         children: [
           Icon(Icons.download_outlined, color: Palette.accent),
@@ -254,36 +292,53 @@ class _ImportDialogState extends State<_ImportDialog> {
           ),
         ],
       ),
-      content: SizedBox(
-        width: 640,
-        child: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Postman collections (v1, v2.0, v2.1), single requests or '
-                'folders, environments, globals and full data exports, or an '
-                'ApiWorkbench workspace. Add as many as you like, then choose '
-                'where they go.',
-                style: TextStyle(
-                  fontSize: 13,
-                  color: Palette.textDim,
-                  height: 1.45,
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: Text(
+                    'Postman collections (v1, v2.0, v2.1), single requests '
+                    'or folders, environments, globals and full data '
+                    'exports, or an ApiWorkbench workspace. Add as many as '
+                    'you like, then choose where they go.',
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: Palette.textDim,
+                      height: 1.45,
+                    ),
+                  ),
                 ),
-              ),
-              const SizedBox(height: 14),
-              _dropZone(),
-              const SizedBox(height: 12),
-              TextField(
-                controller: _paste,
-                minLines: 3,
-                maxLines: 6,
-                style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
-                decoration: InputDecoration(
-                  hintText: 'Or paste Postman JSON here',
-                  suffixIcon: Padding(
-                    padding: const EdgeInsets.all(6),
+                const HelpTip(
+                  'In Postman, open the … menu on a collection or '
+                  'environment and choose Export. Nothing changes here until '
+                  'you press Import.',
+                  title: 'Getting files from Postman',
+                  example: 'Shop API.postman_collection.json',
+                ),
+              ],
+            ),
+            const SizedBox(height: 14),
+            _dropZone(),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _paste,
+              minLines: 3,
+              maxLines: 6,
+              style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
+              decoration: InputDecoration(
+                hintText: 'Or paste Postman JSON here',
+                suffixIcon: Padding(
+                  padding: const EdgeInsets.all(6),
+                  child: HelpHover(
+                    'Add the pasted JSON to the list to import. You can '
+                    'paste several, one after another.',
+                    title: 'Add pasted JSON',
+                    example: '{"info": {"name": "Shop API"}, "item": [ … ]}',
                     child: TextButton(
                       onPressed: _addPasted,
                       child: const Text('Add'),
@@ -291,18 +346,18 @@ class _ImportDialogState extends State<_ImportDialog> {
                   ),
                 ),
               ),
-              if (_errors.isNotEmpty) ...[
-                const SizedBox(height: 12),
-                for (final e in _errors)
-                  _note(Icons.error_outline, Palette.danger, e),
-              ],
-              if (r != null && !r.isEmpty) ...[
-                const SizedBox(height: 16),
-                _summary(r),
-                if (r.collections.isNotEmpty) _destination(r),
-              ],
+            ),
+            if (_errors.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              for (final e in _errors)
+                _note(Icons.error_outline, Palette.danger, e),
             ],
-          ),
+            if (r != null && !r.isEmpty) ...[
+              const SizedBox(height: 16),
+              _summary(r),
+              if (r.collections.isNotEmpty) _destination(r),
+            ],
+          ],
         ),
       ),
       actions: [
@@ -319,7 +374,15 @@ class _ImportDialogState extends State<_ImportDialog> {
     );
   }
 
-  Widget _dropZone() => InkWell(
+  Widget _dropZone() => HelpHover(
+    'Pick one or more .json files exported from Postman or ApiWorkbench. '
+    'Each one is checked and added to the summary below.',
+    title: 'Choose files',
+    example: 'Shop API.postman_collection.json',
+    child: _dropZoneBox(),
+  );
+
+  Widget _dropZoneBox() => InkWell(
     borderRadius: BorderRadius.circular(10),
     onTap: _busy ? null : _chooseFiles,
     child: Container(
@@ -362,20 +425,24 @@ class _ImportDialogState extends State<_ImportDialog> {
   );
 
   Widget _summary(ImportReport r) {
-    Widget stat(String n, String label) => Expanded(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            n,
-            style: TextStyle(
-              fontSize: 20,
-              fontWeight: FontWeight.w700,
-              color: Palette.text,
+    Widget stat(String n, String label, String help) => Expanded(
+      child: HelpHover(
+        help,
+        title: '$n $label',
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              n,
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.w700,
+                color: Palette.text,
+              ),
             ),
-          ),
-          Text(label, style: TextStyle(fontSize: 12, color: Palette.textDim)),
-        ],
+            Text(label, style: TextStyle(fontSize: 12, color: Palette.textDim)),
+          ],
+        ),
       ),
     );
     final converted = r.assertionsFromScripts + r.capturesFromScripts;
@@ -389,8 +456,11 @@ class _ImportDialogState extends State<_ImportDialog> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
+          LabelWithHelp(
             'Ready to import · ${r.formats.join(', ')}',
+            'What was found in the files and pasted JSON so far. Nothing is '
+                'saved until you press Import.',
+            example: 'Postman collection v2.1',
             style: TextStyle(
               fontSize: 12.5,
               fontWeight: FontWeight.w600,
@@ -403,12 +473,26 @@ class _ImportDialogState extends State<_ImportDialog> {
               stat(
                 '${r.collections.length}',
                 _noun(r.collections.length, 'collection'),
+                'Collections found in what you added. Each becomes a '
+                    'collection, or a folder in the one you pick below.',
               ),
-              stat('${r.folders}', _noun(r.folders, 'folder')),
-              stat('${r.requests}', _noun(r.requests, 'request')),
+              stat(
+                '${r.folders}',
+                _noun(r.folders, 'folder'),
+                'Folders inside those collections. They are kept as folders '
+                    'here.',
+              ),
+              stat(
+                '${r.requests}',
+                _noun(r.requests, 'request'),
+                'Requests that will be added, with their params, headers, '
+                    'body and auth.',
+              ),
               stat(
                 '${r.environments.length}',
                 _noun(r.environments.length, 'environment'),
+                'Environments and globals, added to the Environments list. '
+                    'A single one becomes active if none is.',
               ),
             ],
           ),

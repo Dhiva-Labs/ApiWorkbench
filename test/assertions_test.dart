@@ -9,12 +9,12 @@ ResponseData _resp({
   String body = '',
   Map<String, List<String>> headers = const {},
   int ms = 100,
-}) =>
-    ResponseData(
-        statusCode: status,
-        headers: headers,
-        bodyBytes: utf8.encode(body),
-        durationMs: ms);
+}) => ResponseData(
+  statusCode: status,
+  headers: headers,
+  bodyBytes: utf8.encode(body),
+  durationMs: ms,
+);
 
 RequestModel _req(List<AssertionModel> asserts) =>
     RequestModel(url: 'https://x', assertions: asserts);
@@ -41,12 +41,20 @@ void main() {
     final r = _req([
       AssertionModel(kind: AssertKind.bodyContains, expected: 'dhiva'),
       AssertionModel(
-          kind: AssertKind.jsonEquals, target: 'user.name', expected: 'dhiva'),
+        kind: AssertKind.jsonEquals,
+        target: 'user.name',
+        expected: 'dhiva',
+      ),
       AssertionModel(
-          kind: AssertKind.jsonEquals, target: 'user.age', expected: '30'),
+        kind: AssertKind.jsonEquals,
+        target: 'user.age',
+        expected: '30',
+      ),
     ]);
-    final out =
-        evaluateAssertions(r, _resp(body: '{"user":{"name":"dhiva","age":30}}'));
+    final out = evaluateAssertions(
+      r,
+      _resp(body: '{"user":{"name":"dhiva","age":30}}'),
+    );
     expect(out.map((o) => o.pass), everyElement(isTrue));
   });
 
@@ -54,16 +62,20 @@ void main() {
     final r = _req([
       AssertionModel(kind: AssertKind.headerContains, target: 'Content-Type'),
       AssertionModel(
-          kind: AssertKind.headerContains,
-          target: 'content-type',
-          expected: 'JSON'),
+        kind: AssertKind.headerContains,
+        target: 'content-type',
+        expected: 'JSON',
+      ),
       AssertionModel(kind: AssertKind.headerContains, target: 'X-Nope'),
     ]);
     final out = evaluateAssertions(
-        r,
-        _resp(headers: {
-          'content-type': ['application/json']
-        }));
+      r,
+      _resp(
+        headers: {
+          'content-type': ['application/json'],
+        },
+      ),
+    );
     expect(out[0].pass, isTrue);
     expect(out[1].pass, isTrue);
     expect(out[2].pass, isFalse);
@@ -73,7 +85,10 @@ void main() {
     final r = _req([
       AssertionModel(kind: AssertKind.timeBelow, expected: '500'),
       AssertionModel(
-          kind: AssertKind.statusEquals, expected: '500', enabled: false),
+        kind: AssertKind.statusEquals,
+        expected: '500',
+        enabled: false,
+      ),
     ]);
     final out = evaluateAssertions(r, _resp(ms: 120));
     expect(out.length, 1);
@@ -90,8 +105,7 @@ void main() {
 
   test('assertions survive JSON round trip', () {
     final r = _req([
-      AssertionModel(
-          kind: AssertKind.jsonEquals, target: 'a.b', expected: '1'),
+      AssertionModel(kind: AssertKind.jsonEquals, target: 'a.b', expected: '1'),
     ]);
     final back = RequestModel.fromJson(r.toJson());
     expect(back.assertions.single.kind, AssertKind.jsonEquals);

@@ -6,6 +6,7 @@ import '../services/captures.dart';
 import '../services/http_service.dart';
 import '../services/sound_service.dart';
 import '../services/storage.dart';
+import '../ui/help_tip.dart';
 
 /// One open editor tab: a working copy of a request plus its latest response.
 class RequestTab {
@@ -21,13 +22,17 @@ class RequestTab {
 }
 
 class AppState extends ChangeNotifier {
-  AppState({Storage? storage}) : _storage = storage ?? Storage() {
+  AppState({Storage? storage, SoundService? sounds})
+    : _storage = storage ?? Storage(),
+      sounds = sounds ?? SoundService() {
     _init();
   }
 
   final Storage _storage;
   final HttpService http = HttpService();
-  final SoundService sounds = SoundService();
+
+  /// Injected in tests so the sound library lives in a temp directory.
+  final SoundService sounds;
 
   bool loaded = false;
   bool _disposed = false;
@@ -120,6 +125,7 @@ class AppState extends ChangeNotifier {
     activeEnvironmentId = activeId;
     history = await _storage.loadHistory();
     settings = await _storage.loadSettings();
+    hoverHelpEnabled.value = settings.hoverHelp;
     if (_disposed) return;
     http.configure(settings);
     if (tabs.isEmpty) newTab();
@@ -132,6 +138,7 @@ class AppState extends ChangeNotifier {
 
   void updateSettings(AppSettings s) {
     settings = s;
+    hoverHelpEnabled.value = s.hoverHelp;
     http.configure(s);
     _storage.saveSettings(s);
     notifyListeners();

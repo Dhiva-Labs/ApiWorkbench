@@ -9,16 +9,31 @@ import '../services/doc_export.dart';
 import '../state/app_state.dart';
 import '../theme.dart';
 import 'app_menu.dart';
+import 'help_tip.dart';
 import 'json_view.dart';
+import 'tab_memory.dart';
+
+/// Which response tab (Pretty, Raw, Headers, Tests) each request tab shows,
+/// kept across new responses and across Request/Response on phones.
+final _selectedTab = Expando<int>('response tab');
 
 class ResponseView extends StatelessWidget {
-  const ResponseView({super.key, required this.tab});
+  /// Captures what [tab] shows right now. When a new response arrives the
+  /// outgoing view keeps showing the old one while it fades out, instead of
+  /// flipping to the new state halfway through the transition.
+  ResponseView({super.key, required this.tab})
+    : response = tab.response,
+      loading = tab.loading,
+      results = tab.assertionResults;
 
   final RequestTab tab;
+  final ResponseData? response;
+  final bool loading;
+  final List<AssertionResult> results;
 
   @override
   Widget build(BuildContext context) {
-    if (tab.loading) {
+    if (loading) {
       return Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -34,7 +49,7 @@ class ResponseView extends StatelessWidget {
         ),
       );
     }
-    final res = tab.response;
+    final res = response;
     if (res == null) {
       return Center(
         child: Column(
@@ -79,60 +94,87 @@ class ResponseView extends StatelessWidget {
     final preview = res.previewTruncated
         ? '${res.bodyPreview}\n\n[Preview limited to 64 KB. Copy or export for the full body.]'
         : res.bodyPreview;
-    final tests = tab.assertionResults;
+    final tests = results;
     final testsPassed = tests.where((t) => t.pass).length;
     return DefaultTabController(
       length: 4,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _statusBar(context, res),
-          TabBar(
-            isScrollable: true,
-            tabAlignment: TabAlignment.start,
-            labelStyle: const TextStyle(
-              fontSize: 13,
-              fontWeight: FontWeight.w600,
-            ),
-            tabs: [
-              const Tab(text: 'Pretty'),
-              const Tab(text: 'Raw'),
-              Tab(text: 'Headers (${res.headers.length})'),
-              Tab(
-                child: tests.isEmpty
-                    ? const Text('Tests')
-                    : Text(
-                        'Tests ($testsPassed/${tests.length})',
-                        style: TextStyle(
-                          color: testsPassed == tests.length
-                              ? Palette.get_
-                              : Palette.delete,
-                        ),
-                      ),
+      initialIndex: TabMemory.initialIndex(_selectedTab, tab, 4),
+      child: TabMemory(
+        owner: tab,
+        memory: _selectedTab,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _statusBar(context, res),
+            TabBar(
+              isScrollable: true,
+              tabAlignment: TabAlignment.start,
+              labelStyle: const TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
               ),
-            ],
-          ),
-          Expanded(
-            child: TabBarView(
-              children: [
-                _scroll(JsonView(text: preview)),
-                _scroll(
-                  SelectableText(
-                    preview.isEmpty ? '(empty body)' : preview,
-                    style: TextStyle(
-                      fontFamily: 'monospace',
-                      fontSize: 13,
-                      height: 1.5,
-                      color: Palette.text,
-                    ),
+              tabs: [
+                const HelpHover(
+                  'The body laid out for reading, with JSON indented and '
+                  'colour-coded.',
+                  title: 'Pretty view',
+                  child: Tab(text: 'Pretty'),
+                ),
+                const HelpHover(
+                  'The body exactly as the server sent it, as plain text. Use '
+                  'it for HTML, XML or anything that is not JSON.',
+                  title: 'Raw view',
+                  child: Tab(text: 'Raw'),
+                ),
+                HelpHover(
+                  'Extra information the server sent with the response, such as '
+                  'the body format and caching rules.',
+                  title: 'Response headers',
+                  example: 'Content-Type: application/json',
+                  child: Tab(text: 'Headers (${res.headers.length})'),
+                ),
+                HelpHover(
+                  'Results of the checks from the request\'s Tests tab, run on '
+                  'this response. Shown as passed out of total.',
+                  title: 'Test results',
+                  example: 'Tests (3/4)',
+                  child: Tab(
+                    child: tests.isEmpty
+                        ? const Text('Tests')
+                        : Text(
+                            'Tests ($testsPassed/${tests.length})',
+                            style: TextStyle(
+                              color: testsPassed == tests.length
+                                  ? Palette.get_
+                                  : Palette.delete,
+                            ),
+                          ),
                   ),
                 ),
-                _headersTable(res),
-                _testsList(tests),
               ],
             ),
-          ),
-        ],
+            Expanded(
+              child: TabBarView(
+                children: [
+                  _scroll(JsonView(text: preview)),
+                  _scroll(
+                    SelectableText(
+                      preview.isEmpty ? '(empty body)' : preview,
+                      style: TextStyle(
+                        fontFamily: 'monospace',
+                        fontSize: 13,
+                        height: 1.5,
+                        color: Palette.text,
+                      ),
+                    ),
+                  ),
+                  _headersTable(res),
+                  _testsList(tests),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -158,10 +200,17 @@ class ResponseView extends StatelessWidget {
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Icon(
-                t.pass ? Icons.check_circle : Icons.cancel,
-                size: 17,
-                color: color,
+              HelpHover(
+                t.pass
+                    ? 'This check passed on this response.'
+                    : 'This check failed. The line below says what came back '
+                          'instead.',
+                title: t.pass ? 'Passed' : 'Failed',
+                child: Icon(
+                  t.pass ? Icons.check_circle : Icons.cancel,
+                  size: 17,
+                  color: color,
+                ),
               ),
               const SizedBox(width: 8),
               Expanded(
@@ -206,35 +255,47 @@ class ResponseView extends StatelessWidget {
         crossAxisAlignment: WrapCrossAlignment.center,
         children: [
           if (fun) ...[
-            Text(switch (res.statusCode) {
-              >= 200 && < 300 => '🎉',
-              >= 300 && < 400 => '↪️',
-              >= 400 && < 500 => '🤦',
-              >= 500 => '🔥',
-              _ => '🚨',
-            }, style: const TextStyle(fontSize: 15)),
+            HelpHover(
+              'Chaos Mode is on, so each response gets an emoji and a sound '
+              'for its status. Switch to Focus in the header to turn it off.',
+              title: 'Chaos Mode',
+              child: Text(switch (res.statusCode) {
+                >= 200 && < 300 => '🎉',
+                >= 300 && < 400 => '↪️',
+                >= 400 && < 500 => '🤦',
+                >= 500 => '🔥',
+                _ => '🚨',
+              }, style: const TextStyle(fontSize: 15)),
+            ),
             const SizedBox(width: 8),
           ],
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-            decoration: BoxDecoration(
-              color: color.withValues(alpha: 0.14),
-              borderRadius: BorderRadius.circular(6),
-            ),
-            child: Text(
-              '${res.statusCode}'
-              '${res.statusMessage.isNotEmpty ? ' ${res.statusMessage}' : ''}',
-              style: TextStyle(
-                color: color,
-                fontWeight: FontWeight.w700,
-                fontSize: 12.5,
+          HelpHover(
+            httpStatusHelp(res.statusCode).message,
+            title: httpStatusHelp(res.statusCode).title,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              decoration: BoxDecoration(
+                color: color.withValues(alpha: 0.14),
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: Text(
+                '${res.statusCode}'
+                '${res.statusMessage.isNotEmpty ? ' ${res.statusMessage}' : ''}',
+                style: TextStyle(
+                  color: color,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 12.5,
+                ),
               ),
             ),
           ),
           if (res.protocol != null) ...[
             const SizedBox(width: 8),
-            Tooltip(
-              message: 'Negotiated HTTP version',
+            HelpHover(
+              'The HTTP version the server agreed to use for this response. '
+              'Set your preference in Settings.',
+              title: 'Protocol',
+              example: 'HTTP/3',
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
                 decoration: BoxDecoration(
@@ -253,12 +314,25 @@ class ResponseView extends StatelessWidget {
             ),
           ],
           const SizedBox(width: 14),
-          _metric(Icons.timer_outlined, _fmtDuration(res.durationMs)),
+          HelpHover(
+            'Time from sending the request to receiving the whole response, '
+            'including connecting to the server.',
+            title: 'Response time',
+            example: '230 ms',
+            child: _metric(Icons.timer_outlined, _fmtDuration(res.durationMs)),
+          ),
           const SizedBox(width: 12),
-          _metric(Icons.straighten, _fmtSize(res.sizeBytes)),
+          HelpHover(
+            'Size of the response body, not counting headers.',
+            title: 'Body size',
+            example: '1.4 KB',
+            child: _metric(Icons.straighten, _fmtSize(res.sizeBytes)),
+          ),
 
           IconButton(
-            tooltip: 'Save request + response as Markdown doc',
+            tooltip:
+                'Save request and response as a Markdown doc (secrets '
+                'masked)',
             icon: Icon(
               Icons.description_outlined,
               size: 16,

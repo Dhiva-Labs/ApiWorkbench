@@ -379,11 +379,23 @@ ThemeData buildTheme([PaletteData? palette]) {
     ),
     tooltipTheme: TooltipThemeData(
       decoration: BoxDecoration(
-        color: p.text,
-        borderRadius: BorderRadius.circular(6),
+        color: p.surface,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: p.border),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(
+              alpha: p.brightness == Brightness.dark ? 0.45 : 0.12,
+            ),
+            blurRadius: 16,
+            offset: const Offset(0, 6),
+          ),
+        ],
       ),
-      textStyle: TextStyle(color: p.surface, fontSize: 12),
-      waitDuration: const Duration(milliseconds: 400),
+      textStyle: TextStyle(color: p.text, fontSize: 12.5, height: 1.4),
+      waitDuration: const Duration(milliseconds: 350),
+      constraints: const BoxConstraints(maxWidth: 360),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
     ),
     scrollbarTheme: ScrollbarThemeData(
       thumbColor: WidgetStatePropertyAll(p.textDim.withValues(alpha: 0.35)),

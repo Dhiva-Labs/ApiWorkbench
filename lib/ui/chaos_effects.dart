@@ -14,6 +14,7 @@ class ChaosEffects extends StatefulWidget {
     required this.trigger, // changes when a new response arrives
     required this.statusCode, // 0 = transport error
     required this.isError,
+    this.scope,
   });
 
   final Widget child;
@@ -21,6 +22,11 @@ class ChaosEffects extends StatefulWidget {
   final Object? trigger;
   final int statusCode;
   final bool isError;
+
+  /// What [trigger] belongs to (the request tab). A trigger change that
+  /// comes with a scope change is a switch to another tab's response, not
+  /// a new response, so it plays nothing.
+  final Object? scope;
 
   @override
   State<ChaosEffects> createState() => _ChaosEffectsState();
@@ -45,7 +51,11 @@ class _ChaosEffectsState extends State<ChaosEffects>
   @override
   void didUpdateWidget(ChaosEffects old) {
     super.didUpdateWidget(old);
-    if (!widget.enabled || widget.trigger == null) return;
+    if (!widget.enabled) {
+      if (_ctrl.isAnimating) _ctrl.stop();
+      return;
+    }
+    if (widget.trigger == null || old.scope != widget.scope) return;
     if (old.trigger == widget.trigger) return;
     final ok =
         !widget.isError && widget.statusCode >= 200 && widget.statusCode < 300;
@@ -92,29 +102,29 @@ class _ChaosEffectsState extends State<ChaosEffects>
 
   @override
   Widget build(BuildContext context) {
-    if (!widget.enabled) return widget.child;
+    // The same tree whether or not effects are on, so switching Chaos Mode
+    // keeps the response view below (selected tab, scroll offset) intact.
     return AnimatedBuilder(
       animation: _ctrl,
-      builder: (context, _) {
+      child: widget.child,
+      builder: (context, child) {
         final t = _ctrl.value;
-        final active = _ctrl.isAnimating;
-        Widget body = widget.child;
-        if (active && !_celebrate) {
-          // decaying horizontal shake
-          final shake = sin(t * pi * 9) * 9 * (1 - t) * (1 - t);
-          body = Transform.translate(offset: Offset(shake, 0), child: body);
-        }
+        final active = widget.enabled && _ctrl.isAnimating;
+        // A decaying horizontal shake on errors.
+        final shake = active && !_celebrate
+            ? sin(t * pi * 9) * 9 * (1 - t) * (1 - t)
+            : 0.0;
         return Stack(
           fit: StackFit.expand,
           children: [
-            body,
+            Transform.translate(offset: Offset(shake, 0), child: child),
             if (active && _celebrate)
               IgnorePointer(
                 child: CustomPaint(painter: _ConfettiPainter(_particles, t)),
               ),
             if (active && !_celebrate)
               IgnorePointer(
-                child: Container(
+                child: ColoredBox(
                   color: Palette.delete.withValues(
                     alpha: 0.16 * (1 - t) * (1 - t),
                   ),

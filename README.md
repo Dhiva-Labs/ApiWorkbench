@@ -71,6 +71,9 @@ codebase for **Linux, Windows, macOS, Android and iOS**.
   network errors — original clips), confetti on 2xx, screen-shake on errors,
   and status emoji. Import your own meme clips from a local file or a
   myinstants.com URL and map them to status classes or exact codes.
+- **Hover help** — every field, tab, button and badge explains itself with a
+  short card (title, explanation and an example); long-press on touch screens.
+  Turn it off in Settings once you know your way around.
 - **Themes** — Teal (follows the system light/dark setting, or fixed light
   or dark) and Graphite and orange; switch from the rail or Settings.
 - **Responsive UI** — desktop icon rail (collections, environments, history,
@@ -97,6 +100,10 @@ flutter build ios --release       # on macOS
 ```
 
 ## Tests
+
+`flutter test integration_test/layout_sweep_test.dart -d linux` renders every
+screen at phone, tablet and desktop sizes in each theme and fails on any
+overflow; `integration_test/screenshots_test.dart` regenerates `screenshots/`.
 
 ```sh
 flutter test                      # core unit tests

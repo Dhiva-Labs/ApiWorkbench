@@ -4,6 +4,8 @@ import 'package:provider/provider.dart';
 import '../models/models.dart';
 import '../state/app_state.dart';
 import '../theme.dart';
+import 'adaptive.dart';
+import 'help_tip.dart';
 import 'import_dialog.dart';
 import 'kv_editor.dart';
 import 'load_test_screen.dart';
@@ -16,6 +18,28 @@ extension SidebarSectionInfo on SidebarSection {
     SidebarSection.collections => 'Collections',
     SidebarSection.environments => 'Environments',
     SidebarSection.history => 'History',
+  };
+
+  ({String message, String example}) get help => switch (this) {
+    SidebarSection.collections => (
+      message:
+          'Saved requests, grouped into collections and folders. Use the … '
+          'menu on a collection to run it, load test it or edit its '
+          'variables.',
+      example: 'Shop API › Orders › Create order',
+    ),
+    SidebarSection.environments => (
+      message:
+          'Sets of {{variables}} for each place you test. Only the selected '
+          'one is used, and it wins over collection variables.',
+      example: 'Local: baseUrl = http://localhost:8080',
+    ),
+    SidebarSection.history => (
+      message:
+          'The last 100 requests you sent. Click one to open a copy in a new '
+          'tab.',
+      example: 'GET /users · 200 · 85 ms · 2 min ago',
+    ),
   };
 
   IconData get icon => switch (this) {
@@ -101,6 +125,22 @@ class _SidebarState extends State<Sidebar> {
                     color: Palette.textDim,
                   ),
                   prefixIconConstraints: const BoxConstraints(minWidth: 34),
+                  suffixIcon: _section == SidebarSection.collections
+                      ? const HelpTip(
+                          'Filter saved requests by name, URL or folder. '
+                          'Matching folders open automatically.',
+                          title: 'Search requests',
+                          example: 'orders',
+                        )
+                      : const HelpTip(
+                          'Filter sent requests by their URL.',
+                          title: 'Search history',
+                          example: '/users',
+                        ),
+                  suffixIconConstraints: const BoxConstraints(
+                    minWidth: 30,
+                    minHeight: 30,
+                  ),
                   contentPadding: const EdgeInsets.symmetric(horizontal: 8),
                 ),
                 onChanged: (v) => setState(() => _filter = v.toLowerCase()),
@@ -119,42 +159,43 @@ class _SidebarState extends State<Sidebar> {
   }
 
   Widget _header(AppState state) {
-    Widget action(String tip, IconData icon, VoidCallback onTap) => IconButton(
-      tooltip: tip,
-      visualDensity: VisualDensity.compact,
-      icon: Icon(icon, size: 19),
-      onPressed: onTap,
-    );
+    Widget action(String tip, IconData icon, VoidCallback onTap) =>
+        IconButton(tooltip: tip, icon: Icon(icon, size: 19), onPressed: onTap);
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 10, 6, 6),
       child: Row(
         children: [
           Expanded(
-            child: Text(
-              _section.label,
-              style: TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w700,
-                color: Palette.text,
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: LabelWithHelp(
+                _section.label,
+                _section.help.message,
+                example: _section.help.example,
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w700,
+                  color: Palette.text,
+                ),
               ),
             ),
           ),
           ...switch (_section) {
             SidebarSection.collections => [
               action(
-                'Import Postman or workspace',
+                'Import from Postman or a workspace file',
                 Icons.download_outlined,
                 () => showImportDialog(context),
               ),
               action(
-                'New collection',
+                'Create a collection',
                 Icons.create_new_folder_outlined,
                 () => _newCollectionDialog(state),
               ),
             ],
             SidebarSection.environments => [
               action(
-                'New environment',
+                'Create an environment',
                 Icons.add,
                 () => _newEnvironment(state),
               ),
@@ -162,7 +203,7 @@ class _SidebarState extends State<Sidebar> {
             SidebarSection.history => [
               if (state.history.isNotEmpty)
                 action(
-                  'Clear history',
+                  'Clear all history',
                   Icons.delete_sweep_outlined,
                   state.clearHistory,
                 ),
@@ -242,6 +283,7 @@ class _SidebarState extends State<Sidebar> {
           label: c.name,
           bold: true,
           meta: '${c.requests.length}',
+          metaHelp: 'Requests saved in this collection, including folders.',
           onTap: () => _toggle(key),
           menu: _collectionMenu(state, c),
         ),
@@ -274,6 +316,7 @@ class _SidebarState extends State<Sidebar> {
             icon: open ? Icons.folder_open_outlined : Icons.folder_outlined,
             label: child.name,
             meta: '${child.count}',
+            metaHelp: 'Requests in this folder, including subfolders.',
             onTap: () => _toggle(key),
             menu: _folderMenu(c, child),
           ),
@@ -311,6 +354,7 @@ class _SidebarState extends State<Sidebar> {
     IconData? icon,
     String? method,
     String? meta,
+    String? metaHelp,
     bool bold = false,
     bool selected = false,
     Widget? menu,
@@ -324,7 +368,7 @@ class _SidebarState extends State<Sidebar> {
           borderRadius: BorderRadius.circular(6),
           onTap: onTap,
           child: SizedBox(
-            height: 32,
+            height: isTouch(context) ? minTouchTarget : 32,
             child: Row(
               children: [
                 SizedBox(width: 6.0 + depth * 14),
@@ -348,13 +392,9 @@ class _SidebarState extends State<Sidebar> {
                 if (method != null)
                   SizedBox(
                     width: 46,
-                    child: Text(
-                      method == 'DELETE' ? 'DEL' : method,
-                      style: TextStyle(
-                        color: methodColor(method),
-                        fontWeight: FontWeight.w800,
-                        fontSize: 10.5,
-                      ),
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: _methodBadge(method),
                     ),
                   ),
                 Expanded(
@@ -371,9 +411,13 @@ class _SidebarState extends State<Sidebar> {
                   ),
                 ),
                 if (meta != null)
-                  Text(
-                    meta,
-                    style: TextStyle(fontSize: 11, color: Palette.textDim),
+                  HelpHover(
+                    metaHelp ?? 'How many requests are inside.',
+                    title: '$meta requests',
+                    child: Text(
+                      meta,
+                      style: TextStyle(fontSize: 11, color: Palette.textDim),
+                    ),
                   ),
                 ?menu,
               ],
@@ -384,11 +428,27 @@ class _SidebarState extends State<Sidebar> {
     );
   }
 
+  /// Method badge for tree and history rows; long-press help keeps the row
+  /// tappable on touch screens.
+  Widget _methodBadge(String method) => HelpHover(
+    httpMethodHelp(method).message,
+    title: httpMethodHelp(method).title,
+    child: Text(
+      method == 'DELETE' ? 'DEL' : method,
+      style: TextStyle(
+        color: methodColor(method),
+        fontWeight: FontWeight.w800,
+        fontSize: 10.5,
+      ),
+    ),
+  );
+
   Widget _menuButton(
+    String tooltip,
     List<PopupMenuEntry<String>> items,
     void Function(String) on,
   ) => PopupMenuButton<String>(
-    tooltip: 'More',
+    tooltip: tooltip,
     padding: EdgeInsets.zero,
     iconSize: 17,
     icon: Icon(Icons.more_horiz, size: 17, color: Palette.textDim),
@@ -396,27 +456,87 @@ class _SidebarState extends State<Sidebar> {
     itemBuilder: (_) => items,
   );
 
-  PopupMenuItem<String> _item(String value, IconData icon, String text) =>
-      PopupMenuItem(
-        value: value,
-        height: 38,
-        child: Row(
-          children: [
-            Icon(icon, size: 17, color: Palette.textDim),
-            const SizedBox(width: 10),
-            Text(text, style: const TextStyle(fontSize: 13)),
-          ],
+  PopupMenuItem<String> _item(
+    String value,
+    IconData icon,
+    String text, {
+    String? help,
+    String? example,
+  }) {
+    final row = Row(
+      children: [
+        Icon(icon, size: 17, color: Palette.textDim),
+        const SizedBox(width: 10),
+        Flexible(
+          child: Text(
+            text,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(fontSize: 13),
+          ),
         ),
-      );
+      ],
+    );
+    return PopupMenuItem(
+      value: value,
+      height: isTouch(context) ? 48 : 38,
+      child: help == null
+          ? row
+          : HelpHover(help, title: text, example: example, child: row),
+    );
+  }
 
   Widget _collectionMenu(AppState state, CollectionModel c) => _menuButton(
+    'Collection actions',
     [
-      _item('run', Icons.play_circle_outline, 'Run collection'),
-      _item('load', Icons.speed, 'Load test collection'),
-      _item('import', Icons.download_outlined, 'Import into collection'),
-      _item('vars', Icons.data_object, 'Variables'),
-      _item('rename', Icons.edit_outlined, 'Rename'),
-      _item('delete', Icons.delete_outline, 'Delete'),
+      _item(
+        'run',
+        Icons.play_circle_outline,
+        'Run collection',
+        help:
+            'Send every request in this collection in order and check their '
+            'tests. You can repeat runs or feed in test data.',
+        example: '3 passes, 500 ms between requests',
+      ),
+      _item(
+        'load',
+        Icons.speed,
+        'Load test collection',
+        help:
+            'Simulate many users running these requests at once and measure '
+            'speed and errors.',
+        example: '50 users × 20 iterations',
+      ),
+      _item(
+        'import',
+        Icons.download_outlined,
+        'Import into collection',
+        help:
+            'Add requests from a Postman export or workspace file to this '
+            'collection instead of creating a new one.',
+      ),
+      _item(
+        'vars',
+        Icons.data_object,
+        'Variables',
+        help:
+            'Values every request in this collection can use as {{name}}. If '
+            'the active environment has the same name, its value wins.',
+        example: 'baseUrl = https://api.example.com',
+      ),
+      _item(
+        'rename',
+        Icons.edit_outlined,
+        'Rename',
+        help: 'Give this collection a new name. Its requests stay as they are.',
+      ),
+      _item(
+        'delete',
+        Icons.delete_outline,
+        'Delete',
+        help:
+            'Remove this collection and all its saved requests. You are asked '
+            'to confirm first.',
+      ),
     ],
     (v) => switch (v) {
       'run' => _openRunner(c, c.requests, c.name),
@@ -435,10 +555,31 @@ class _SidebarState extends State<Sidebar> {
         if (r.folder == f.path || r.folder.startsWith('${f.path}/')) r,
     ];
     return _menuButton(
+      'Folder actions',
       [
-        _item('run', Icons.play_circle_outline, 'Run folder'),
-        _item('load', Icons.speed, 'Load test folder'),
-        _item('import', Icons.download_outlined, 'Import into folder'),
+        _item(
+          'run',
+          Icons.play_circle_outline,
+          'Run folder',
+          help:
+              'Send every request in this folder and its subfolders in order, '
+              'and check their tests.',
+        ),
+        _item(
+          'load',
+          Icons.speed,
+          'Load test folder',
+          help:
+              'Simulate many users running this folder\'s requests at once and '
+              'measure speed and errors.',
+        ),
+        _item(
+          'import',
+          Icons.download_outlined,
+          'Import into folder',
+          help: 'Add imported requests inside this folder.',
+          example: 'Shop API › Orders',
+        ),
       ],
       (v) => switch (v) {
         'import' => showImportDialog(
@@ -455,10 +596,31 @@ class _SidebarState extends State<Sidebar> {
 
   Widget _requestMenu(AppState state, CollectionModel c, RequestModel r) =>
       _menuButton(
+        'Request actions',
         [
-          _item('duplicate', Icons.copy_outlined, 'Duplicate'),
-          _item('load', Icons.speed, 'Load test'),
-          _item('delete', Icons.delete_outline, 'Delete'),
+          _item(
+            'duplicate',
+            Icons.copy_outlined,
+            'Duplicate',
+            help:
+                'Make a copy right below this one, handy for trying a '
+                'variation.',
+            example: 'Create order (copy)',
+          ),
+          _item(
+            'load',
+            Icons.speed,
+            'Load test',
+            help:
+                'Send this request from many simulated users at once and '
+                'measure speed and errors.',
+          ),
+          _item(
+            'delete',
+            Icons.delete_outline,
+            'Delete',
+            help: 'Remove this request from the collection right away.',
+          ),
         ],
         (v) => switch (v) {
           'duplicate' => state.duplicateRequest(c, r),
@@ -500,30 +662,35 @@ class _SidebarState extends State<Sidebar> {
   void _editCollectionVariables(AppState state, CollectionModel c) {
     showDialog<void>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text('${c.name} variables'),
-        content: SizedBox(
-          width: 560,
-          height: 380,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Available as {{name}} to every request in this collection. '
-                'The active environment wins when both define a name.',
-                style: TextStyle(fontSize: 12.5, color: Palette.textDim),
+      builder: (ctx) => AdaptiveDialog(
+        title: Text('${c.name} variables', overflow: TextOverflow.ellipsis),
+        height: 380,
+        content: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Available as {{name}} to every request in this collection. '
+              'The active environment wins when both define a name.',
+              style: TextStyle(fontSize: 12.5, color: Palette.textDim),
+            ),
+            const SizedBox(height: 6),
+            Expanded(
+              child: KVEditor(
+                rows: c.variables,
+                onChanged: state.updateCollections,
+                keyHint: 'Variable',
+                addLabel: 'Add variable',
+                keyHelp:
+                    'The variable name. Requests in this collection use it '
+                    'as {{name}}.',
+                keyExample: 'baseUrl',
+                valueHelp:
+                    'The value that replaces {{name}} when you send. The '
+                    'active environment\'s value wins on a name clash.',
+                valueExample: 'https://api.example.com',
               ),
-              const SizedBox(height: 6),
-              Expanded(
-                child: KVEditor(
-                  rows: c.variables,
-                  onChanged: state.updateCollections,
-                  keyHint: 'Variable',
-                  addLabel: 'Add variable',
-                ),
-              ),
-            ],
-          ),
+            ),
+          ],
         ),
         actions: [
           FilledButton(
@@ -560,6 +727,7 @@ class _SidebarState extends State<Sidebar> {
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
+        scrollable: true,
         title: Text('Delete "${c.name}"?'),
         content: Text(
           'This removes the collection and its ${c.requests.length} saved '
@@ -618,16 +786,33 @@ class _SidebarState extends State<Sidebar> {
           child: InkWell(
             borderRadius: BorderRadius.circular(6),
             onTap: () => state.setActiveEnvironment(e?.id),
-            child: Padding(
+            child: Container(
+              constraints: BoxConstraints(
+                minHeight: isTouch(context) ? minTouchTarget : 0,
+              ),
               padding: const EdgeInsets.fromLTRB(10, 8, 4, 8),
               child: Row(
                 children: [
-                  Icon(
-                    active
-                        ? Icons.radio_button_checked
-                        : Icons.radio_button_unchecked,
-                    size: 17,
-                    color: active ? Palette.accent : Palette.textDim,
+                  HelpHover(
+                    e == null
+                        ? 'Use no environment: only collection variables '
+                              'fill in {{name}}.'
+                        : active
+                        ? 'This environment\'s variables fill in {{name}} in '
+                              'every request you send.'
+                        : 'Click to make this the active environment.',
+                    title: e == null
+                        ? 'No environment'
+                        : active
+                        ? 'Active environment'
+                        : 'Inactive',
+                    child: Icon(
+                      active
+                          ? Icons.radio_button_checked
+                          : Icons.radio_button_unchecked,
+                      size: 17,
+                      color: active ? Palette.accent : Palette.textDim,
+                    ),
                   ),
                   const SizedBox(width: 10),
                   Expanded(
@@ -646,11 +831,17 @@ class _SidebarState extends State<Sidebar> {
                           ),
                         ),
                         if (e != null)
-                          Text(
-                            '${e.variables.length} variables',
-                            style: TextStyle(
-                              fontSize: 11,
-                              color: Palette.textDim,
+                          HelpHover(
+                            'How many variables this environment defines. '
+                            'Use the pencil to view or change them.',
+                            title: 'Variables',
+                            example: 'baseUrl, token',
+                            child: Text(
+                              '${e.variables.length} variables',
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: Palette.textDim,
+                              ),
                             ),
                           ),
                       ],
@@ -658,8 +849,7 @@ class _SidebarState extends State<Sidebar> {
                   ),
                   if (e != null)
                     IconButton(
-                      tooltip: 'Edit variables',
-                      visualDensity: VisualDensity.compact,
+                      tooltip: 'Edit this environment\'s variables',
                       icon: const Icon(Icons.edit_outlined, size: 17),
                       onPressed: () => _editEnvironment(state, e),
                     ),
@@ -687,29 +877,31 @@ class _SidebarState extends State<Sidebar> {
   void _editEnvironment(AppState state, EnvironmentModel env) {
     showDialog<void>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: Row(
-          children: [
-            Expanded(child: Text(env.name)),
-            IconButton(
-              tooltip: 'Delete environment',
-              icon: Icon(Icons.delete_outline, size: 19, color: Palette.delete),
-              onPressed: () {
-                state.deleteEnvironment(env);
-                Navigator.pop(ctx);
-              },
-            ),
-          ],
-        ),
-        content: SizedBox(
-          width: 560,
-          height: 380,
-          child: KVEditor(
-            rows: env.variables,
-            onChanged: state.updateEnvironment,
-            keyHint: 'Variable',
-            addLabel: 'Add variable',
+      builder: (ctx) => AdaptiveDialog(
+        title: Text(env.name, overflow: TextOverflow.ellipsis),
+        headerActions: [
+          IconButton(
+            tooltip: 'Delete this environment',
+            icon: Icon(Icons.delete_outline, size: 19, color: Palette.delete),
+            onPressed: () {
+              state.deleteEnvironment(env);
+              Navigator.pop(ctx);
+            },
           ),
+        ],
+        height: 380,
+        content: KVEditor(
+          rows: env.variables,
+          onChanged: state.updateEnvironment,
+          keyHint: 'Variable',
+          addLabel: 'Add variable',
+          keyHelp:
+              'The variable name. Use it anywhere in a request as {{name}}.',
+          keyExample: 'baseUrl',
+          valueHelp:
+              'The value that replaces {{name}} while this environment is '
+              'active. It wins over a collection variable of the same name.',
+          valueExample: 'http://localhost:8080',
         ),
         actions: [
           FilledButton(
@@ -757,13 +949,9 @@ class _SidebarState extends State<Sidebar> {
               children: [
                 SizedBox(
                   width: 46,
-                  child: Text(
-                    h.request.method == 'DELETE' ? 'DEL' : h.request.method,
-                    style: TextStyle(
-                      color: methodColor(h.request.method),
-                      fontWeight: FontWeight.w800,
-                      fontSize: 10.5,
-                    ),
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: _methodBadge(h.request.method),
                   ),
                 ),
                 Expanded(
@@ -780,12 +968,19 @@ class _SidebarState extends State<Sidebar> {
                         ),
                       ),
                       const SizedBox(height: 2),
-                      Text(
-                        '${code == 0 ? 'Error' : code} · ${h.durationMs} ms · '
-                        '${_ago(h.at)}',
-                        style: TextStyle(
-                          fontSize: 11,
-                          color: code == 0 ? Palette.delete : statusColor(code),
+                      HelpHover(
+                        '${httpStatusHelp(code).message} Shown with the '
+                        'response time and when you sent it.',
+                        title: httpStatusHelp(code).title,
+                        child: Text(
+                          '${code == 0 ? 'Error' : code} · ${h.durationMs} ms '
+                          '· ${_ago(h.at)}',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: code == 0
+                                ? Palette.delete
+                                : statusColor(code),
+                          ),
                         ),
                       ),
                     ],
@@ -874,27 +1069,31 @@ Future<String?> _promptText(
   final ctrl = TextEditingController(text: initial);
   return showDialog<String>(
     context: context,
-    builder: (ctx) => AlertDialog(
-      title: Text(title),
-      content: SizedBox(
-        width: 360,
-        child: TextField(
-          controller: ctrl,
-          autofocus: true,
-          decoration: InputDecoration(labelText: label),
-          onSubmitted: (v) => Navigator.pop(ctx, v.trim()),
+    builder: (ctx) => ControllerScope(
+      controllers: [ctrl],
+      child: AlertDialog(
+        scrollable: true,
+        title: Text(title),
+        content: SizedBox(
+          width: 360,
+          child: TextField(
+            controller: ctrl,
+            autofocus: true,
+            decoration: InputDecoration(labelText: label),
+            onSubmitted: (v) => Navigator.pop(ctx, v.trim()),
+          ),
         ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
+            child: const Text('OK'),
+          ),
+        ],
       ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(ctx),
-          child: const Text('Cancel'),
-        ),
-        FilledButton(
-          onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
-          child: const Text('OK'),
-        ),
-      ],
     ),
   );
 }

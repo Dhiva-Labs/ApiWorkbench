@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../state/app_state.dart';
 import '../theme.dart';
 import 'chaos_mode.dart';
+import 'help_tip.dart';
 
 /// Header pill switching between Focus (calm) and Chaos (meme sounds +
 /// effects). Tapping the already-active Chaos side opens the sound config.
@@ -45,7 +46,8 @@ class ModeToggle extends StatelessWidget {
             label: 'Focus',
             selected: !chaos,
             color: Palette.accent,
-            tooltip: 'Focus mode — no sounds, no effects',
+            title: 'Focus mode',
+            tooltip: 'Quiet working: no sounds and no effects on responses.',
             onTap: () => setMode(false),
           ),
           _seg(
@@ -53,9 +55,13 @@ class ModeToggle extends StatelessWidget {
             label: 'Chaos',
             selected: chaos,
             color: Palette.post,
+            title: 'Chaos mode',
             tooltip: chaos
-                ? 'Chaos mode is on — tap again to configure sounds'
-                : 'Chaos mode — meme sounds + confetti',
+                ? 'On: each response plays a sound for its status. Click again '
+                      'to choose the sounds.'
+                : 'Each response plays a meme sound for its status, with '
+                      'confetti on success and a shake on errors.',
+            example: '404 plays its own clip',
             onTap: () => setMode(true),
           ),
         ],
@@ -68,11 +74,16 @@ class ModeToggle extends StatelessWidget {
     required String label,
     required bool selected,
     required Color color,
+    required String title,
     required String tooltip,
+    String? example,
     required VoidCallback onTap,
   }) {
-    return Tooltip(
-      message: tooltip,
+    return HelpHover(
+      tooltip,
+      title: title,
+      example: example,
+      essential: true,
       child: GestureDetector(
         onTap: onTap,
         child: AnimatedContainer(

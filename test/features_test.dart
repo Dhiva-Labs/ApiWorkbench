@@ -10,11 +10,14 @@ import 'package:api_workbench/services/workspace.dart';
 void main() {
   group('workspace export/import', () {
     test('round trip preserves collections and environments', () {
-      final col = CollectionModel(name: 'API', requests: [
-        RequestModel(name: 'r1', url: 'https://x', method: 'POST'),
-      ]);
+      final col = CollectionModel(
+        name: 'API',
+        requests: [RequestModel(name: 'r1', url: 'https://x', method: 'POST')],
+      );
       final env = EnvironmentModel(
-          name: 'Dev', variables: [KV(key: 'base', value: 'https://x')]);
+        name: 'Dev',
+        variables: [KV(key: 'base', value: 'https://x')],
+      );
       final json = buildWorkspaceJson([col], [env]);
       final ws = parseWorkspaceJson(json);
       expect(ws.collections.single.name, 'API');
@@ -25,10 +28,14 @@ void main() {
     });
 
     test('rejects non-workspace files with a readable error', () {
-      expect(() => parseWorkspaceJson('{"foo": 1}'),
-          throwsA(isA<FormatException>()));
-      expect(() => parseWorkspaceJson('not json'),
-          throwsA(isA<FormatException>()));
+      expect(
+        () => parseWorkspaceJson('{"foo": 1}'),
+        throwsA(isA<FormatException>()),
+      );
+      expect(
+        () => parseWorkspaceJson('not json'),
+        throwsA(isA<FormatException>()),
+      );
     });
   });
 
@@ -48,7 +55,7 @@ void main() {
         statusCode: 200,
         statusMessage: 'OK',
         headers: const {
-          'content-type': ['application/json']
+          'content-type': ['application/json'],
         },
         bodyBytes: utf8.encode('{"token":"xyz"}'),
         durationMs: 88,
@@ -96,9 +103,10 @@ void main() {
 
     test('graphql fields survive JSON round trip', () {
       final r = RequestModel(
-          bodyType: BodyType.graphql,
-          body: 'query {}',
-          graphqlVariables: '{"a":1}');
+        bodyType: BodyType.graphql,
+        body: 'query {}',
+        graphqlVariables: '{"a":1}',
+      );
       final back = RequestModel.fromJson(r.toJson());
       expect(back.bodyType, BodyType.graphql);
       expect(back.graphqlVariables, '{"a":1}');
@@ -108,7 +116,10 @@ void main() {
   group('settings', () {
     test('settings JSON round trip', () {
       final s = AppSettings(
-          verifySsl: false, connectTimeoutS: 10, receiveTimeoutS: 20);
+        verifySsl: false,
+        connectTimeoutS: 10,
+        receiveTimeoutS: 20,
+      );
       final back = AppSettings.fromJson(s.toJson());
       expect(back.verifySsl, isFalse);
       expect(back.connectTimeoutS, 10);
