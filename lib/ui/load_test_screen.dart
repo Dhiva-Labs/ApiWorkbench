@@ -20,10 +20,14 @@ class LoadTestScreen extends StatefulWidget {
     super.key,
     required this.title,
     required this.requests,
+    this.collectionId,
   });
 
   final String title;
   final List<RequestModel> requests;
+
+  /// Collection the requests come from, for its variables.
+  final String? collectionId;
 
   @override
   State<LoadTestScreen> createState() => _LoadTestScreenState();
@@ -41,7 +45,9 @@ class _LoadTestScreenState extends State<LoadTestScreen> {
   void initState() {
     super.initState();
     _svc = LoadTestService(context.read<AppState>().settings);
-    _plan = [for (final r in widget.requests) LoadStep(r)];
+    _plan = [
+      for (final r in widget.requests) LoadStep(r, extract: Map.of(r.captures)),
+    ];
   }
 
   @override
@@ -54,7 +60,7 @@ class _LoadTestScreenState extends State<LoadTestScreen> {
     _svc.start(
       plan: _plan,
       config: _config,
-      vars: context.read<AppState>().activeVars,
+      vars: context.read<AppState>().varsFor(widget.collectionId),
     );
   }
 
@@ -136,8 +142,8 @@ class _LoadTestScreenState extends State<LoadTestScreen> {
         decoration: InputDecoration(
           labelText: label,
           helperText: helper,
-          helperStyle: const TextStyle(fontSize: 11, color: Palette.textDim),
-          labelStyle: const TextStyle(fontSize: 12, color: Palette.textDim),
+          helperStyle: TextStyle(fontSize: 11, color: Palette.textDim),
+          labelStyle: TextStyle(fontSize: 12, color: Palette.textDim),
         ),
         onChanged: (v) {
           final n = int.tryParse(v);
@@ -247,7 +253,9 @@ class _LoadTestScreenState extends State<LoadTestScreen> {
               FilledButton.icon(
                 style: FilledButton.styleFrom(
                   backgroundColor: running ? Palette.delete : Palette.accent,
-                  foregroundColor: Colors.white,
+                  foregroundColor: running
+                      ? Colors.white
+                      : Palette.onAccent,
                 ),
                 onPressed: running
                     ? (_svc.stopping ? null : _svc.stop)
@@ -271,7 +279,7 @@ class _LoadTestScreenState extends State<LoadTestScreen> {
                 (v) => c.recordLog = v,
               ),
               if (c.recordLog) ...[
-                const Text(
+                Text(
                   'Save responses',
                   style: TextStyle(fontSize: 13, color: Palette.textDim),
                 ),
@@ -289,7 +297,7 @@ class _LoadTestScreenState extends State<LoadTestScreen> {
             ],
           ),
           const SizedBox(height: 10),
-          const Text(
+          Text(
             'Each virtual user gets the active environment plus {{vu}} and '
             '{{iteration}}. In "One by one" mode, values extracted from a '
             'response (e.g. token = body.data.token) are available to later '
@@ -358,7 +366,7 @@ class _LoadTestScreenState extends State<LoadTestScreen> {
                 child: Text(
                   _config.parallel ? '•' : '${i + 1}',
                   textAlign: TextAlign.center,
-                  style: const TextStyle(
+                  style: TextStyle(
                     color: Palette.textDim,
                     fontWeight: FontWeight.w700,
                   ),
@@ -393,7 +401,7 @@ class _LoadTestScreenState extends State<LoadTestScreen> {
                     Text(
                       r.url,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 11.5,
                         color: Palette.textDim,
                         fontFamily: 'monospace',
@@ -407,7 +415,7 @@ class _LoadTestScreenState extends State<LoadTestScreen> {
                   padding: const EdgeInsets.only(right: 4),
                   child: Text(
                     '→ ${step.extract.keys.map((k) => '{{$k}}').join(' ')}',
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 11.5,
                       color: Palette.accent,
                       fontFamily: 'monospace',
@@ -458,13 +466,13 @@ class _LoadTestScreenState extends State<LoadTestScreen> {
     if (s.error != null) {
       return _card(
         'Results',
-        Text(s.error!, style: const TextStyle(color: Palette.delete)),
+        Text(s.error!, style: TextStyle(color: Palette.delete)),
       );
     }
     if (s.total.count == 0 && !s.running) {
       return _card(
         'Results',
-        const Text(
+        Text(
           'Press Run to start. Throughput, error rate and latency '
           'percentiles appear here live.',
           style: TextStyle(color: Palette.textDim),
@@ -493,7 +501,7 @@ class _LoadTestScreenState extends State<LoadTestScreen> {
               padding: const EdgeInsets.only(top: 4),
               child: Text(
                 s.logError!,
-                style: const TextStyle(fontSize: 12, color: Palette.delete),
+                style: TextStyle(fontSize: 12, color: Palette.delete),
               ),
             ),
           const SizedBox(height: 8),
@@ -577,9 +585,9 @@ class _LoadTestScreenState extends State<LoadTestScreen> {
                   height: 14,
                   child: CircularProgressIndicator(strokeWidth: 2),
                 )
-              : const Icon(Icons.save_alt, size: 17, color: Palette.accent),
+              : Icon(Icons.save_alt, size: 17, color: Palette.accent),
           const SizedBox(width: 6),
-          const Text(
+          Text(
             'Save report',
             style: TextStyle(color: Palette.accent, fontSize: 13),
           ),
@@ -621,7 +629,7 @@ class _LoadTestScreenState extends State<LoadTestScreen> {
       trailing: Text(
         '${_fmt(log.count)} calls logged'
         '${log.count > recent.length ? ' · newest ${recent.length} shown' : ''}',
-        style: const TextStyle(fontSize: 12, color: Palette.textDim),
+        style: TextStyle(fontSize: 12, color: Palette.textDim),
       ),
       Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -632,7 +640,7 @@ class _LoadTestScreenState extends State<LoadTestScreen> {
               child: Text(
                 '${_fmt(log.bodiesDropped)} responses not saved: the run hit '
                 'the 256 MB limit for saved bodies.',
-                style: const TextStyle(fontSize: 12, color: Palette.delete),
+                style: TextStyle(fontSize: 12, color: Palette.delete),
               ),
             ),
           for (final e in recent) _logRow(e),
@@ -761,7 +769,7 @@ class _LoadTestScreenState extends State<LoadTestScreen> {
         Row(
           children: [
             if (alert) ...[
-              const Icon(
+              Icon(
                 Icons.warning_amber_rounded,
                 size: 13,
                 color: Palette.delete,
@@ -773,7 +781,7 @@ class _LoadTestScreenState extends State<LoadTestScreen> {
                 label,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: const TextStyle(fontSize: 11.5, color: Palette.textDim),
+                style: TextStyle(fontSize: 11.5, color: Palette.textDim),
               ),
             ),
           ],
@@ -801,7 +809,7 @@ class _LoadTestScreenState extends State<LoadTestScreen> {
     Widget h(String t) => Text(
       t,
       textAlign: TextAlign.right,
-      style: const TextStyle(
+      style: TextStyle(
         fontSize: 11.5,
         fontWeight: FontWeight.w600,
         color: Palette.textDim,
@@ -814,7 +822,7 @@ class _LoadTestScreenState extends State<LoadTestScreen> {
     );
     TableRow row(List<Widget> cells, {bool header = false}) => TableRow(
       decoration: header
-          ? const BoxDecoration(
+          ? BoxDecoration(
               border: Border(bottom: BorderSide(color: Palette.border)),
             )
           : null,
@@ -895,10 +903,7 @@ class _LoadTestScreenState extends State<LoadTestScreen> {
                 children: [
                   Text(
                     st.request.name,
-                    style: const TextStyle(
-                      fontSize: 12,
-                      color: Palette.textDim,
-                    ),
+                    style: TextStyle(fontSize: 12, color: Palette.textDim),
                   ),
                   for (final e in st.statusCounts.entries)
                     Text(
@@ -911,10 +916,7 @@ class _LoadTestScreenState extends State<LoadTestScreen> {
                   for (final e in st.errors.entries)
                     Text(
                       '${e.key} (×${e.value})',
-                      style: const TextStyle(
-                        fontSize: 12,
-                        color: Palette.delete,
-                      ),
+                      style: TextStyle(fontSize: 12, color: Palette.delete),
                     ),
                 ],
               ),
@@ -956,7 +958,7 @@ class _ThroughputChartState extends State<_ThroughputChart> {
         ),
       ),
       const SizedBox(width: 5),
-      Text(label, style: const TextStyle(fontSize: 12, color: Palette.textDim)),
+      Text(label, style: TextStyle(fontSize: 12, color: Palette.textDim)),
     ],
   );
 
@@ -987,7 +989,7 @@ class _ThroughputChartState extends State<_ThroughputChart> {
               : Text(
                   't = ${widget.firstSecond + hover}s · ${total[hover]} requests'
                   '${errors[hover] > 0 ? ' · ${errors[hover]} failed' : ''}',
-                  style: const TextStyle(fontSize: 12, color: Palette.textDim),
+                  style: TextStyle(fontSize: 12, color: Palette.textDim),
                 ),
         ),
         LayoutBuilder(
@@ -1039,7 +1041,7 @@ class _BarsPainter extends CustomPainter {
     final tp = TextPainter(
       text: TextSpan(
         text: '$peak/s',
-        style: const TextStyle(fontSize: 10.5, color: Palette.textDim),
+        style: TextStyle(fontSize: 10.5, color: Palette.textDim),
       ),
       textDirection: TextDirection.ltr,
     )..layout();

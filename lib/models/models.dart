@@ -8,24 +8,47 @@ String newId() => _uuid.v4();
 
 /// A single key/value row used for params, headers and form fields.
 class KV {
-  KV({this.key = '', this.value = '', this.enabled = true});
+  KV({
+    this.key = '',
+    this.value = '',
+    this.enabled = true,
+    this.isFile = false,
+  });
 
   String key;
   String value;
   bool enabled;
 
-  KV clone() => KV(key: key, value: value, enabled: enabled);
+  /// Multipart form-data only: [value] is a local file path to upload.
+  bool isFile;
 
-  Map<String, dynamic> toJson() => {'k': key, 'v': value, 'e': enabled};
+  KV clone() => KV(key: key, value: value, enabled: enabled, isFile: isFile);
+
+  Map<String, dynamic> toJson() => {
+    'k': key,
+    'v': value,
+    'e': enabled,
+    if (isFile) 'f': true,
+  };
 
   factory KV.fromJson(Map<String, dynamic> j) => KV(
     key: j['k'] as String? ?? '',
     value: j['v'] as String? ?? '',
     enabled: j['e'] as bool? ?? true,
+    isFile: j['f'] as bool? ?? false,
   );
 }
 
-enum BodyType { none, json, text, xml, formUrlEncoded, graphql }
+enum BodyType {
+  none,
+  json,
+  text,
+  xml,
+  formUrlEncoded,
+  formData,
+  graphql,
+  binary,
+}
 
 enum AuthType { none, bearer, basic, apiKey }
 
@@ -36,7 +59,9 @@ extension BodyTypeLabel on BodyType {
     BodyType.text => 'Text',
     BodyType.xml => 'XML',
     BodyType.formUrlEncoded => 'Form URL-encoded',
+    BodyType.formData => 'Form data',
     BodyType.graphql => 'GraphQL',
+    BodyType.binary => 'Binary file',
   };
 
   String? get contentType => switch (this) {
@@ -45,6 +70,9 @@ extension BodyTypeLabel on BodyType {
     BodyType.text => 'text/plain',
     BodyType.xml => 'application/xml',
     BodyType.formUrlEncoded => 'application/x-www-form-urlencoded',
+    // The multipart boundary is generated per request by the HTTP client.
+    BodyType.formData => null,
+    BodyType.binary => 'application/octet-stream',
   };
 }
 
@@ -136,7 +164,12 @@ class AssertionResult {
   final String message;
 }
 
-/// Global app settings (persisted).
+/// Colour theme family.
+enum AppThemeId { teal, graphite }
+
+/// Light/dark choice for themes that have both.
+enum ThemeModePref { system, light, dark }
+
 /// Preferred HTTP protocol version.
 enum HttpVersionPref { v1, v2, v3 }
 
@@ -236,7 +269,12 @@ class AppSettings {
     this.receiveTimeoutS = 60,
     this.chaosMode = false,
     Map<String, String>? chaosRules,
+    this.theme = AppThemeId.teal,
+    this.themeMode = ThemeModePref.system,
   }) : chaosRules = chaosRules ?? defaultChaosRules();
+
+  AppThemeId theme;
+  ThemeModePref themeMode;
 
   /// When false, self-signed / invalid TLS certificates are accepted —
   /// intended for local development servers only.
@@ -263,6 +301,8 @@ class AppSettings {
     'receiveTimeoutS': receiveTimeoutS,
     'chaosMode': chaosMode,
     'chaosRules': chaosRules,
+    'theme': theme.name,
+    'themeMode': themeMode.name,
   };
 
   factory AppSettings.fromJson(Map<String, dynamic> j) => AppSettings(
@@ -277,6 +317,10 @@ class AppSettings {
     chaosRules: _migrateChaosRules(
       (j['chaosRules'] ?? j['funRules']) as Map<String, dynamic>?,
     ),
+    theme: AppThemeId.values.asNameMap()[j['theme']] ?? AppThemeId.teal,
+    themeMode:
+        ThemeModePref.values.asNameMap()[j['themeMode']] ??
+        ThemeModePref.system,
   );
 
   static Map<String, String> _migrateChaosRules(Map<String, dynamic>? raw) {
@@ -312,11 +356,17 @@ class RequestModel {
     this.apiKeyValue = '',
     this.apiKeyInHeader = true,
     List<AssertionModel>? assertions,
+    this.folder = '',
+    this.description = '',
+    this.preRequestScript = '',
+    this.testScript = '',
+    Map<String, String>? captures,
   }) : id = id ?? newId(),
        params = params ?? [],
        headers = headers ?? [],
        formFields = formFields ?? [],
-       assertions = assertions ?? [];
+       assertions = assertions ?? [],
+       captures = captures ?? {};
 
   String id;
   String name;
@@ -337,6 +387,22 @@ class RequestModel {
   bool apiKeyInHeader;
   List<AssertionModel> assertions;
 
+  /// Folder path inside its collection, segments joined by '/' ('' = root).
+  String folder;
+
+  /// Free-form documentation (Markdown), e.g. imported from Postman.
+  String description;
+
+  /// Postman scripts kept verbatim for reference. ApiWorkbench does not run
+  /// JavaScript; the parts it understands become [assertions] and
+  /// [captures] on import.
+  String preRequestScript;
+  String testScript;
+
+  /// Values saved from each successful response for later requests:
+  /// variable name → `body.<json path>`, `header.<name>` or `status`.
+  Map<String, String> captures;
+
   RequestModel clone({bool sameId = false}) => RequestModel(
     id: sameId ? id : null,
     name: name,
@@ -356,6 +422,11 @@ class RequestModel {
     apiKeyValue: apiKeyValue,
     apiKeyInHeader: apiKeyInHeader,
     assertions: assertions.map((e) => e.clone()).toList(),
+    folder: folder,
+    description: description,
+    preRequestScript: preRequestScript,
+    testScript: testScript,
+    captures: Map.of(captures),
   );
 
   Map<String, dynamic> toJson() => {
@@ -377,6 +448,11 @@ class RequestModel {
     'apiKeyValue': apiKeyValue,
     'apiKeyInHeader': apiKeyInHeader,
     'assertions': assertions.map((e) => e.toJson()).toList(),
+    if (folder.isNotEmpty) 'folder': folder,
+    if (description.isNotEmpty) 'description': description,
+    if (preRequestScript.isNotEmpty) 'preRequestScript': preRequestScript,
+    if (testScript.isNotEmpty) 'testScript': testScript,
+    if (captures.isNotEmpty) 'captures': captures,
   };
 
   factory RequestModel.fromJson(Map<String, dynamic> j) => RequestModel(
@@ -400,6 +476,13 @@ class RequestModel {
     assertions: (j['assertions'] as List<dynamic>? ?? [])
         .map((e) => AssertionModel.fromJson(e as Map<String, dynamic>))
         .toList(),
+    folder: j['folder'] as String? ?? '',
+    description: j['description'] as String? ?? '',
+    preRequestScript: j['preRequestScript'] as String? ?? '',
+    testScript: j['testScript'] as String? ?? '',
+    captures: (j['captures'] as Map<String, dynamic>? ?? {}).map(
+      (k, v) => MapEntry(k, v.toString()),
+    ),
   );
 
   static List<KV> _kvList(dynamic v) => (v as List<dynamic>? ?? [])
@@ -412,17 +495,33 @@ class CollectionModel {
     String? id,
     required this.name,
     List<RequestModel>? requests,
+    List<KV>? variables,
+    this.description = '',
   }) : id = id ?? newId(),
-       requests = requests ?? [];
+       requests = requests ?? [],
+       variables = variables ?? [];
 
   String id;
   String name;
   List<RequestModel> requests;
 
+  /// Collection-scoped {{variables}}. The active environment overrides
+  /// them on a name clash, like Postman's scope order.
+  List<KV> variables;
+  String description;
+
+  Map<String, String> get variableMap => {
+    for (final v in variables)
+      if (v.enabled && v.key.isNotEmpty) v.key: v.value,
+  };
+
   Map<String, dynamic> toJson() => {
     'id': id,
     'name': name,
     'requests': requests.map((e) => e.toJson()).toList(),
+    if (variables.isNotEmpty)
+      'variables': variables.map((e) => e.toJson()).toList(),
+    if (description.isNotEmpty) 'description': description,
   };
 
   factory CollectionModel.fromJson(Map<String, dynamic> j) => CollectionModel(
@@ -431,6 +530,8 @@ class CollectionModel {
     requests: (j['requests'] as List<dynamic>? ?? [])
         .map((e) => RequestModel.fromJson(e as Map<String, dynamic>))
         .toList(),
+    variables: RequestModel._kvList(j['variables']),
+    description: j['description'] as String? ?? '',
   );
 }
 

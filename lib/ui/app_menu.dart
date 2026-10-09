@@ -11,6 +11,7 @@ import '../services/workspace.dart';
 import '../state/app_state.dart';
 import '../theme.dart';
 import 'chaos_mode.dart';
+import 'import_dialog.dart';
 
 /// Shared app menu (workspace import/export + settings), used by both the
 /// desktop brand header and the mobile app bar.
@@ -21,35 +22,41 @@ class AppMenuButton extends StatelessWidget {
   Widget build(BuildContext context) {
     return PopupMenuButton<String>(
       tooltip: 'Workspace menu',
-      icon: const Icon(Icons.menu, size: 19, color: Palette.textDim),
+      icon: Icon(Icons.more_vert, size: 20, color: Palette.textDim),
       onSelected: (v) => switch (v) {
         'export' => exportWorkspace(context),
-        'import' => importWorkspace(context),
+        'import' => showImportDialog(context),
         'settings' => showSettingsDialog(context),
         _ => null,
       },
       itemBuilder: (_) => const [
         PopupMenuItem(
-            value: 'import',
-            child: ListTile(
-                dense: true,
-                contentPadding: EdgeInsets.zero,
-                leading: Icon(Icons.file_download_outlined, size: 18),
-                title: Text('Import workspace…'))),
+          value: 'import',
+          child: ListTile(
+            dense: true,
+            contentPadding: EdgeInsets.zero,
+            leading: Icon(Icons.file_download_outlined, size: 18),
+            title: Text('Import (Postman, workspace)…'),
+          ),
+        ),
         PopupMenuItem(
-            value: 'export',
-            child: ListTile(
-                dense: true,
-                contentPadding: EdgeInsets.zero,
-                leading: Icon(Icons.file_upload_outlined, size: 18),
-                title: Text('Export workspace…'))),
+          value: 'export',
+          child: ListTile(
+            dense: true,
+            contentPadding: EdgeInsets.zero,
+            leading: Icon(Icons.file_upload_outlined, size: 18),
+            title: Text('Export workspace…'),
+          ),
+        ),
         PopupMenuItem(
-            value: 'settings',
-            child: ListTile(
-                dense: true,
-                contentPadding: EdgeInsets.zero,
-                leading: Icon(Icons.settings_outlined, size: 18),
-                title: Text('Settings…'))),
+          value: 'settings',
+          child: ListTile(
+            dense: true,
+            contentPadding: EdgeInsets.zero,
+            leading: Icon(Icons.settings_outlined, size: 18),
+            title: Text('Settings…'),
+          ),
+        ),
       ],
     );
   }
@@ -86,7 +93,10 @@ Future<String?> savePickedFile({
 Future<void> exportWorkspace(BuildContext context) async {
   final state = context.read<AppState>();
   if (state.collections.isEmpty && state.environments.isEmpty) {
-    _toast(context, 'Nothing to export yet — save a request or create an environment first.');
+    _toast(
+      context,
+      'Nothing to export yet — save a request or create an environment first.',
+    );
     return;
   }
   final json = buildWorkspaceJson(state.collections, state.environments);
@@ -99,8 +109,10 @@ Future<void> exportWorkspace(BuildContext context) async {
     );
     if (path == null) return;
     if (context.mounted) {
-      _toast(context,
-          'Exported ${state.collections.length} collection(s) and ${state.environments.length} environment(s).');
+      _toast(
+        context,
+        'Exported ${state.collections.length} collection(s) and ${state.environments.length} environment(s).',
+      );
     }
   } catch (e) {
     if (context.mounted) _toast(context, 'Export failed: $e');
@@ -118,7 +130,8 @@ Future<void> importWorkspace(BuildContext context) async {
     );
     if (picked == null || picked.files.isEmpty) return;
     final f = picked.files.single;
-    final bytes = f.bytes ?? (f.path != null ? await File(f.path!).readAsBytes() : null);
+    final bytes =
+        f.bytes ?? (f.path != null ? await File(f.path!).readAsBytes() : null);
     if (bytes == null) {
       if (context.mounted) _toast(context, 'Could not read the selected file.');
       return;
@@ -141,29 +154,35 @@ Future<void> showSettingsDialog(BuildContext context) async {
   var verifySsl = s.verifySsl;
   var httpVersion = s.httpVersion;
   var chaosMode = s.chaosMode;
+  var theme = s.theme;
+  var themeMode = s.themeMode;
   final connectCtrl = TextEditingController(text: '${s.connectTimeoutS}');
   final receiveCtrl = TextEditingController(text: '${s.receiveTimeoutS}');
 
   AppSettings snapshot() => AppSettings(
-        verifySsl: verifySsl,
-        httpVersion: httpVersion,
-        chaosMode: chaosMode,
-        chaosRules: state.settings.chaosRules,
-        connectTimeoutS: (int.tryParse(connectCtrl.text) ?? 30).clamp(1, 600),
-        receiveTimeoutS: (int.tryParse(receiveCtrl.text) ?? 60).clamp(1, 600),
-      );
+    verifySsl: verifySsl,
+    httpVersion: httpVersion,
+    chaosMode: chaosMode,
+    chaosRules: state.settings.chaosRules,
+    theme: theme,
+    themeMode: themeMode,
+    connectTimeoutS: (int.tryParse(connectCtrl.text) ?? 30).clamp(1, 600),
+    receiveTimeoutS: (int.tryParse(receiveCtrl.text) ?? 60).clamp(1, 600),
+  );
 
   final ok = await showDialog<bool>(
     context: context,
     builder: (ctx) => StatefulBuilder(
       builder: (ctx, setLocal) => AlertDialog(
         contentPadding: const EdgeInsets.fromLTRB(20, 14, 20, 0),
-        title: const Row(
+        title: Row(
           children: [
             Icon(Icons.settings_outlined, size: 20, color: Palette.accent),
             SizedBox(width: 10),
-            Text('Settings',
-                style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
+            Text(
+              'Settings',
+              style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
+            ),
           ],
         ),
         content: SizedBox(
@@ -173,18 +192,76 @@ Future<void> showSettingsDialog(BuildContext context) async {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                _section(Icons.palette_outlined, 'Appearance', [
+                  Text(
+                    'Theme',
+                    style: TextStyle(fontSize: 12.5, color: Palette.textDim),
+                  ),
+                  const SizedBox(height: 6),
+                  SegmentedButton<AppThemeId>(
+                    showSelectedIcon: false,
+                    segments: [
+                      for (final t in AppThemeId.values)
+                        ButtonSegment(
+                          value: t,
+                          label: Text(
+                            t.label,
+                            style: const TextStyle(fontSize: 12.5),
+                          ),
+                        ),
+                    ],
+                    selected: {theme},
+                    onSelectionChanged: (sel) =>
+                        setLocal(() => theme = sel.first),
+                  ),
+                  const SizedBox(height: 10),
+                  Text(
+                    'Mode',
+                    style: TextStyle(fontSize: 12.5, color: Palette.textDim),
+                  ),
+                  const SizedBox(height: 6),
+                  SegmentedButton<ThemeModePref>(
+                    showSelectedIcon: false,
+                    segments: [
+                      for (final m in ThemeModePref.values)
+                        ButtonSegment(
+                          value: m,
+                          enabled: theme == AppThemeId.teal,
+                          label: Text(
+                            m.label,
+                            style: const TextStyle(fontSize: 12.5),
+                          ),
+                        ),
+                    ],
+                    selected: {themeMode},
+                    onSelectionChanged: (sel) =>
+                        setLocal(() => themeMode = sel.first),
+                  ),
+                  if (theme == AppThemeId.graphite)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 6),
+                      child: Text(
+                        'Graphite and orange is dark only.',
+                        style: TextStyle(fontSize: 12, color: Palette.textDim),
+                      ),
+                    ),
+                ]),
                 _section(Icons.public, 'Network', [
-                  const Text('HTTP version',
-                      style:
-                          TextStyle(fontSize: 12.5, color: Palette.textDim)),
+                  Text(
+                    'HTTP version',
+                    style: TextStyle(fontSize: 12.5, color: Palette.textDim),
+                  ),
                   const SizedBox(height: 6),
                   SegmentedButton<HttpVersionPref>(
                     segments: [
                       for (final v in HttpVersionPref.values)
                         ButtonSegment(
-                            value: v,
-                            label: Text(v.label,
-                                style: const TextStyle(fontSize: 12.5))),
+                          value: v,
+                          label: Text(
+                            v.label,
+                            style: const TextStyle(fontSize: 12.5),
+                          ),
+                        ),
                     ],
                     selected: {httpVersion},
                     onSelectionChanged: (sel) =>
@@ -198,16 +275,19 @@ Future<void> showSettingsDialog(BuildContext context) async {
                       HttpVersionPref.v2 =>
                         'HTTP/2 for https (ALPN); everything else falls back '
                             'to HTTP/1.1 automatically.',
-                      HttpVersionPref.v3 => Platform.isLinux ||
-                              Platform.isWindows
-                          ? 'QUIC via the system curl (needs a curl built '
-                              'with HTTP3); the response bar shows the '
-                              'negotiated version.'
-                          : 'QUIC via the platform network stack with '
-                              'automatic fallback.',
+                      HttpVersionPref.v3 =>
+                        Platform.isLinux || Platform.isWindows
+                            ? 'QUIC via the system curl (needs a curl built '
+                                  'with HTTP3); the response bar shows the '
+                                  'negotiated version.'
+                            : 'QUIC via the platform network stack with '
+                                  'automatic fallback.',
                     },
-                    style: const TextStyle(
-                        fontSize: 11.5, color: Palette.textDim, height: 1.35),
+                    style: TextStyle(
+                      fontSize: 11.5,
+                      color: Palette.textDim,
+                      height: 1.35,
+                    ),
                   ),
                   const SizedBox(height: 12),
                   Row(
@@ -218,7 +298,8 @@ Future<void> showSettingsDialog(BuildContext context) async {
                           keyboardType: TextInputType.number,
                           style: const TextStyle(fontSize: 13),
                           decoration: const InputDecoration(
-                              labelText: 'Connect timeout (s)'),
+                            labelText: 'Connect timeout (s)',
+                          ),
                         ),
                       ),
                       const SizedBox(width: 12),
@@ -228,7 +309,8 @@ Future<void> showSettingsDialog(BuildContext context) async {
                           keyboardType: TextInputType.number,
                           style: const TextStyle(fontSize: 13),
                           decoration: const InputDecoration(
-                              labelText: 'Response timeout (s)'),
+                            labelText: 'Response timeout (s)',
+                          ),
                         ),
                       ),
                     ],
@@ -240,7 +322,7 @@ Future<void> showSettingsDialog(BuildContext context) async {
                     verifySsl
                         ? 'Recommended. Invalid certificates are rejected.'
                         : 'Off: self-signed certificates accepted — local '
-                            'development only.',
+                              'development only.',
                     verifySsl,
                     warn: !verifySsl,
                     (v) => setLocal(() => verifySsl = v),
@@ -250,13 +332,19 @@ Future<void> showSettingsDialog(BuildContext context) async {
                   SegmentedButton<bool>(
                     segments: const [
                       ButtonSegment(
-                          value: false,
-                          label: Text('🧘 Focus',
-                              style: TextStyle(fontSize: 12.5))),
+                        value: false,
+                        label: Text(
+                          '🧘 Focus',
+                          style: TextStyle(fontSize: 12.5),
+                        ),
+                      ),
                       ButtonSegment(
-                          value: true,
-                          label: Text('🎲 Chaos',
-                              style: TextStyle(fontSize: 12.5))),
+                        value: true,
+                        label: Text(
+                          '🎲 Chaos',
+                          style: TextStyle(fontSize: 12.5),
+                        ),
+                      ),
                     ],
                     selected: {chaosMode},
                     onSelectionChanged: (sel) =>
@@ -266,12 +354,15 @@ Future<void> showSettingsDialog(BuildContext context) async {
                   Text(
                     chaosMode
                         ? 'Chaos: every response plays its status\'s meme '
-                            'sound, plus confetti on success and a shake on '
-                            'errors.'
+                              'sound, plus confetti on success and a shake on '
+                              'errors.'
                         : 'Focus: pure work — no sounds, no effects. Flip to '
-                            'Chaos from here or the header toggle.',
-                    style: const TextStyle(
-                        fontSize: 11.5, color: Palette.textDim, height: 1.35),
+                              'Chaos from here or the header toggle.',
+                    style: TextStyle(
+                      fontSize: 11.5,
+                      color: Palette.textDim,
+                      height: 1.35,
+                    ),
                   ),
                   if (chaosMode) ...[
                     const SizedBox(height: 10),
@@ -295,11 +386,13 @@ Future<void> showSettingsDialog(BuildContext context) async {
         ),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('Cancel')),
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
           FilledButton(
-              onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('Save')),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Save'),
+          ),
         ],
       ),
     ),
@@ -324,12 +417,15 @@ Widget _section(IconData icon, String title, List<Widget> children) =>
             children: [
               Icon(icon, size: 15, color: Palette.accent),
               const SizedBox(width: 7),
-              Text(title,
-                  style: const TextStyle(
-                      fontSize: 12.5,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: 0.4,
-                      color: Palette.accent)),
+              Text(
+                title,
+                style: TextStyle(
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0.4,
+                  color: Palette.accent,
+                ),
+              ),
             ],
           ),
           const SizedBox(height: 10),
@@ -338,8 +434,13 @@ Widget _section(IconData icon, String title, List<Widget> children) =>
       ),
     );
 
-Widget _switchRow(String title, String subtitle, bool value,
-    ValueChanged<bool> onChanged, {bool warn = false}) {
+Widget _switchRow(
+  String title,
+  String subtitle,
+  bool value,
+  ValueChanged<bool> onChanged, {
+  bool warn = false,
+}) {
   return Row(
     children: [
       Expanded(
@@ -348,11 +449,14 @@ Widget _switchRow(String title, String subtitle, bool value,
           children: [
             Text(title, style: const TextStyle(fontSize: 13.5)),
             const SizedBox(height: 2),
-            Text(subtitle,
-                style: TextStyle(
-                    fontSize: 11.5,
-                    height: 1.3,
-                    color: warn ? Palette.post : Palette.textDim)),
+            Text(
+              subtitle,
+              style: TextStyle(
+                fontSize: 11.5,
+                height: 1.3,
+                color: warn ? Palette.post : Palette.textDim,
+              ),
+            ),
           ],
         ),
       ),

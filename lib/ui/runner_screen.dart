@@ -9,10 +9,18 @@ import '../theme.dart';
 /// Collection / request runner: fixed iterations or recurring interval runs,
 /// with live results, assertion outcomes and latency statistics.
 class RunnerScreen extends StatefulWidget {
-  const RunnerScreen({super.key, required this.title, required this.requests});
+  const RunnerScreen({
+    super.key,
+    required this.title,
+    required this.requests,
+    this.collectionId,
+  });
 
   final String title;
   final List<RequestModel> requests;
+
+  /// Collection the requests come from, for its variables.
+  final String? collectionId;
 
   @override
   State<RunnerScreen> createState() => _RunnerScreenState();
@@ -54,7 +62,7 @@ class _RunnerScreenState extends State<RunnerScreen> {
     _intervalCtrl.text = '$intervalS';
     _runner.start(
       requests: widget.requests,
-      vars: context.read<AppState>().activeVars,
+      vars: context.read<AppState>().varsFor(widget.collectionId),
       iterations: iterations,
       delayBetween: Duration(milliseconds: delayMs),
       repeatEvery: _recurring ? Duration(seconds: intervalS) : null,
@@ -77,7 +85,7 @@ class _RunnerScreenState extends State<RunnerScreen> {
           children: [
             _configBar(),
             if (_showData) _dataPanel(),
-            const Divider(height: 1, color: Palette.border),
+            Divider(height: 1, color: Palette.border),
             if (_runner.results.isNotEmpty) _summaryBar(),
             Expanded(child: _resultsList()),
           ],
@@ -97,7 +105,7 @@ class _RunnerScreenState extends State<RunnerScreen> {
         children: [
           Text(
             '${widget.requests.length} request(s)',
-            style: const TextStyle(color: Palette.textDim, fontSize: 12.5),
+            style: TextStyle(color: Palette.textDim, fontSize: 12.5),
           ),
           if (!_recurring && _dataRows == null)
             _numField('Iterations', _iterCtrl, enabled: !running),
@@ -129,7 +137,7 @@ class _RunnerScreenState extends State<RunnerScreen> {
           FilledButton.icon(
             style: FilledButton.styleFrom(
               backgroundColor: running ? Palette.delete : Palette.accent,
-              foregroundColor: Colors.white,
+              foregroundColor: running ? Colors.white : Palette.onAccent,
             ),
             onPressed: running ? _runner.stop : _start,
             icon: Icon(running ? Icons.stop : Icons.play_arrow, size: 17),
@@ -138,12 +146,12 @@ class _RunnerScreenState extends State<RunnerScreen> {
           if (running && _runner.nextPassAt != null)
             Text(
               'pass ${_runner.currentIteration} done — next pass shortly…',
-              style: const TextStyle(color: Palette.textDim, fontSize: 12),
+              style: TextStyle(color: Palette.textDim, fontSize: 12),
             )
           else if (running)
             Text(
               'running pass ${_runner.currentIteration}…',
-              style: const TextStyle(color: Palette.textDim, fontSize: 12),
+              style: TextStyle(color: Palette.textDim, fontSize: 12),
             ),
         ],
       ),
@@ -206,7 +214,7 @@ class _RunnerScreenState extends State<RunnerScreen> {
         style: const TextStyle(fontSize: 13),
         decoration: InputDecoration(
           labelText: label,
-          labelStyle: const TextStyle(fontSize: 12, color: Palette.textDim),
+          labelStyle: TextStyle(fontSize: 12, color: Palette.textDim),
         ),
       ),
     );
@@ -222,7 +230,7 @@ class _RunnerScreenState extends State<RunnerScreen> {
         children: [
           Text(
             "Showing ${r.results.length} of ${r.total} results",
-            style: const TextStyle(color: Palette.textDim),
+            style: TextStyle(color: Palette.textDim),
           ),
           _stat('Passed', '${r.passed}', Palette.get_),
           _stat(
@@ -243,10 +251,7 @@ class _RunnerScreenState extends State<RunnerScreen> {
     child: Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Text(
-          '$label ',
-          style: const TextStyle(fontSize: 12, color: Palette.textDim),
-        ),
+        Text('$label ', style: TextStyle(fontSize: 12, color: Palette.textDim)),
         Text(
           value,
           style: TextStyle(
@@ -262,7 +267,7 @@ class _RunnerScreenState extends State<RunnerScreen> {
   Widget _resultsList() {
     final results = _runner.results;
     if (results.isEmpty) {
-      return const Center(
+      return Center(
         child: Text(
           'Press Run to execute the requests.',
           style: TextStyle(color: Palette.textDim),

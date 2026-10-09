@@ -62,7 +62,7 @@ class _ChaosEffectsState extends State<ChaosEffects>
 
   List<_Particle> _burst() {
     final rnd = Random();
-    const colors = [
+    final colors = [
       Palette.accent,
       Palette.get_,
       Palette.post,

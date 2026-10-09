@@ -1,10 +1,12 @@
 import 'dart:convert';
 
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../models/models.dart';
+import '../services/captures.dart';
 import '../services/curl.dart' as curl;
 import '../state/app_state.dart';
 import '../theme.dart';
@@ -27,6 +29,8 @@ class _RequestEditorState extends State<RequestEditor> {
   late final TextEditingController _urlCtrl;
   late final TextEditingController _bodyCtrl;
   late final TextEditingController _gqlVarsCtrl;
+  late final TextEditingController _capturesCtrl;
+  late final TextEditingController _descCtrl;
 
   RequestModel get req => widget.tab.request;
 
@@ -36,6 +40,8 @@ class _RequestEditorState extends State<RequestEditor> {
     _urlCtrl = TextEditingController(text: req.url);
     _bodyCtrl = TextEditingController(text: req.body);
     _gqlVarsCtrl = TextEditingController(text: req.graphqlVariables);
+    _capturesCtrl = TextEditingController(text: captureText(req.captures));
+    _descCtrl = TextEditingController(text: req.description);
   }
 
   @override
@@ -43,6 +49,8 @@ class _RequestEditorState extends State<RequestEditor> {
     _urlCtrl.dispose();
     _bodyCtrl.dispose();
     _gqlVarsCtrl.dispose();
+    _capturesCtrl.dispose();
+    _descCtrl.dispose();
     super.dispose();
   }
 
@@ -58,13 +66,14 @@ class _RequestEditorState extends State<RequestEditor> {
     final state = context.watch<AppState>();
     final editor = Column(
       children: [
+        _breadcrumb(state),
         Padding(
-          padding: const EdgeInsets.fromLTRB(12, 12, 12, 8),
+          padding: const EdgeInsets.fromLTRB(12, 4, 12, 8),
           child: _urlBar(state),
         ),
         Expanded(
           child: DefaultTabController(
-            length: 5,
+            length: 7,
             child: Column(
               children: [
                 TabBar(
@@ -92,6 +101,18 @@ class _RequestEditorState extends State<RequestEditor> {
                           ? 'Tests'
                           : 'Tests (${req.assertions.where((a) => a.enabled).length})',
                     ),
+                    Tab(
+                      text: req.captures.isEmpty
+                          ? 'Captures'
+                          : 'Captures (${req.captures.length})',
+                    ),
+                    Tab(
+                      text:
+                          req.preRequestScript.isNotEmpty ||
+                              req.testScript.isNotEmpty
+                          ? 'Docs •'
+                          : 'Docs',
+                    ),
                   ],
                 ),
                 Expanded(
@@ -112,6 +133,8 @@ class _RequestEditorState extends State<RequestEditor> {
                       _bodyTab(),
                       _authTab(),
                       _testsTab(),
+                      _capturesTab(),
+                      _docsTab(),
                     ],
                   ),
                 ),
@@ -140,7 +163,6 @@ class _RequestEditorState extends State<RequestEditor> {
 
   Widget _urlBar(AppState state) {
     final loading = widget.tab.loading;
-    final compact = MediaQuery.sizeOf(context).width < 600;
     final methodPicker = Container(
       decoration: BoxDecoration(
         color: Palette.surfaceAlt,
@@ -198,7 +220,7 @@ class _RequestEditorState extends State<RequestEditor> {
     final sendButton = FilledButton.icon(
       style: FilledButton.styleFrom(
         backgroundColor: loading ? Palette.delete : Palette.accent,
-        foregroundColor: Colors.white,
+        foregroundColor: loading ? Colors.white : Palette.onAccent,
         padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
       ),
       onPressed: loading ? state.cancelActive : () => _send(state),
@@ -207,7 +229,7 @@ class _RequestEditorState extends State<RequestEditor> {
     );
     final moreButton = PopupMenuButton<String>(
       tooltip: 'More',
-      icon: const Icon(Icons.more_vert, color: Palette.textDim),
+      icon: Icon(Icons.more_vert, color: Palette.textDim),
       onSelected: (v) => switch (v) {
         'save' => _saveDialog(state),
         'run' => Navigator.of(context).push(
@@ -217,6 +239,7 @@ class _RequestEditorState extends State<RequestEditor> {
                   ? req.url
                   : req.name,
               requests: [req.clone()],
+              collectionId: widget.tab.sourceCollectionId,
             ),
           ),
         ),
@@ -227,6 +250,7 @@ class _RequestEditorState extends State<RequestEditor> {
                   ? req.url
                   : req.name,
               requests: [req.clone()],
+              collectionId: widget.tab.sourceCollectionId,
             ),
           ),
         ),
@@ -248,30 +272,45 @@ class _RequestEditorState extends State<RequestEditor> {
         PopupMenuItem(value: 'import_curl', child: Text('Import cURL…')),
       ],
     );
-    if (!compact) {
-      return Row(
-        children: [
-          methodPicker,
-          const SizedBox(width: 8),
-          Expanded(child: urlField),
-          const SizedBox(width: 8),
-          sendButton,
-          const SizedBox(width: 4),
-          moreButton,
-        ],
-      );
-    }
-    return Column(
-      children: [
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          crossAxisAlignment: WrapCrossAlignment.center,
-          children: [methodPicker, sendButton, moreButton],
-        ),
-        const SizedBox(height: 10),
-        SizedBox(width: double.infinity, child: urlField),
-      ],
+    // Measure the editor, not the window: a side panel can make the editor
+    // narrow even when the window is wide.
+    return LayoutBuilder(
+      builder: (context, box) {
+        if (box.maxWidth >= 560) {
+          return Row(
+            children: [
+              methodPicker,
+              const SizedBox(width: 8),
+              Expanded(child: urlField),
+              const SizedBox(width: 8),
+              sendButton,
+              const SizedBox(width: 4),
+              moreButton,
+            ],
+          );
+        }
+        return Column(
+          children: [
+            SizedBox(
+              width: double.infinity,
+              child: Wrap(
+                alignment: WrapAlignment.spaceBetween,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                runSpacing: 8,
+                children: [
+                  methodPicker,
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [sendButton, moreButton],
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 10),
+            SizedBox(width: double.infinity, child: urlField),
+          ],
+        );
+      },
     );
   }
 
@@ -448,7 +487,7 @@ class _RequestEditorState extends State<RequestEditor> {
         ),
         Expanded(
           child: switch (req.bodyType) {
-            BodyType.none => const Center(
+            BodyType.none => Center(
               child: Text(
                 'This request has no body',
                 style: TextStyle(color: Palette.textDim),
@@ -460,6 +499,15 @@ class _RequestEditorState extends State<RequestEditor> {
               keyHint: 'Field',
               addLabel: 'Add field',
             ),
+            BodyType.formData => KVEditor(
+              key: const ValueKey('form-data'),
+              rows: req.formFields,
+              onChanged: _touch,
+              keyHint: 'Field',
+              addLabel: 'Add field',
+              allowFiles: true,
+            ),
+            BodyType.binary => _binaryBody(),
             BodyType.graphql => Padding(
               padding: const EdgeInsets.all(12),
               child: Column(
@@ -549,6 +597,290 @@ class _RequestEditorState extends State<RequestEditor> {
     _touch();
   }
 
+  Widget _binaryBody() => Padding(
+    padding: const EdgeInsets.all(12),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: TextField(
+                controller: _bodyCtrl,
+                style: const TextStyle(fontFamily: 'monospace', fontSize: 13),
+                decoration: InputDecoration(
+                  hintText: 'Path of the file to send as the body',
+                  prefixIcon: Icon(
+                    Icons.insert_drive_file_outlined,
+                    size: 17,
+                    color: Palette.textDim,
+                  ),
+                ),
+                onChanged: (v) {
+                  req.body = v;
+                  _touch();
+                },
+              ),
+            ),
+            const SizedBox(width: 8),
+            OutlinedButton.icon(
+              onPressed: () async {
+                final picked = await FilePicker.platform.pickFiles(
+                  dialogTitle: 'Choose the body file',
+                );
+                final path = picked?.files.singleOrNull?.path;
+                if (path == null || !mounted) return;
+                setState(() {
+                  req.body = path;
+                  _bodyCtrl.text = path;
+                });
+                _touch();
+              },
+              icon: const Icon(Icons.folder_open_outlined, size: 17),
+              label: const Text('Choose file'),
+            ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        Text(
+          'The file is sent as-is with Content-Type application/octet-stream '
+          'unless you set one in Headers.',
+          style: TextStyle(fontSize: 12, color: Palette.textDim),
+        ),
+      ],
+    ),
+  );
+
+  // ---------------- Breadcrumb ----------------
+
+  Widget _breadcrumb(AppState state) {
+    final col = state.collectionById(widget.tab.sourceCollectionId);
+    final segs = [
+      if (col != null) col.name,
+      if (col != null && req.folder.isNotEmpty) ...req.folder.split('/'),
+    ];
+    final dim = TextStyle(fontSize: 12.5, color: Palette.textDim);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(14, 10, 8, 2),
+      child: Row(
+        children: [
+          Icon(
+            col == null ? Icons.edit_note : Icons.folder_outlined,
+            size: 16,
+            color: Palette.textDim,
+          ),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Row(
+              children: [
+                for (final s in segs) ...[
+                  Flexible(
+                    child: Text(s, overflow: TextOverflow.ellipsis, style: dim),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 4),
+                    child: Icon(
+                      Icons.chevron_right,
+                      size: 15,
+                      color: Palette.textDim,
+                    ),
+                  ),
+                ],
+                Flexible(
+                  flex: 2,
+                  child: Tooltip(
+                    message: 'Rename',
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(4),
+                      onTap: () => _rename(state),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 2,
+                          vertical: 2,
+                        ),
+                        child: Text(
+                          req.name,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 13.5,
+                            fontWeight: FontWeight.w600,
+                            color: Palette.text,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                if (widget.tab.dirty)
+                  Padding(
+                    padding: const EdgeInsets.only(left: 6),
+                    child: Tooltip(
+                      message: 'Unsaved changes',
+                      child: Icon(
+                        Icons.circle,
+                        size: 7,
+                        color: Palette.warning,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          TextButton.icon(
+            onPressed: () => saveOrAsk(state),
+            icon: const Icon(Icons.save_outlined, size: 16),
+            label: Text(col == null ? 'Save…' : 'Save'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Saves into the request's collection, or asks where when it has none.
+  void saveOrAsk(AppState state) {
+    final col = state.collectionById(widget.tab.sourceCollectionId);
+    if (col == null) {
+      _saveDialog(state);
+      return;
+    }
+    state.saveActiveTo(col);
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text('Saved to "${col.name}"')));
+  }
+
+  Future<void> _rename(AppState state) async {
+    final ctrl = TextEditingController(text: req.name);
+    final name = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Rename request'),
+        content: SizedBox(
+          width: 380,
+          child: TextField(
+            controller: ctrl,
+            autofocus: true,
+            decoration: const InputDecoration(labelText: 'Name'),
+            onSubmitted: (v) => Navigator.pop(ctx, v.trim()),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
+            child: const Text('Rename'),
+          ),
+        ],
+      ),
+    );
+    ctrl.dispose();
+    if (name == null || name.isEmpty || !mounted) return;
+    setState(() => req.name = name);
+    _touch();
+  }
+
+  // ---------------- Captures tab ----------------
+
+  Widget _capturesTab() => ListView(
+    padding: const EdgeInsets.all(14),
+    children: [
+      Text(
+        'Save values from each successful response into variables that '
+        'later requests can use as {{name}}. One per line:',
+        style: TextStyle(fontSize: 12.5, color: Palette.textDim, height: 1.45),
+      ),
+      const SizedBox(height: 10),
+      TextField(
+        controller: _capturesCtrl,
+        minLines: 4,
+        maxLines: 12,
+        style: const TextStyle(fontFamily: 'monospace', fontSize: 13),
+        decoration: const InputDecoration(
+          hintText:
+              'token = body.data.token\nuserId = data.user.id\n'
+              'etag = header.ETag\ncode = status',
+        ),
+        onChanged: (v) {
+          req.captures = parseCaptureText(v);
+          _touch();
+        },
+      ),
+      const SizedBox(height: 10),
+      Text(
+        'Values go to the active environment, or to the collection\'s '
+        'variables when no environment is selected. The runner and load '
+        'tester pass them between requests of the same run.',
+        style: TextStyle(fontSize: 12, color: Palette.textDim, height: 1.45),
+      ),
+    ],
+  );
+
+  // ---------------- Docs tab ----------------
+
+  Widget _docsTab() => ListView(
+    padding: const EdgeInsets.all(14),
+    children: [
+      TextField(
+        controller: _descCtrl,
+        minLines: 4,
+        maxLines: 14,
+        style: const TextStyle(fontSize: 13.5, height: 1.45),
+        decoration: const InputDecoration(
+          labelText: 'Description',
+          alignLabelWithHint: true,
+          hintText: 'What this request does, parameters, examples…',
+        ),
+        onChanged: (v) {
+          req.description = v;
+          _touch();
+        },
+      ),
+      if (req.preRequestScript.isNotEmpty)
+        _scriptBlock('Pre-request script', req.preRequestScript),
+      if (req.testScript.isNotEmpty)
+        _scriptBlock('Test script', req.testScript),
+    ],
+  );
+
+  Widget _scriptBlock(String title, String code) => Padding(
+    padding: const EdgeInsets.only(top: 14),
+    child: Container(
+      decoration: BoxDecoration(
+        border: Border.all(color: Palette.border),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: ExpansionTile(
+        shape: const Border(),
+        dense: true,
+        leading: Icon(Icons.code, size: 18, color: Palette.textDim),
+        title: Text(title, style: const TextStyle(fontSize: 13)),
+        subtitle: Text(
+          'Imported from Postman, kept for reference. ApiWorkbench does not '
+          'run JavaScript; recognised checks were added to Tests and Captures.',
+          style: TextStyle(fontSize: 11.5, color: Palette.textDim),
+        ),
+        childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+        children: [
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: Palette.surfaceAlt,
+              borderRadius: BorderRadius.circular(6),
+            ),
+            child: SelectableText(
+              code,
+              style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
+
   // ---------------- Auth tab ----------------
 
   Widget _authTab() {
@@ -575,7 +907,7 @@ class _RequestEditorState extends State<RequestEditor> {
         const SizedBox(height: 16),
         ...switch (req.authType) {
           AuthType.none => [
-            const Text(
+            Text(
               'No authentication will be applied.',
               style: TextStyle(color: Palette.textDim),
             ),
@@ -632,7 +964,7 @@ class _RequestEditorState extends State<RequestEditor> {
       padding: const EdgeInsets.all(12),
       children: [
         if (req.assertions.isEmpty)
-          const Padding(
+          Padding(
             padding: EdgeInsets.only(bottom: 10, left: 4),
             child: Text(
               'Tests run automatically after every send — and in the collection '
@@ -677,7 +1009,7 @@ class _RequestEditorState extends State<RequestEditor> {
                 width: 180,
                 child: DropdownButtonFormField<AssertKind>(
                   initialValue: a.kind,
-                  style: const TextStyle(fontSize: 12.5, color: Palette.text),
+                  style: TextStyle(fontSize: 12.5, color: Palette.text),
                   items: [
                     for (final k in AssertKind.values)
                       DropdownMenuItem(value: k, child: Text(k.label)),
@@ -737,7 +1069,7 @@ class _RequestEditorState extends State<RequestEditor> {
               ),
               IconButton(
                 tooltip: 'Remove test',
-                icon: const Icon(Icons.close, size: 16, color: Palette.textDim),
+                icon: Icon(Icons.close, size: 16, color: Palette.textDim),
                 onPressed: () {
                   setState(() => req.assertions.remove(a));
                   _touch();

@@ -1,3 +1,16 @@
+apiworkbench (1.2.0) noble; urgency=medium
+
+  * Postman import: collections (v1, v2.0, v2.1), single requests and
+    folders, environments, globals and data exports, into a new or an
+    existing collection or folder. Folders, auth inheritance, variables,
+    every body type and common test-script checks carry over.
+  * Folders in collections, collection variables, Postman dynamic
+    variables, response captures, multipart form-data and binary bodies.
+  * Redesigned interface: icon rail navigation, folder tree, breadcrumbs,
+    Teal light/dark and Graphite themes, and a new logo.
+
+ -- Dhivakar R <dhivakar1010@gmail.com>  Fri, 09 Oct 2026 22:30:00 +0530
+
 apiworkbench (1.1.0) noble; urgency=medium
 
   * Load testing: run one request or a collection with up to 1,000

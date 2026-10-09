@@ -19,7 +19,7 @@ class ResponseView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (tab.loading) {
-      return const Center(
+      return Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -36,7 +36,7 @@ class ResponseView extends StatelessWidget {
     }
     final res = tab.response;
     if (res == null) {
-      return const Center(
+      return Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -64,12 +64,12 @@ class ResponseView extends StatelessWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Icon(Icons.error_outline, color: Palette.delete, size: 30),
+              Icon(Icons.error_outline, color: Palette.delete, size: 30),
               const SizedBox(height: 10),
               SelectableText(
                 res.error!,
                 textAlign: TextAlign.center,
-                style: const TextStyle(color: Palette.text, height: 1.4),
+                style: TextStyle(color: Palette.text, height: 1.4),
               ),
             ],
           ),
@@ -119,7 +119,7 @@ class ResponseView extends StatelessWidget {
                 _scroll(
                   SelectableText(
                     preview.isEmpty ? '(empty body)' : preview,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontFamily: 'monospace',
                       fontSize: 13,
                       height: 1.5,
@@ -139,7 +139,7 @@ class ResponseView extends StatelessWidget {
 
   Widget _testsList(List<AssertionResult> tests) {
     if (tests.isEmpty) {
-      return const Center(
+      return Center(
         child: Text(
           'No tests defined.\nAdd them in the request\'s Tests tab.',
           textAlign: TextAlign.center,
@@ -243,7 +243,7 @@ class ResponseView extends StatelessWidget {
                 ),
                 child: Text(
                   'HTTP/${res.protocol}',
-                  style: const TextStyle(
+                  style: TextStyle(
                     color: Palette.query,
                     fontWeight: FontWeight.w700,
                     fontSize: 11.5,
@@ -259,7 +259,7 @@ class ResponseView extends StatelessWidget {
 
           IconButton(
             tooltip: 'Save request + response as Markdown doc',
-            icon: const Icon(
+            icon: Icon(
               Icons.description_outlined,
               size: 16,
               color: Palette.textDim,
@@ -268,7 +268,7 @@ class ResponseView extends StatelessWidget {
           ),
           IconButton(
             tooltip: 'Copy body',
-            icon: const Icon(Icons.copy, size: 16, color: Palette.textDim),
+            icon: Icon(Icons.copy, size: 16, color: Palette.textDim),
             onPressed: () {
               Clipboard.setData(ClipboardData(text: res.bodyText));
               ScaffoldMessenger.of(context).showSnackBar(
@@ -318,10 +318,7 @@ class ResponseView extends StatelessWidget {
     children: [
       Icon(icon, size: 14, color: Palette.textDim),
       const SizedBox(width: 4),
-      Text(
-        text,
-        style: const TextStyle(color: Palette.textDim, fontSize: 12.5),
-      ),
+      Text(text, style: TextStyle(color: Palette.textDim, fontSize: 12.5)),
     ],
   );
 
@@ -331,8 +328,7 @@ class ResponseView extends StatelessWidget {
     return ListView.separated(
       padding: const EdgeInsets.all(14),
       itemCount: entries.length,
-      separatorBuilder: (_, _) =>
-          const Divider(height: 14, color: Palette.border),
+      separatorBuilder: (_, _) => Divider(height: 14, color: Palette.border),
       itemBuilder: (_, i) {
         final e = entries[i];
         return Row(
@@ -342,7 +338,7 @@ class ResponseView extends StatelessWidget {
               flex: 2,
               child: SelectableText(
                 e.key,
-                style: const TextStyle(
+                style: TextStyle(
                   color: Palette.put,
                   fontFamily: 'monospace',
                   fontSize: 12.5,
@@ -352,7 +348,7 @@ class ResponseView extends StatelessWidget {
             Expanded(
               child: SelectableText(
                 e.value.join('\n'),
-                style: const TextStyle(
+                style: TextStyle(
                   color: Palette.text,
                   fontFamily: 'monospace',
                   fontSize: 12.5,

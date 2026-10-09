@@ -33,7 +33,9 @@ bool jsonPathFound(Object? v) => !identical(v, _missing);
 
 /// Evaluates every enabled assertion of [request] against [res].
 List<AssertionResult> evaluateAssertions(
-    RequestModel request, ResponseData res) {
+  RequestModel request,
+  ResponseData res,
+) {
   final out = <AssertionResult>[];
   for (final a in request.assertions.where((a) => a.enabled)) {
     out.add(_one(a, res));
@@ -47,16 +49,35 @@ AssertionResult _one(AssertionModel a, ResponseData res) {
   }
   switch (a.kind) {
     case AssertKind.statusEquals:
+      // A class such as "2xx" matches any status in that hundred.
+      final cls = RegExp(
+        r'^([1-5])xx$',
+        caseSensitive: false,
+      ).firstMatch(a.expected.trim());
+      if (cls != null) {
+        final ok = res.statusCode ~/ 100 == int.parse(cls.group(1)!);
+        return AssertionResult(
+          a,
+          ok,
+          'expected ${a.expected.trim()}, got ${res.statusCode}',
+        );
+      }
       final want = int.tryParse(a.expected.trim());
       if (want == null) {
         return AssertionResult(a, false, '"${a.expected}" is not a number');
       }
-      return AssertionResult(a, res.statusCode == want,
-          'expected $want, got ${res.statusCode}');
+      return AssertionResult(
+        a,
+        res.statusCode == want,
+        'expected $want, got ${res.statusCode}',
+      );
     case AssertKind.bodyContains:
       final ok = res.bodyText.contains(a.expected);
       return AssertionResult(
-          a, ok, ok ? 'found "${_trunc(a.expected)}"' : 'not found in body');
+        a,
+        ok,
+        ok ? 'found "${_trunc(a.expected)}"' : 'not found in body',
+      );
     case AssertKind.jsonEquals:
       Object? decoded;
       try {
@@ -69,8 +90,11 @@ AssertionResult _one(AssertionModel a, ResponseData res) {
         return AssertionResult(a, false, 'path "${a.target}" not found');
       }
       final actual = v?.toString() ?? 'null';
-      return AssertionResult(a, actual == a.expected,
-          'expected "${_trunc(a.expected)}", got "${_trunc(actual)}"');
+      return AssertionResult(
+        a,
+        actual == a.expected,
+        'expected "${_trunc(a.expected)}", got "${_trunc(actual)}"',
+      );
     case AssertKind.headerContains:
       final name = a.target.trim().toLowerCase();
       String? value;
@@ -85,14 +109,20 @@ AssertionResult _one(AssertionModel a, ResponseData res) {
       }
       final ok = value.toLowerCase().contains(a.expected.toLowerCase());
       return AssertionResult(
-          a, ok, ok ? 'matched "${_trunc(value)}"' : 'value is "${_trunc(value)}"');
+        a,
+        ok,
+        ok ? 'matched "${_trunc(value)}"' : 'value is "${_trunc(value)}"',
+      );
     case AssertKind.timeBelow:
       final limit = int.tryParse(a.expected.trim());
       if (limit == null) {
         return AssertionResult(a, false, '"${a.expected}" is not a number');
       }
-      return AssertionResult(a, res.durationMs < limit,
-          'took ${res.durationMs} ms (limit $limit ms)');
+      return AssertionResult(
+        a,
+        res.durationMs < limit,
+        'took ${res.durationMs} ms (limit $limit ms)',
+      );
   }
 }
 

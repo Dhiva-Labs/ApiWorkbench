@@ -1,6 +1,6 @@
 name: apiworkbench
 title: ApiWorkbench
-version: '1.1.0'
+version: '1.2.0'
 summary: Cross-platform API client for building and testing HTTP requests
 description: |
   ApiWorkbench is a fast, keyboard-friendly API client in the spirit of

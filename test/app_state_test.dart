@@ -31,16 +31,18 @@ void main() {
     await tmp.delete(recursive: true);
   });
 
-  test('fresh start: add environment works (regression: unmodifiable list)',
-      () async {
-    final state = await loadedState(tmp);
-    final env = state.addEnvironment('Dev');
-    env.variables.add(KV(key: 'base', value: 'https://x'));
-    state.updateEnvironment();
-    expect(state.environments.single.name, 'Dev');
-    expect(state.activeEnvironmentId, env.id);
-    expect(state.activeVars['base'], 'https://x');
-  });
+  test(
+    'fresh start: add environment works (regression: unmodifiable list)',
+    () async {
+      final state = await loadedState(tmp);
+      final env = state.addEnvironment('Dev');
+      env.variables.add(KV(key: 'base', value: 'https://x'));
+      state.updateEnvironment();
+      expect(state.environments.single.name, 'Dev');
+      expect(state.activeEnvironmentId, env.id);
+      expect(state.activeVars['base'], 'https://x');
+    },
+  );
 
   test('collections: save active tab, reopen focuses existing tab', () async {
     final state = await loadedState(tmp);
@@ -76,5 +78,47 @@ void main() {
     final s2 = await loadedState(tmp);
     expect(s2.collections.single.name, 'Persisted');
     expect(s2.activeEnvironment?.name, 'Prod');
+  });
+
+  test('import into an existing collection keeps folders and values', () async {
+    final state = await loadedState(tmp);
+    final target = state.addCollection('Shop')
+      ..requests.add(RequestModel(name: 'Existing', folder: 'Orders'))
+      ..variables.add(KV(key: 'baseUrl', value: 'https://mine.test'));
+    final imported = CollectionModel(
+      name: 'Billing API',
+      requests: [
+        RequestModel(name: 'Invoice', folder: 'Invoices'),
+        RequestModel(name: 'Ping'),
+      ],
+      variables: [
+        KV(key: 'baseUrl', value: 'https://theirs.test'),
+        KV(key: 'apiKey', value: 'k'),
+      ],
+    );
+
+    final added = state.addToCollection(target, [imported], folder: 'Orders');
+    expect(added, (requests: 2, variables: 1));
+    expect(target.requests.map((r) => '${r.folder}|${r.name}'), [
+      'Orders|Existing',
+      'Orders/Invoices|Invoice',
+      'Orders|Ping',
+    ]);
+    expect(target.variableMap, {
+      'baseUrl': 'https://mine.test', // existing value kept
+      'apiKey': 'k',
+    });
+
+    final grouped = CollectionModel(
+      name: 'A/B',
+      requests: [RequestModel(name: 'G')],
+    );
+    state.addToCollection(target, [grouped], groupByCollection: true);
+    expect(target.requests.last.folder, 'A∕B');
+
+    await storages.first.flush();
+    final reloaded = await loadedState(tmp);
+    expect(reloaded.collections.single.requests.length, 4);
+    expect(reloaded.collections.single.variables.length, 2);
   });
 }

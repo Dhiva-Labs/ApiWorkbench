@@ -9,13 +9,17 @@ import 'package:native_dio_adapter/native_dio_adapter.dart';
 
 import '../models/models.dart';
 import 'curl_engine.dart';
+import 'dynamic_vars.dart';
 
-/// Replaces {{variable}} placeholders using the active environment.
+/// Replaces {{variable}} placeholders using [vars], then Postman-style
+/// dynamic variables such as {{$guid}}. Unknown names are left as-is.
 String substituteVars(String input, Map<String, String> vars) {
-  if (vars.isEmpty || !input.contains('{{')) return input;
+  if (!input.contains('{{')) return input;
   return input.replaceAllMapped(RegExp(r'\{\{([^{}]+)\}\}'), (m) {
     final name = m.group(1)!.trim();
-    return vars[name] ?? m.group(0)!;
+    return vars[name] ??
+        (name.startsWith(r'$') ? dynamicVariable(name) : null) ??
+        m.group(0)!;
   });
 }
 
@@ -182,7 +186,39 @@ class HttpService {
           (k) => k.toLowerCase() == 'content-type',
         );
         if (ct != null && !hasCt) headers['Content-Type'] = ct;
-        if (r.bodyType == BodyType.formUrlEncoded) {
+        if (r.bodyType == BodyType.formData) {
+          // dio writes the multipart Content-Type with its boundary; a
+          // hand-set one (common in Postman exports) would break parsing.
+          headers.removeWhere((k, _) => k.toLowerCase() == 'content-type');
+          final form = FormData();
+          for (final f in r.formFields.where(
+            (f) => f.enabled && f.key.isNotEmpty,
+          )) {
+            final key = substituteVars(f.key, vars);
+            final value = substituteVars(f.value, vars);
+            if (f.isFile) {
+              if (value.isEmpty) continue;
+              if (!File(value).existsSync()) {
+                return ResponseData(error: 'Form file not found: $value');
+              }
+              form.files.add(
+                MapEntry(key, await MultipartFile.fromFile(value)),
+              );
+            } else {
+              form.fields.add(MapEntry(key, value));
+            }
+          }
+          data = form;
+        } else if (r.bodyType == BodyType.binary) {
+          final path = substituteVars(r.body, vars).trim();
+          if (path.isNotEmpty) {
+            final file = File(path);
+            if (!file.existsSync()) {
+              return ResponseData(error: 'Body file not found: $path');
+            }
+            data = await file.readAsBytes();
+          }
+        } else if (r.bodyType == BodyType.formUrlEncoded) {
           data = r.formFields
               .where((f) => f.enabled && f.key.isNotEmpty)
               .map(
@@ -211,7 +247,9 @@ class HttpService {
         }
       }
 
-      if (_useCurlH3) {
+      // The curl engine only takes text bodies; multipart and file bodies go
+      // through dio (HTTP/1.1 or 2) instead.
+      if (_useCurlH3 && (data == null || data is String)) {
         final res = await _curl.send(
           uri: uri,
           method: r.method,

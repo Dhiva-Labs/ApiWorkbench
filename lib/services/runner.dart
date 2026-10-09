@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 
 import '../models/models.dart';
 import 'assertions.dart';
+import 'captures.dart';
 import 'http_service.dart';
 
 /// Parses user-supplied data rows for data-driven runs.
@@ -109,14 +110,19 @@ class RunnerService extends ChangeNotifier {
       currentIteration++;
       // Data-driven runs: merge this iteration's row over the environment
       // (rows cycle in recurring mode).
+      // Copied per iteration: captured values chain into later requests of
+      // the same pass without leaking into the next data row.
       final iterVars = (dataRows == null || dataRows.isEmpty)
-          ? vars
+          ? {...vars}
           : {...vars, ...dataRows[(currentIteration - 1) % dataRows.length]};
       for (final req in requests) {
         if (!running) break;
         final res = await _http.send(req, iterVars, tabId: 'runner-$_runId');
         if (!running || _disposed || generation != _generation) break;
         final assertions = evaluateAssertions(req, res);
+        if (res.error == null && req.captures.isNotEmpty) {
+          iterVars.addAll(captureValues(req.captures, res));
+        }
         // The runner displays metadata and assertions, never response bodies.
         final summary = ResponseData(
           statusCode: res.statusCode,

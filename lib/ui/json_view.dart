@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../theme.dart';
 
-const _mono = TextStyle(
+final _mono = TextStyle(
   fontFamily: 'monospace',
   fontSize: 13,
   height: 1.5,

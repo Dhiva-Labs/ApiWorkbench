@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 
 import '../models/models.dart';
 import '../services/assertions.dart';
+import '../services/captures.dart';
 import '../services/http_service.dart';
 import '../services/sound_service.dart';
 import '../services/storage.dart';
@@ -63,6 +64,55 @@ class AppState extends ChangeNotifier {
       if (v.enabled && v.key.isNotEmpty) v.key: v.value,
   };
 
+  /// Values captured by requests outside any collection while no
+  /// environment is active; kept for this session only.
+  final Map<String, String> sessionVars = {};
+
+  CollectionModel? collectionById(String? id) {
+    if (id == null) return null;
+    for (final c in collections) {
+      if (c.id == id) return c;
+    }
+    return null;
+  }
+
+  /// Variables for a request: collection variables, then session captures,
+  /// then the active environment (highest), matching Postman's scope order.
+  Map<String, String> varsFor(String? collectionId) => {
+    ...?collectionById(collectionId)?.variableMap,
+    ...sessionVars,
+    ...activeVars,
+  };
+
+  /// Stores captured values where later requests will see them: the active
+  /// environment if one is selected, else the request's collection, else the
+  /// session.
+  void _storeCaptures(Map<String, String> values, String? collectionId) {
+    if (values.isEmpty) return;
+    final env = activeEnvironment;
+    final col = collectionById(collectionId);
+    final target = env?.variables ?? col?.variables;
+    if (target == null) {
+      sessionVars.addAll(values);
+      return;
+    }
+    values.forEach((k, v) {
+      final row = target.where((x) => x.key == k).firstOrNull;
+      if (row != null) {
+        row
+          ..value = v
+          ..enabled = true;
+      } else {
+        target.add(KV(key: k, value: v));
+      }
+    });
+    if (env != null) {
+      _storage.saveEnvironments(environments, activeEnvironmentId);
+    } else {
+      _storage.saveCollections(collections);
+    }
+  }
+
   Future<void> _init() async {
     collections = await _storage.loadCollections();
     final (envs, activeId) = await _storage.loadEnvironments();
@@ -107,6 +157,42 @@ class AppState extends ChangeNotifier {
     }
     notifyListeners();
     return (cols.length, envs.length);
+  }
+
+  /// Adds imported requests into an existing collection instead of creating
+  /// new ones. Requests keep their folders, nested under [folder]; with
+  /// [groupByCollection] each imported collection gets its own folder.
+  /// Imported collection variables are added only where [target] has no
+  /// variable of that name, so existing values are never overwritten.
+  ({int requests, int variables}) addToCollection(
+    CollectionModel target,
+    List<CollectionModel> imported, {
+    String folder = '',
+    bool groupByCollection = false,
+  }) {
+    String join(String a, String b) =>
+        a.isEmpty ? b : (b.isEmpty ? a : '$a/$b');
+    var requests = 0;
+    var variables = 0;
+    for (final c in imported) {
+      final base = groupByCollection
+          ? join(folder, c.name.replaceAll('/', '∕'))
+          : folder;
+      for (final r in c.requests) {
+        r.folder = join(base, r.folder);
+        target.requests.add(r);
+        requests++;
+      }
+      for (final v in c.variables) {
+        if (v.key.isEmpty || target.variables.any((x) => x.key == v.key)) {
+          continue;
+        }
+        target.variables.add(v);
+        variables++;
+      }
+    }
+    _persistCollections();
+    return (requests: requests, variables: variables);
   }
 
   // ---------------- Tabs ----------------
@@ -167,11 +253,21 @@ class AppState extends ChangeNotifier {
     tab.assertionResults = [];
     notifyListeners();
 
-    final res = await http.send(tab.request, activeVars, tabId: tab.id);
+    final res = await http.send(
+      tab.request,
+      varsFor(tab.sourceCollectionId),
+      tabId: tab.id,
+    );
     if (_disposed || !tabs.contains(tab)) return;
     tab.loading = false;
     tab.response = res;
     tab.assertionResults = evaluateAssertions(tab.request, res);
+    if (res.error == null && tab.request.captures.isNotEmpty) {
+      _storeCaptures(
+        captureValues(tab.request.captures, res),
+        tab.sourceCollectionId,
+      );
+    }
 
     if (settings.chaosMode) {
       // Fire and forget — a missing player must never block the response.
@@ -247,6 +343,9 @@ class AppState extends ChangeNotifier {
     c.requests.insert(c.requests.indexOf(r) + 1, copy);
     _persistCollections();
   }
+
+  /// Persists after editing a collection in place (e.g. its variables).
+  void updateCollections() => _persistCollections();
 
   void _persistCollections() {
     _storage.saveCollections(collections);

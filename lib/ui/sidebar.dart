@@ -4,14 +4,34 @@ import 'package:provider/provider.dart';
 import '../models/models.dart';
 import '../state/app_state.dart';
 import '../theme.dart';
+import 'import_dialog.dart';
 import 'kv_editor.dart';
 import 'load_test_screen.dart';
 import 'runner_screen.dart';
 
 enum SidebarSection { collections, environments, history }
 
+extension SidebarSectionInfo on SidebarSection {
+  String get label => switch (this) {
+    SidebarSection.collections => 'Collections',
+    SidebarSection.environments => 'Environments',
+    SidebarSection.history => 'History',
+  };
+
+  IconData get icon => switch (this) {
+    SidebarSection.collections => Icons.folder_copy_outlined,
+    SidebarSection.environments => Icons.public,
+    SidebarSection.history => Icons.history,
+  };
+}
+
+/// The side panel: a collection tree with folders, environments, or
+/// history. On desktop the icon rail picks [section]; on mobile (no
+/// [section]) the panel shows its own switcher.
 class Sidebar extends StatefulWidget {
-  const Sidebar({super.key, this.onRequestOpened});
+  const Sidebar({super.key, this.section, this.onRequestOpened});
+
+  final SidebarSection? section;
 
   /// Called after a request is opened (used to close the drawer on mobile).
   final VoidCallback? onRequestOpened;
@@ -20,58 +40,71 @@ class Sidebar extends StatefulWidget {
   State<Sidebar> createState() => _SidebarState();
 }
 
+/// A folder in the collection tree; children are [_Folder]s and requests in
+/// their original order.
+class _Folder {
+  _Folder(this.name, this.path);
+  final String name;
+  final String path;
+  final children = <Object>[];
+
+  int get count => children.fold(0, (s, c) => s + (c is _Folder ? c.count : 1));
+}
+
 class _SidebarState extends State<Sidebar> {
-  SidebarSection _section = SidebarSection.collections;
+  SidebarSection _own = SidebarSection.collections;
   String _filter = '';
+  final Set<String> _expanded = {};
+
+  SidebarSection get _section => widget.section ?? _own;
 
   @override
   Widget build(BuildContext context) {
     final state = context.watch<AppState>();
     return Column(
       children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(10, 10, 10, 6),
-          child: SegmentedButton<SidebarSection>(
-            showSelectedIcon: false,
-            style: const ButtonStyle(
-              visualDensity: VisualDensity.compact,
-              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        if (widget.section == null)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(10, 10, 10, 2),
+            child: SizedBox(
+              width: double.infinity,
+              child: SegmentedButton<SidebarSection>(
+                showSelectedIcon: false,
+                segments: [
+                  for (final s in SidebarSection.values)
+                    ButtonSegment(
+                      value: s,
+                      icon: Icon(s.icon, size: 17),
+                      tooltip: s.label,
+                    ),
+                ],
+                selected: {_own},
+                onSelectionChanged: (s) => setState(() => _own = s.first),
+              ),
             ),
-            segments: const [
-              ButtonSegment(
-                value: SidebarSection.collections,
-                icon: Icon(Icons.folder_outlined, size: 17),
-                tooltip: 'Collections',
-              ),
-              ButtonSegment(
-                value: SidebarSection.environments,
-                icon: Icon(Icons.public, size: 17),
-                tooltip: 'Environments',
-              ),
-              ButtonSegment(
-                value: SidebarSection.history,
-                icon: Icon(Icons.history, size: 17),
-                tooltip: 'History',
-              ),
-            ],
-            selected: {_section},
-            onSelectionChanged: (s) => setState(() => _section = s.first),
           ),
-        ),
+        _header(state),
         if (_section != SidebarSection.environments)
           Padding(
-            padding: const EdgeInsets.fromLTRB(10, 4, 10, 6),
-            child: TextField(
-              style: const TextStyle(fontSize: 13),
-              decoration: const InputDecoration(
-                hintText: 'Filter…',
-                prefixIcon: Icon(Icons.search, size: 17),
-                prefixIconConstraints: BoxConstraints(
-                  minWidth: 36,
-                  minHeight: 36,
+            padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+            child: SizedBox(
+              height: 34,
+              child: TextField(
+                style: const TextStyle(fontSize: 13),
+                decoration: InputDecoration(
+                  hintText: _section == SidebarSection.collections
+                      ? 'Search requests'
+                      : 'Search history',
+                  prefixIcon: Icon(
+                    Icons.search,
+                    size: 17,
+                    color: Palette.textDim,
+                  ),
+                  prefixIconConstraints: const BoxConstraints(minWidth: 34),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 8),
                 ),
+                onChanged: (v) => setState(() => _filter = v.toLowerCase()),
               ),
-              onChanged: (v) => setState(() => _filter = v.toLowerCase()),
             ),
           ),
         Expanded(
@@ -85,134 +118,420 @@ class _SidebarState extends State<Sidebar> {
     );
   }
 
-  // ---------------- Collections ----------------
-
-  Widget _collections(AppState state) {
-    final cols = state.collections;
-    return Column(
-      children: [
-        Expanded(
-          child: cols.isEmpty
-              ? _empty('No collections yet.\nSave a request to create one.')
-              : ListView(
-                  padding: const EdgeInsets.only(bottom: 8),
-                  children: [for (final c in cols) _collectionTile(state, c)],
+  Widget _header(AppState state) {
+    Widget action(String tip, IconData icon, VoidCallback onTap) => IconButton(
+      tooltip: tip,
+      visualDensity: VisualDensity.compact,
+      icon: Icon(icon, size: 19),
+      onPressed: onTap,
+    );
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 10, 6, 6),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              _section.label,
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w700,
+                color: Palette.text,
+              ),
+            ),
+          ),
+          ...switch (_section) {
+            SidebarSection.collections => [
+              action(
+                'Import Postman or workspace',
+                Icons.download_outlined,
+                () => showImportDialog(context),
+              ),
+              action(
+                'New collection',
+                Icons.create_new_folder_outlined,
+                () => _newCollectionDialog(state),
+              ),
+            ],
+            SidebarSection.environments => [
+              action(
+                'New environment',
+                Icons.add,
+                () => _newEnvironment(state),
+              ),
+            ],
+            SidebarSection.history => [
+              if (state.history.isNotEmpty)
+                action(
+                  'Clear history',
+                  Icons.delete_sweep_outlined,
+                  state.clearHistory,
                 ),
-        ),
-        _bottomAction(
-          'New collection',
-          Icons.create_new_folder_outlined,
-          () => _newCollectionDialog(state),
-        ),
-      ],
+            ],
+          },
+        ],
+      ),
     );
   }
 
-  Widget _collectionTile(AppState state, CollectionModel c) {
-    final requests = c.requests
-        .where(
-          (r) =>
-              _filter.isEmpty ||
-              r.name.toLowerCase().contains(_filter) ||
-              r.url.toLowerCase().contains(_filter),
-        )
-        .toList();
-    if (_filter.isNotEmpty && requests.isEmpty) return const SizedBox.shrink();
-    return ExpansionTile(
-      key: PageStorageKey(c.id),
-      dense: true,
-      initiallyExpanded: _filter.isNotEmpty,
-      leading: const Icon(Icons.folder_outlined, size: 18),
-      shape: const Border(),
-      title: Text(
-        c.name,
-        style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600),
-      ),
-      subtitle: Text(
-        '${c.requests.length} requests',
-        style: const TextStyle(fontSize: 11, color: Palette.textDim),
-      ),
-      trailing: PopupMenuButton<String>(
-        icon: const Icon(Icons.more_horiz, size: 17, color: Palette.textDim),
-        onSelected: (v) {
-          if (v == 'run') {
-            if (c.requests.isEmpty) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('This collection has no requests to run.'),
-                ),
-              );
-              return;
-            }
-            Navigator.of(context).push(
-              MaterialPageRoute<void>(
-                builder: (_) => RunnerScreen(
-                  title: c.name,
-                  requests: c.requests.map((r) => r.clone()).toList(),
-                ),
-              ),
-            );
-          }
-          if (v == 'load') {
-            if (c.requests.isEmpty) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('This collection has no requests to test.'),
-                ),
-              );
-              return;
-            }
-            Navigator.of(context).push(
-              MaterialPageRoute<void>(
-                builder: (_) => LoadTestScreen(
-                  title: c.name,
-                  requests: c.requests.map((r) => r.clone()).toList(),
-                ),
-              ),
-            );
-          }
-          if (v == 'rename') _renameCollectionDialog(state, c);
-          if (v == 'delete') _confirmDeleteCollection(state, c);
-        },
-        itemBuilder: (_) => const [
-          PopupMenuItem(value: 'run', child: Text('Run collection…')),
-          PopupMenuItem(value: 'load', child: Text('Load test collection…')),
-          PopupMenuItem(value: 'rename', child: Text('Rename')),
-          PopupMenuItem(value: 'delete', child: Text('Delete')),
+  // ---------------- Collections ----------------
+
+  bool _matches(RequestModel r) =>
+      _filter.isEmpty ||
+      r.name.toLowerCase().contains(_filter) ||
+      r.url.toLowerCase().contains(_filter) ||
+      r.folder.toLowerCase().contains(_filter);
+
+  _Folder _tree(CollectionModel c) {
+    final root = _Folder(c.name, '');
+    final index = <String, _Folder>{'': root};
+    for (final r in c.requests) {
+      if (!_matches(r)) continue;
+      var parent = root;
+      var path = '';
+      if (r.folder.isNotEmpty) {
+        for (final seg in r.folder.split('/')) {
+          path = path.isEmpty ? seg : '$path/$seg';
+          final p = parent;
+          parent = index.putIfAbsent(path, () {
+            final f = _Folder(seg, path);
+            p.children.add(f);
+            return f;
+          });
+        }
+      }
+      parent.children.add(r);
+    }
+    return root;
+  }
+
+  Widget _collections(AppState state) {
+    final cols = state.collections;
+    if (cols.isEmpty) {
+      return _emptyState(
+        icon: Icons.folder_copy_outlined,
+        title: 'Start a collection',
+        body:
+            'Save requests into collections, or bring in everything you '
+            'have in Postman.',
+        actions: [
+          FilledButton.icon(
+            onPressed: () => showImportDialog(context),
+            icon: const Icon(Icons.download_outlined, size: 17),
+            label: const Text('Import from Postman'),
+          ),
+          OutlinedButton.icon(
+            onPressed: () => _newCollectionDialog(state),
+            icon: const Icon(Icons.create_new_folder_outlined, size: 17),
+            label: const Text('New collection'),
+          ),
         ],
-      ),
-      children: [
-        for (final r in requests)
-          ListTile(
-            dense: true,
-            contentPadding: const EdgeInsets.only(left: 26, right: 8),
-            leading: _methodBadge(r.method),
-            title: Text(
-              r.name,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontSize: 13),
-            ),
+      );
+    }
+    final activeId = state.activeTab?.request.id;
+    final rows = <Widget>[];
+    for (final c in cols) {
+      final tree = _tree(c);
+      if (_filter.isNotEmpty && tree.count == 0) continue;
+      final key = 'c:${c.id}';
+      final open = _filter.isNotEmpty || _expanded.contains(key);
+      rows.add(
+        _row(
+          depth: 0,
+          expanded: open,
+          icon: Icons.inventory_2_outlined,
+          label: c.name,
+          bold: true,
+          meta: '${c.requests.length}',
+          onTap: () => _toggle(key),
+          menu: _collectionMenu(state, c),
+        ),
+      );
+      if (open) _children(state, c, tree, 1, activeId, rows);
+    }
+    if (rows.isEmpty) return _empty('No requests match "$_filter".');
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(6, 0, 6, 12),
+      children: rows,
+    );
+  }
+
+  void _children(
+    AppState state,
+    CollectionModel c,
+    _Folder folder,
+    int depth,
+    String? activeId,
+    List<Widget> out,
+  ) {
+    for (final child in folder.children) {
+      if (child is _Folder) {
+        final key = 'f:${c.id}/${child.path}';
+        final open = _filter.isNotEmpty || _expanded.contains(key);
+        out.add(
+          _row(
+            depth: depth,
+            expanded: open,
+            icon: open ? Icons.folder_open_outlined : Icons.folder_outlined,
+            label: child.name,
+            meta: '${child.count}',
+            onTap: () => _toggle(key),
+            menu: _folderMenu(c, child),
+          ),
+        );
+        if (open) _children(state, c, child, depth + 1, activeId, out);
+      } else if (child is RequestModel) {
+        out.add(
+          _row(
+            depth: depth,
+            method: child.method,
+            label: child.name,
+            selected: child.id == activeId,
             onTap: () {
-              state.openRequest(r, collectionId: c.id);
+              state.openRequest(child, collectionId: c.id);
               widget.onRequestOpened?.call();
             },
-            trailing: PopupMenuButton<String>(
-              icon: const Icon(
-                Icons.more_horiz,
-                size: 16,
-                color: Palette.textDim,
-              ),
-              onSelected: (v) {
-                if (v == 'duplicate') state.duplicateRequest(c, r);
-                if (v == 'delete') state.deleteRequest(c, r);
-              },
-              itemBuilder: (_) => const [
-                PopupMenuItem(value: 'duplicate', child: Text('Duplicate')),
-                PopupMenuItem(value: 'delete', child: Text('Delete')),
+            menu: _requestMenu(state, c, child),
+          ),
+        );
+      }
+    }
+  }
+
+  void _toggle(String key) => setState(
+    () => _expanded.contains(key) ? _expanded.remove(key) : _expanded.add(key),
+  );
+
+  /// One tree row: chevron (for groups) or method badge, label, count and a
+  /// hover menu.
+  Widget _row({
+    required int depth,
+    required String label,
+    required VoidCallback onTap,
+    bool? expanded,
+    IconData? icon,
+    String? method,
+    String? meta,
+    bool bold = false,
+    bool selected = false,
+    Widget? menu,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 1),
+      child: Material(
+        color: selected ? Palette.accentSoft : Colors.transparent,
+        borderRadius: BorderRadius.circular(6),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(6),
+          onTap: onTap,
+          child: SizedBox(
+            height: 32,
+            child: Row(
+              children: [
+                SizedBox(width: 6.0 + depth * 14),
+                if (expanded != null)
+                  AnimatedRotation(
+                    turns: expanded ? 0.25 : 0,
+                    duration: const Duration(milliseconds: 150),
+                    child: Icon(
+                      Icons.chevron_right,
+                      size: 16,
+                      color: Palette.textDim,
+                    ),
+                  )
+                else
+                  const SizedBox(width: 4),
+                if (icon != null) ...[
+                  const SizedBox(width: 2),
+                  Icon(icon, size: 16, color: Palette.textDim),
+                  const SizedBox(width: 8),
+                ],
+                if (method != null)
+                  SizedBox(
+                    width: 46,
+                    child: Text(
+                      method == 'DELETE' ? 'DEL' : method,
+                      style: TextStyle(
+                        color: methodColor(method),
+                        fontWeight: FontWeight.w800,
+                        fontSize: 10.5,
+                      ),
+                    ),
+                  ),
+                Expanded(
+                  child: Text(
+                    label,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: Palette.text,
+                      fontWeight: bold
+                          ? FontWeight.w600
+                          : (selected ? FontWeight.w600 : FontWeight.w400),
+                    ),
+                  ),
+                ),
+                if (meta != null)
+                  Text(
+                    meta,
+                    style: TextStyle(fontSize: 11, color: Palette.textDim),
+                  ),
+                ?menu,
               ],
             ),
           ),
+        ),
+      ),
+    );
+  }
+
+  Widget _menuButton(
+    List<PopupMenuEntry<String>> items,
+    void Function(String) on,
+  ) => PopupMenuButton<String>(
+    tooltip: 'More',
+    padding: EdgeInsets.zero,
+    iconSize: 17,
+    icon: Icon(Icons.more_horiz, size: 17, color: Palette.textDim),
+    onSelected: on,
+    itemBuilder: (_) => items,
+  );
+
+  PopupMenuItem<String> _item(String value, IconData icon, String text) =>
+      PopupMenuItem(
+        value: value,
+        height: 38,
+        child: Row(
+          children: [
+            Icon(icon, size: 17, color: Palette.textDim),
+            const SizedBox(width: 10),
+            Text(text, style: const TextStyle(fontSize: 13)),
+          ],
+        ),
+      );
+
+  Widget _collectionMenu(AppState state, CollectionModel c) => _menuButton(
+    [
+      _item('run', Icons.play_circle_outline, 'Run collection'),
+      _item('load', Icons.speed, 'Load test collection'),
+      _item('import', Icons.download_outlined, 'Import into collection'),
+      _item('vars', Icons.data_object, 'Variables'),
+      _item('rename', Icons.edit_outlined, 'Rename'),
+      _item('delete', Icons.delete_outline, 'Delete'),
+    ],
+    (v) => switch (v) {
+      'run' => _openRunner(c, c.requests, c.name),
+      'load' => _openLoadTest(c, c.requests, c.name),
+      'import' => showImportDialog(context, collectionId: c.id),
+      'vars' => _editCollectionVariables(state, c),
+      'rename' => _renameCollectionDialog(state, c),
+      'delete' => _confirmDeleteCollection(state, c),
+      _ => null,
+    },
+  );
+
+  Widget _folderMenu(CollectionModel c, _Folder f) {
+    final inFolder = [
+      for (final r in c.requests)
+        if (r.folder == f.path || r.folder.startsWith('${f.path}/')) r,
+    ];
+    return _menuButton(
+      [
+        _item('run', Icons.play_circle_outline, 'Run folder'),
+        _item('load', Icons.speed, 'Load test folder'),
+        _item('import', Icons.download_outlined, 'Import into folder'),
       ],
+      (v) => switch (v) {
+        'import' => showImportDialog(
+          context,
+          collectionId: c.id,
+          folder: f.path,
+        ),
+        'run' => _openRunner(c, inFolder, '${c.name} › ${f.name}'),
+        'load' => _openLoadTest(c, inFolder, '${c.name} › ${f.name}'),
+        _ => null,
+      },
+    );
+  }
+
+  Widget _requestMenu(AppState state, CollectionModel c, RequestModel r) =>
+      _menuButton(
+        [
+          _item('duplicate', Icons.copy_outlined, 'Duplicate'),
+          _item('load', Icons.speed, 'Load test'),
+          _item('delete', Icons.delete_outline, 'Delete'),
+        ],
+        (v) => switch (v) {
+          'duplicate' => state.duplicateRequest(c, r),
+          'load' => _openLoadTest(c, [r], r.name),
+          'delete' => state.deleteRequest(c, r),
+          _ => null,
+        },
+      );
+
+  void _openRunner(CollectionModel c, List<RequestModel> reqs, String title) {
+    if (reqs.isEmpty) return _toast('Nothing to run here yet.');
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => RunnerScreen(
+          title: title,
+          requests: reqs.map((r) => r.clone()).toList(),
+          collectionId: c.id,
+        ),
+      ),
+    );
+  }
+
+  void _openLoadTest(CollectionModel c, List<RequestModel> reqs, String title) {
+    if (reqs.isEmpty) return _toast('Nothing to test here yet.');
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => LoadTestScreen(
+          title: title,
+          requests: reqs.map((r) => r.clone()).toList(),
+          collectionId: c.id,
+        ),
+      ),
+    );
+  }
+
+  void _toast(String msg) =>
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+
+  void _editCollectionVariables(AppState state, CollectionModel c) {
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('${c.name} variables'),
+        content: SizedBox(
+          width: 560,
+          height: 380,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Available as {{name}} to every request in this collection. '
+                'The active environment wins when both define a name.',
+                style: TextStyle(fontSize: 12.5, color: Palette.textDim),
+              ),
+              const SizedBox(height: 6),
+              Expanded(
+                child: KVEditor(
+                  rows: c.variables,
+                  onChanged: state.updateCollections,
+                  keyHint: 'Variable',
+                  addLabel: 'Add variable',
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Done'),
+          ),
+        ],
+      ),
     );
   }
 
@@ -243,7 +562,8 @@ class _SidebarState extends State<Sidebar> {
       builder: (ctx) => AlertDialog(
         title: Text('Delete "${c.name}"?'),
         content: Text(
-          'This removes the collection and its ${c.requests.length} saved requests.',
+          'This removes the collection and its ${c.requests.length} saved '
+          'requests.',
         ),
         actions: [
           TextButton(
@@ -251,7 +571,10 @@ class _SidebarState extends State<Sidebar> {
             child: const Text('Cancel'),
           ),
           FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: Palette.delete),
+            style: FilledButton.styleFrom(
+              backgroundColor: Palette.delete,
+              foregroundColor: Colors.white,
+            ),
             onPressed: () => Navigator.pop(ctx, true),
             child: const Text('Delete'),
           ),
@@ -264,63 +587,101 @@ class _SidebarState extends State<Sidebar> {
   // ---------------- Environments ----------------
 
   Widget _environments(AppState state) {
-    return Column(
-      children: [
-        Expanded(
-          child: state.environments.isEmpty
-              ? _empty(
-                  'No environments yet.\nDefine {{variables}} once, reuse them everywhere.',
-                )
-              : RadioGroup<String?>(
-                  groupValue: state.activeEnvironmentId,
-                  onChanged: (v) => state.setActiveEnvironment(v),
-                  child: ListView(
-                    children: [
-                      const RadioListTile<String?>(
-                        value: null,
-                        dense: true,
-                        title: Text(
-                          'No environment',
-                          style: TextStyle(fontSize: 13),
-                        ),
-                      ),
-                      for (final e in state.environments)
-                        RadioListTile<String?>(
-                          value: e.id,
-                          dense: true,
-                          title: Text(
-                            e.name,
-                            style: const TextStyle(fontSize: 13.5),
+    if (state.environments.isEmpty) {
+      return _emptyState(
+        icon: Icons.public,
+        title: 'Add an environment',
+        body:
+            'Define {{variables}} such as baseUrl or token once, then switch '
+            'between local, staging and production in one click.',
+        actions: [
+          FilledButton.icon(
+            onPressed: () => _newEnvironment(state),
+            icon: const Icon(Icons.add, size: 17),
+            label: const Text('New environment'),
+          ),
+          OutlinedButton.icon(
+            onPressed: () => showImportDialog(context),
+            icon: const Icon(Icons.download_outlined, size: 17),
+            label: const Text('Import from Postman'),
+          ),
+        ],
+      );
+    }
+    Widget envRow(EnvironmentModel? e) {
+      final active = state.activeEnvironmentId == e?.id;
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 1),
+        child: Material(
+          color: active ? Palette.accentSoft : Colors.transparent,
+          borderRadius: BorderRadius.circular(6),
+          child: InkWell(
+            borderRadius: BorderRadius.circular(6),
+            onTap: () => state.setActiveEnvironment(e?.id),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(10, 8, 4, 8),
+              child: Row(
+                children: [
+                  Icon(
+                    active
+                        ? Icons.radio_button_checked
+                        : Icons.radio_button_unchecked,
+                    size: 17,
+                    color: active ? Palette.accent : Palette.textDim,
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          e?.name ?? 'No environment',
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: Palette.text,
+                            fontWeight: active
+                                ? FontWeight.w600
+                                : FontWeight.w400,
                           ),
-                          subtitle: Text(
+                        ),
+                        if (e != null)
+                          Text(
                             '${e.variables.length} variables',
-                            style: const TextStyle(
+                            style: TextStyle(
                               fontSize: 11,
                               color: Palette.textDim,
                             ),
                           ),
-                          secondary: IconButton(
-                            tooltip: 'Edit variables',
-                            icon: const Icon(
-                              Icons.edit_outlined,
-                              size: 17,
-                              color: Palette.textDim,
-                            ),
-                            onPressed: () => _editEnvironment(state, e),
-                          ),
-                        ),
-                    ],
+                      ],
+                    ),
                   ),
-                ),
+                  if (e != null)
+                    IconButton(
+                      tooltip: 'Edit variables',
+                      visualDensity: VisualDensity.compact,
+                      icon: const Icon(Icons.edit_outlined, size: 17),
+                      onPressed: () => _editEnvironment(state, e),
+                    ),
+                ],
+              ),
+            ),
+          ),
         ),
-        _bottomAction('New environment', Icons.add_circle_outline, () async {
-          final name = await _promptText(context, 'New environment', 'Name');
-          if (name == null || name.isEmpty) return;
-          final env = state.addEnvironment(name);
-          if (mounted) _editEnvironment(state, env);
-        }),
-      ],
+      );
+    }
+
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(6, 0, 6, 12),
+      children: [envRow(null), for (final e in state.environments) envRow(e)],
     );
+  }
+
+  Future<void> _newEnvironment(AppState state) async {
+    final name = await _promptText(context, 'New environment', 'Name');
+    if (name == null || name.isEmpty) return;
+    final env = state.addEnvironment(name);
+    if (mounted) _editEnvironment(state, env);
   }
 
   void _editEnvironment(AppState state, EnvironmentModel env) {
@@ -332,11 +693,7 @@ class _SidebarState extends State<Sidebar> {
             Expanded(child: Text(env.name)),
             IconButton(
               tooltip: 'Delete environment',
-              icon: const Icon(
-                Icons.delete_outline,
-                size: 19,
-                color: Palette.delete,
-              ),
+              icon: Icon(Icons.delete_outline, size: 19, color: Palette.delete),
               onPressed: () {
                 state.deleteEnvironment(env);
                 Navigator.pop(ctx);
@@ -345,8 +702,8 @@ class _SidebarState extends State<Sidebar> {
           ],
         ),
         content: SizedBox(
-          width: 520,
-          height: 360,
+          width: 560,
+          height: 380,
           child: KVEditor(
             rows: env.variables,
             onChanged: state.updateEnvironment,
@@ -373,67 +730,76 @@ class _SidebarState extends State<Sidebar> {
               _filter.isEmpty || h.request.url.toLowerCase().contains(_filter),
         )
         .toList();
-    return Column(
-      children: [
-        Expanded(
-          child: items.isEmpty
-              ? _empty('Requests you send will appear here.')
-              : ListView.builder(
-                  itemCount: items.length,
-                  itemBuilder: (_, i) {
-                    final h = items[i];
-                    return ListTile(
-                      dense: true,
-                      leading: _methodBadge(h.request.method),
-                      title: Text(
+    if (items.isEmpty) {
+      return _filter.isEmpty
+          ? _emptyState(
+              icon: Icons.history,
+              title: 'No requests yet',
+              body: 'Every request you send shows up here.',
+            )
+          : _empty('No history matches "$_filter".');
+    }
+    return ListView.builder(
+      padding: const EdgeInsets.fromLTRB(6, 0, 6, 12),
+      itemCount: items.length,
+      itemBuilder: (_, i) {
+        final h = items[i];
+        final code = h.statusCode;
+        return InkWell(
+          borderRadius: BorderRadius.circular(6),
+          onTap: () {
+            state.newTab(h.request.clone());
+            widget.onRequestOpened?.call();
+          },
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(10, 7, 8, 7),
+            child: Row(
+              children: [
+                SizedBox(
+                  width: 46,
+                  child: Text(
+                    h.request.method == 'DELETE' ? 'DEL' : h.request.method,
+                    style: TextStyle(
+                      color: methodColor(h.request.method),
+                      fontWeight: FontWeight.w800,
+                      fontSize: 10.5,
+                    ),
+                  ),
+                ),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
                         h.request.url,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 12.5,
                           fontFamily: 'monospace',
+                          color: Palette.text,
                         ),
                       ),
-                      subtitle: Text(
-                        '${h.statusCode == 0 ? 'error' : h.statusCode} • '
-                        '${h.durationMs} ms • ${_ago(h.at)}',
+                      const SizedBox(height: 2),
+                      Text(
+                        '${code == 0 ? 'Error' : code} · ${h.durationMs} ms · '
+                        '${_ago(h.at)}',
                         style: TextStyle(
                           fontSize: 11,
-                          color: h.statusCode == 0
-                              ? Palette.delete
-                              : statusColor(h.statusCode),
+                          color: code == 0 ? Palette.delete : statusColor(code),
                         ),
                       ),
-                      onTap: () {
-                        state.newTab(h.request.clone());
-                        widget.onRequestOpened?.call();
-                      },
-                    );
-                  },
+                    ],
+                  ),
                 ),
-        ),
-        if (state.history.isNotEmpty)
-          _bottomAction(
-            'Clear history',
-            Icons.delete_sweep_outlined,
-            state.clearHistory,
+              ],
+            ),
           ),
-      ],
+        );
+      },
     );
   }
 
   // ---------------- Shared bits ----------------
-
-  Widget _methodBadge(String method) => SizedBox(
-    width: 44,
-    child: Text(
-      method == 'DELETE' ? 'DEL' : method,
-      style: TextStyle(
-        color: methodColor(method),
-        fontWeight: FontWeight.w800,
-        fontSize: 11,
-      ),
-    ),
-  );
 
   Widget _empty(String message) => Center(
     child: Padding(
@@ -441,26 +807,62 @@ class _SidebarState extends State<Sidebar> {
       child: Text(
         message,
         textAlign: TextAlign.center,
-        style: const TextStyle(color: Palette.textDim, fontSize: 12.5),
+        style: TextStyle(color: Palette.textDim, fontSize: 12.5),
       ),
     ),
   );
 
-  Widget _bottomAction(String label, IconData icon, VoidCallback onTap) =>
-      Container(
-        width: double.infinity,
-        decoration: const BoxDecoration(
-          border: Border(top: BorderSide(color: Palette.border)),
-        ),
-        child: TextButton.icon(
-          style: TextButton.styleFrom(
-            padding: const EdgeInsets.symmetric(vertical: 12),
+  Widget _emptyState({
+    required IconData icon,
+    required String title,
+    required String body,
+    List<Widget> actions = const [],
+  }) => Center(
+    child: SingleChildScrollView(
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 52,
+            height: 52,
+            decoration: BoxDecoration(
+              color: Palette.accentSoft,
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: Icon(icon, color: Palette.accent, size: 26),
           ),
-          onPressed: onTap,
-          icon: Icon(icon, size: 17),
-          label: Text(label, style: const TextStyle(fontSize: 13)),
-        ),
-      );
+          const SizedBox(height: 14),
+          Text(
+            title,
+            style: TextStyle(
+              fontSize: 14.5,
+              fontWeight: FontWeight.w700,
+              color: Palette.text,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            body,
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontSize: 12.5,
+              color: Palette.textDim,
+              height: 1.45,
+            ),
+          ),
+          if (actions.isNotEmpty) ...[
+            const SizedBox(height: 16),
+            for (final a in actions)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: SizedBox(width: 220, child: a),
+              ),
+          ],
+        ],
+      ),
+    ),
+  );
 }
 
 Future<String?> _promptText(

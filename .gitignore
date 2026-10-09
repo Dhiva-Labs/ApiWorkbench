@@ -49,3 +49,9 @@ dist/
 
 # Kotlin build session cache
 android/.kotlin/
+
+# Output of integration_test/screenshots_test.dart
+/screenshots/
+
+# snapcraft output
+*.snap

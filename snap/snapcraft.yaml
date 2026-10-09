@@ -9,15 +9,15 @@
 name: apiworkbench
 title: ApiWorkbench
 base: core22
-version: '1.1.0'
+version: '1.2.0'
 summary: API client for building, testing and load testing HTTP requests
 description: |
   ApiWorkbench is a fast, keyboard-friendly API client in the spirit of
   Postman.
 
   - Request tabs and a full request builder: every HTTP method including
-    QUERY, params, headers, JSON / XML / form / GraphQL bodies, Bearer /
-    Basic / API-key auth
+    QUERY, params, headers, JSON / XML / form / multipart / file / GraphQL
+    bodies, Bearer / Basic / API-key auth
   - Environments with {{variables}}, collections and request history
   - Response assertions and a collection runner with recurring and
     data-driven runs
@@ -25,6 +25,11 @@ description: |
     parallel users, for a number of iterations, a duration, or until you
     stop it, with live throughput and p50/p95/p99 latency; every call can
     be logged with its response and saved as an HTML, CSV or JSON report
+  - Postman import: collections (v1, v2.0, v2.1), environments, globals and
+    data exports, into a new or an existing collection, with folders,
+    variables, auth and checks carried over
+  - Captures: save response values into variables for later requests
+  - Teal light/dark and Graphite and orange themes
   - cURL import/export, workspace import/export, Markdown docs export
   - HTTP/1.1 and HTTP/2, self-signed certificate support
   - Chaos Mode: a sound per status code, confetti and screen shake

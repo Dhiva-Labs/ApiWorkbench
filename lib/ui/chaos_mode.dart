@@ -26,7 +26,7 @@ class _Group {
   final Color color;
 }
 
-const _groups = [
+final _groups = [
   _Group('🎉', 'Success', '2', '2xx', Palette.get_),
   _Group('↪️', 'Redirects', '3', '3xx', Palette.put),
   _Group('🤦', 'Client errors', '4', '4xx', Palette.post),
@@ -57,16 +57,18 @@ class _ChaosModeDialogState extends State<_ChaosModeDialog> {
             width: 34,
             height: 34,
             decoration: BoxDecoration(
-              gradient: const LinearGradient(
-                  colors: [Palette.post, Palette.delete]),
+              gradient: LinearGradient(colors: [Palette.post, Palette.delete]),
               borderRadius: BorderRadius.circular(9),
             ),
             child: const Center(
-                child: Text('🎲', style: TextStyle(fontSize: 17))),
+              child: Text('🎲', style: TextStyle(fontSize: 17)),
+            ),
           ),
           const SizedBox(width: 10),
-          const Text('Chaos Mode',
-              style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
+          const Text(
+            'Chaos Mode',
+            style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
+          ),
           const Spacer(),
           TextButton.icon(
             onPressed: () {
@@ -83,12 +85,15 @@ class _ChaosModeDialogState extends State<_ChaosModeDialog> {
         height: 480,
         child: ListView(
           children: [
-            const Text(
+            Text(
               'Every response plays its status\'s sound. Preview with ▶, remap '
               'with the dropdowns, or import your own clips — paste any '
               'myinstants.com page URL and the mp3 is pulled out for you.',
               style: TextStyle(
-                  fontSize: 12.5, color: Palette.textDim, height: 1.4),
+                fontSize: 12.5,
+                color: Palette.textDim,
+                height: 1.4,
+              ),
             ),
             const SizedBox(height: 14),
             for (final g in _groups) _groupCard(state, g, rules),
@@ -99,8 +104,9 @@ class _ChaosModeDialogState extends State<_ChaosModeDialog> {
       ),
       actions: [
         FilledButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Done')),
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Done'),
+        ),
       ],
     );
   }
@@ -108,10 +114,11 @@ class _ChaosModeDialogState extends State<_ChaosModeDialog> {
   // ---------------- status groups ----------------
 
   Widget _groupCard(AppState state, _Group g, Map<String, String> rules) {
-    final codes = rules.keys
-        .where((k) => int.tryParse(k) != null && k.startsWith(g.prefix))
-        .toList()
-      ..sort();
+    final codes =
+        rules.keys
+            .where((k) => int.tryParse(k) != null && k.startsWith(g.prefix))
+            .toList()
+          ..sort();
     if (g.classKey == 'error') codes.clear();
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
@@ -128,19 +135,22 @@ class _ChaosModeDialogState extends State<_ChaosModeDialog> {
             children: [
               Text(g.emoji, style: const TextStyle(fontSize: 14)),
               const SizedBox(width: 7),
-              Text(g.title,
-                  style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w700,
-                      color: g.color)),
+              Text(
+                g.title,
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                  color: g.color,
+                ),
+              ),
               const Spacer(),
               if (g.prefix.isNotEmpty)
                 TextButton(
                   style: TextButton.styleFrom(
-                      visualDensity: VisualDensity.compact),
+                    visualDensity: VisualDensity.compact,
+                  ),
                   onPressed: () => _addCodeRule(state, g.prefix),
-                  child: const Text('+ code',
-                      style: TextStyle(fontSize: 11.5)),
+                  child: const Text('+ code', style: TextStyle(fontSize: 11.5)),
                 ),
             ],
           ),
@@ -148,30 +158,42 @@ class _ChaosModeDialogState extends State<_ChaosModeDialog> {
           for (final code in codes)
             _ruleRow(state, code, _chip(code, g.color), removable: true),
           _ruleRow(
-              state,
-              g.classKey,
-              _chip(g.classKey == 'error' ? 'any' : 'other ${g.classKey}',
-                  g.color.withValues(alpha: 0.75))),
+            state,
+            g.classKey,
+            _chip(
+              g.classKey == 'error' ? 'any' : 'other ${g.classKey}',
+              g.color.withValues(alpha: 0.75),
+            ),
+          ),
         ],
       ),
     );
   }
 
   Widget _chip(String label, Color color) => Container(
-        width: 82,
-        padding: const EdgeInsets.symmetric(vertical: 3),
-        decoration: BoxDecoration(
-          color: color.withValues(alpha: 0.13),
-          borderRadius: BorderRadius.circular(6),
-        ),
-        child: Text(label,
-            textAlign: TextAlign.center,
-            style: TextStyle(
-                color: color, fontSize: 11.5, fontWeight: FontWeight.w800)),
-      );
+    width: 82,
+    padding: const EdgeInsets.symmetric(vertical: 3),
+    decoration: BoxDecoration(
+      color: color.withValues(alpha: 0.13),
+      borderRadius: BorderRadius.circular(6),
+    ),
+    child: Text(
+      label,
+      textAlign: TextAlign.center,
+      style: TextStyle(
+        color: color,
+        fontSize: 11.5,
+        fontWeight: FontWeight.w800,
+      ),
+    ),
+  );
 
-  Widget _ruleRow(AppState state, String key, Widget chip,
-      {bool removable = false}) {
+  Widget _ruleRow(
+    AppState state,
+    String key,
+    Widget chip, {
+    bool removable = false,
+  }) {
     final sounds = state.sounds;
     final current = state.settings.chaosRules[key] ?? '';
     final known = sounds.all.any((s) => s.id == current);
@@ -188,17 +210,20 @@ class _ChaosModeDialogState extends State<_ChaosModeDialog> {
                 isExpanded: true,
                 isDense: true,
                 borderRadius: BorderRadius.circular(8),
-                style: const TextStyle(fontSize: 12.5, color: Palette.text),
+                style: TextStyle(fontSize: 12.5, color: Palette.text),
                 items: [
-                  const DropdownMenuItem(
-                      value: '',
-                      child: Text('(silent)',
-                          style: TextStyle(color: Palette.textDim))),
+                  DropdownMenuItem(
+                    value: '',
+                    child: Text(
+                      '(silent)',
+                      style: TextStyle(color: Palette.textDim),
+                    ),
+                  ),
                   for (final s in sounds.all)
                     DropdownMenuItem(
-                        value: s.id,
-                        child:
-                            Text(s.name, overflow: TextOverflow.ellipsis)),
+                      value: s.id,
+                      child: Text(s.name, overflow: TextOverflow.ellipsis),
+                    ),
                 ],
                 onChanged: (v) {
                   state.settings.chaosRules[key] = v ?? '';
@@ -210,16 +235,18 @@ class _ChaosModeDialogState extends State<_ChaosModeDialog> {
           IconButton(
             tooltip: 'Preview',
             visualDensity: VisualDensity.compact,
-            icon: Icon(Icons.play_arrow,
-                size: 18,
-                color: current.isEmpty ? Palette.border : Palette.accent),
+            icon: Icon(
+              Icons.play_arrow,
+              size: 18,
+              color: current.isEmpty ? Palette.border : Palette.accent,
+            ),
             onPressed: current.isEmpty ? null : () => sounds.play(current),
           ),
           if (removable)
             IconButton(
               tooltip: 'Remove',
               visualDensity: VisualDensity.compact,
-              icon: const Icon(Icons.close, size: 14, color: Palette.textDim),
+              icon: Icon(Icons.close, size: 14, color: Palette.textDim),
               onPressed: () {
                 state.settings.chaosRules.remove(key);
                 state.updateSettings(state.settings);
@@ -245,17 +272,21 @@ class _ChaosModeDialogState extends State<_ChaosModeDialog> {
             autofocus: true,
             keyboardType: TextInputType.number,
             decoration: InputDecoration(
-                labelText: 'Status code', hintText: '${prefix}18'),
+              labelText: 'Status code',
+              hintText: '${prefix}18',
+            ),
             onSubmitted: (v) => Navigator.pop(ctx, v.trim()),
           ),
         ),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('Cancel')),
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
           FilledButton(
-              onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
-              child: const Text('Add')),
+            onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
+            child: const Text('Add'),
+          ),
         ],
       ),
     );
@@ -281,14 +312,20 @@ class _ChaosModeDialogState extends State<_ChaosModeDialog> {
         children: [
           Row(
             children: [
-              const Icon(Icons.library_music_outlined,
-                  size: 15, color: Palette.accent),
+              Icon(
+                Icons.library_music_outlined,
+                size: 15,
+                color: Palette.accent,
+              ),
               const SizedBox(width: 7),
-              const Text('Your sounds',
-                  style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w700,
-                      color: Palette.accent)),
+              Text(
+                'Your sounds',
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                  color: Palette.accent,
+                ),
+              ),
               const Spacer(),
               TextButton.icon(
                 onPressed: _busy ? null : () => _importFile(state),
@@ -308,7 +345,7 @@ class _ChaosModeDialogState extends State<_ChaosModeDialog> {
               child: LinearProgressIndicator(minHeight: 2),
             ),
           if (sounds.custom.isEmpty && !_busy)
-            const Padding(
+            Padding(
               padding: EdgeInsets.only(top: 2, bottom: 4),
               child: Text(
                 'Nothing imported yet. Grab a clip from myinstants.com → URL.',
@@ -320,25 +357,28 @@ class _ChaosModeDialogState extends State<_ChaosModeDialog> {
               children: [
                 IconButton(
                   visualDensity: VisualDensity.compact,
-                  icon: const Icon(Icons.play_arrow,
-                      size: 18, color: Palette.accent),
+                  icon: Icon(Icons.play_arrow, size: 18, color: Palette.accent),
                   onPressed: () => sounds.play(s.id),
                 ),
                 Expanded(
-                  child: Text(s.name,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontSize: 12.5)),
+                  child: Text(
+                    s.name,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontSize: 12.5),
+                  ),
                 ),
                 IconButton(
                   visualDensity: VisualDensity.compact,
                   tooltip: 'Delete',
-                  icon: const Icon(Icons.delete_outline,
-                      size: 16, color: Palette.textDim),
+                  icon: Icon(
+                    Icons.delete_outline,
+                    size: 16,
+                    color: Palette.textDim,
+                  ),
                   onPressed: () async {
                     await sounds.delete(s);
                     if (!mounted) return;
-                    state.settings.chaosRules
-                        .removeWhere((_, v) => v == s.id);
+                    state.settings.chaosRules.removeWhere((_, v) => v == s.id);
                     state.updateSettings(state.settings);
                   },
                 ),
@@ -389,11 +429,13 @@ class _ChaosModeDialogState extends State<_ChaosModeDialog> {
         ),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('Cancel')),
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
           FilledButton(
-              onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
-              child: const Text('Download')),
+            onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
+            child: const Text('Download'),
+          ),
         ],
       ),
     );

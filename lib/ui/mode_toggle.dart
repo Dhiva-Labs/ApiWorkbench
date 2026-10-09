@@ -78,10 +78,14 @@ class ModeToggle extends StatelessWidget {
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 180),
           curve: Curves.easeOut,
-          padding:
-              EdgeInsets.symmetric(horizontal: compact ? 7 : 9, vertical: 3),
+          padding: EdgeInsets.symmetric(
+            horizontal: compact ? 7 : 9,
+            vertical: 3,
+          ),
           decoration: BoxDecoration(
-            color: selected ? color.withValues(alpha: 0.18) : Colors.transparent,
+            color: selected
+                ? color.withValues(alpha: 0.18)
+                : Colors.transparent,
             borderRadius: BorderRadius.circular(13),
           ),
           child: Row(
@@ -90,11 +94,14 @@ class ModeToggle extends StatelessWidget {
               Text(emoji, style: const TextStyle(fontSize: 12.5)),
               if (!compact && selected) ...[
                 const SizedBox(width: 4),
-                Text(label,
-                    style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w700,
-                        color: color)),
+                Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    color: color,
+                  ),
+                ),
               ],
             ],
           ),

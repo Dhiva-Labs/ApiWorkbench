@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
 
@@ -7,6 +6,7 @@ import 'package:flutter/foundation.dart';
 
 import '../models/models.dart';
 import 'assertions.dart';
+import 'captures.dart';
 import 'http_service.dart';
 import 'load_log.dart';
 
@@ -405,35 +405,7 @@ class LoadTestService extends ChangeNotifier {
   }
 
   void _extract(LoadStep step, ResponseData res, Map<String, String> vars) {
-    Object? json;
-    var parsed = false;
-    step.extract.forEach((name, source) {
-      final src = source.trim();
-      String? value;
-      if (src == 'status') {
-        value = '${res.statusCode}';
-      } else if (src.startsWith('header.')) {
-        final key = src.substring(7).toLowerCase();
-        for (final e in res.headers.entries) {
-          if (e.key.toLowerCase() == key) value = e.value.join(', ');
-        }
-      } else {
-        if (!parsed) {
-          parsed = true;
-          try {
-            json = jsonDecode(utf8.decode(res.bodyBytes, allowMalformed: true));
-          } catch (_) {}
-        }
-        final v = jsonAtPath(
-          json,
-          src.startsWith('body.') ? src.substring(5) : src,
-        );
-        if (jsonPathFound(v) && v != null) {
-          value = v is String ? v : jsonEncode(v);
-        }
-      }
-      if (value != null) vars[name.trim()] = value;
-    });
+    vars.addAll(captureValues(step.extract, res));
   }
 
   void _bump(bool pass) {
