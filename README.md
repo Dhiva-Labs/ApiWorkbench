@@ -94,6 +94,7 @@ flutter run -d <device>   # android / ios
 ```sh
 flutter build linux --release
 flutter build windows --release   # on Windows
+dart run msix:create --store      # Microsoft Store package (.msix), on Windows
 flutter build macos --release     # on macOS
 flutter build apk --release
 flutter build ios --release       # on macOS

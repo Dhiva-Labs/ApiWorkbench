@@ -253,10 +253,17 @@ class SoundService {
       return;
     }
     if (Platform.isWindows) {
+      // MediaPlayer lives in WPF's PresentationCore, which PowerShell does not
+      // load by default: without Add-Type, New-Object fails and nothing plays.
+      // A ' in the path (a user name like O'Neil) is doubled for the
+      // single-quoted PowerShell string.
+      final quoted = path.replaceAll("'", "''");
       await Process.start('powershell', [
         '-NoProfile',
         '-c',
-        "\$p=New-Object System.Windows.Media.MediaPlayer;\$p.Open('$path');\$p.Play();Start-Sleep 4",
+        "Add-Type -AssemblyName PresentationCore;"
+            "\$p=New-Object System.Windows.Media.MediaPlayer;"
+            "\$p.Open('$quoted');\$p.Play();Start-Sleep 4",
       ]);
       return;
     }

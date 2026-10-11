@@ -89,13 +89,13 @@ BEGIN
     BEGIN
         BLOCK "040904e4"
         BEGIN
-            VALUE "CompanyName", "com.dhivalabs" "\0"
-            VALUE "FileDescription", "apiworkbench" "\0"
+            VALUE "CompanyName", "Dhiva Labs" "\0"
+            VALUE "FileDescription", "ApiWorkbench" "\0"
             VALUE "FileVersion", VERSION_AS_STRING "\0"
-            VALUE "InternalName", "apiworkbench" "\0"
-            VALUE "LegalCopyright", "Copyright (C) 2026 com.dhivalabs. All rights reserved." "\0"
+            VALUE "InternalName", "ApiWorkbench" "\0"
+            VALUE "LegalCopyright", "Copyright (C) 2026 Dhiva Labs. All rights reserved." "\0"
             VALUE "OriginalFilename", "apiworkbench.exe" "\0"
-            VALUE "ProductName", "apiworkbench" "\0"
+            VALUE "ProductName", "ApiWorkbench" "\0"
             VALUE "ProductVersion", VERSION_AS_STRING "\0"
         END
     END
