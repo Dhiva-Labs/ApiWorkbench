@@ -138,3 +138,8 @@ Response previews are capped at 64 KiB; copying and exporting still use the full
 response. The runner retains the latest 200 summaries while keeping aggregate
 statistics for the complete run. See [implementation notes and feature ideas](IMPROVEMENTS.md)
 for behavior changes, remaining memory limits and the suggested roadmap.
+
+## Privacy
+
+No accounts, analytics or telemetry; the app only sends the requests you make.
+See [PRIVACY.md](PRIVACY.md).
