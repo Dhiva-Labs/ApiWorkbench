@@ -103,17 +103,34 @@ void main() {
       expect(s.chaosRules, defaultChaosRules());
     });
 
-    test('default table maps to the real meme clips', () {
-      final r = defaultChaosRules();
-      expect(r['200'], 'meme_200'); // GTA mission passed
-      expect(r['404'], 'meme_404'); // sad trombone
-      expect(r['403'], 'meme_403'); // FBI open up
-      expect(r['418'], 'meme_418'); // tea kettle
-      expect(r['505'], 'meme_505'); // Windows 98 startup
-      expect(r['301'], 'head_out'); // synth stand-in, clip not findable
-      // every default rule points at a real builtin
-      final ids = builtinSounds.map((b) => b.$1).toSet();
-      for (final v in r.values) {
+    test(
+      'default table maps to the real meme clips',
+      () {
+        final r = defaultChaosRules();
+        expect(r['200'], 'meme_200'); // GTA mission passed
+        expect(r['404'], 'meme_404'); // sad trombone
+        expect(r['403'], 'meme_403'); // FBI open up
+        expect(r['418'], 'meme_418'); // tea kettle
+        expect(r['505'], 'meme_505'); // Windows 98 startup
+        expect(r['301'], 'head_out'); // synth stand-in, clip not findable
+      },
+      skip: !kChaosMemeSounds ? 'build without the meme clips' : false,
+    );
+
+    test(
+      'without the meme clips the defaults are the synthesized set',
+      () {
+        final r = defaultChaosRules();
+        expect(r['200'], 'mission_passed');
+        expect(r['404'], 'fail');
+        expect(r.values.where((v) => v.startsWith('meme_')), isEmpty);
+      },
+      skip: kChaosMemeSounds ? 'build with the meme clips' : false,
+    );
+
+    test('every default rule points at a bundled builtin', () {
+      final ids = availableBuiltinSounds.map((b) => b.$1).toSet();
+      for (final v in defaultChaosRules().values) {
         expect(ids, contains(v), reason: 'rule sound $v missing');
       }
     });
@@ -121,11 +138,42 @@ void main() {
     test('both legacy default sets migrate; custom sets are untouched', () {
       for (final legacy in legacyChaosRuleSets) {
         final s = AppSettings.fromJson({'chaosRules': legacy});
-        expect(s.chaosRules['200'], 'meme_200', reason: 'legacy set upgraded');
+        expect(
+          s.chaosRules,
+          defaultChaosRules(),
+          reason: 'legacy set upgraded',
+        );
       }
       final custom = {'2xx': 'mycustom.mp3'};
       final s2 = AppSettings.fromJson({'chaosRules': custom});
       expect(s2.chaosRules, custom);
+    });
+
+    test('a rule naming a missing meme clip falls back to its class', () {
+      final s = AppSettings.fromJson({
+        'chaosRules': {
+          '404': 'meme_404',
+          '4xx': 'fail',
+          '2xx': 'meme_200',
+          '201': 'mycustom.mp3',
+        },
+      });
+      if (kChaosMemeSounds) {
+        expect(s.chaosRules['404'], 'meme_404');
+        expect(soundIdFor(s.chaosRules, 404), 'meme_404');
+      } else {
+        expect(s.chaosRules.containsKey('404'), isFalse);
+        expect(s.chaosRules['2xx'], 'tada');
+        expect(s.chaosRules['201'], 'mycustom.mp3');
+        expect(soundIdFor(s.chaosRules, 404), 'fail');
+        // Rules that reach playback unmigrated fall back the same way.
+        expect(soundIdFor({'404': 'meme_404', '4xx': 'fail'}, 404), 'fail');
+      }
+    });
+
+    test('the sound library offers only bundled sounds', () {
+      final ids = SoundService().all.map((s) => s.id);
+      expect(ids.any((id) => id.startsWith('meme_')), kChaosMemeSounds);
     });
   });
 

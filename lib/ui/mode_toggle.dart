@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../models/models.dart' show kChaosMemeSounds;
 import '../state/app_state.dart';
 import '../theme.dart';
 import 'chaos_mode.dart';
@@ -27,7 +28,10 @@ class ModeToggle extends StatelessWidget {
       }
       state.settings.chaosMode = toChaos;
       state.updateSettings(state.settings);
-      if (toChaos) state.sounds.play('meme_201'); // vine boom: hello chaos
+      // Vine boom says hello; the synthesized boom where the clip is left out.
+      if (toChaos) {
+        state.sounds.play(kChaosMemeSounds ? 'meme_201' : 'boom_applause');
+      }
     }
 
     return Container(

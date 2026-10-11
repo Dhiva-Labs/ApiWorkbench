@@ -181,9 +181,23 @@ extension HttpVersionPrefLabel on HttpVersionPref {
   };
 }
 
+/// Whether this build bundles the third-party meme clips for Chaos Mode
+/// (assets/sounds/meme/). On by default; the Microsoft Store build turns it
+/// off with --dart-define=CHAOS_MEME_SOUNDS=false and leaves the clips out of
+/// the bundle (tool/build_store_msix.ps1), because their rights belong to
+/// others. Without them Chaos Mode uses the synthesized originals.
+const bool kChaosMemeSounds = bool.fromEnvironment(
+  'CHAOS_MEME_SOUNDS',
+  defaultValue: true,
+);
+
+/// False for a bundled meme clip in a build that leaves the clips out.
+bool chaosSoundAvailable(String id) =>
+    kChaosMemeSounds || !id.startsWith('meme_');
+
 /// Default Chaos Mode sound rules — the real meme clips per status code,
 /// synthesized originals as class fallbacks.
-Map<String, String> defaultChaosRules() => {
+const _memeChaosRules = {
   // exact codes (bundled meme clips; 301 stays synthesized — no good
   // "imma head out" clip was findable on myinstants)
   '200': 'meme_200',
@@ -217,6 +231,44 @@ Map<String, String> defaultChaosRules() => {
   'error': 'alarm',
 };
 
+/// The per-status synthesized set (tool/gen_sounds.dart): the defaults when
+/// the meme clips are not bundled.
+const _synthChaosRules = {
+  '200': 'mission_passed',
+  '201': 'boom_applause',
+  '204': 'crickets',
+  '301': 'head_out',
+  '302': 'slide_whistle',
+  '304': 'ding',
+  '400': 'bruh',
+  '401': 'access_denied',
+  '403': 'open_up',
+  '404': 'fail',
+  '405': 'nope',
+  '408': 'thinking',
+  '409': 'metal_pipe',
+  '410': 'its_gone',
+  '418': 'kettle',
+  '422': 'task_failed',
+  '429': 'alarm',
+  '500': 'this_is_fine',
+  '501': 'construction',
+  '502': 'record_scratch',
+  '503': 'flatline',
+  '504': 'phone_ring',
+  '505': 'retro_startup',
+  '2xx': 'tada',
+  '3xx': 'whoosh',
+  '4xx': 'fail',
+  '5xx': 'dramatic',
+  'error': 'alarm',
+};
+
+/// Default Chaos Mode sound rules: the meme clips per status code where the
+/// build bundles them, otherwise the synthesized set.
+Map<String, String> defaultChaosRules() =>
+    Map.of(kChaosMemeSounds ? _memeChaosRules : _synthChaosRules);
+
 /// Older default rule sets; a saved config that still matches one of these
 /// was never customized and upgrades to the current defaults.
 const legacyChaosRuleSets = [
@@ -229,36 +281,7 @@ const legacyChaosRuleSets = [
     'error': 'alarm',
   },
   // v2: per-status synthesized rules
-  {
-    '200': 'mission_passed',
-    '201': 'boom_applause',
-    '204': 'crickets',
-    '301': 'head_out',
-    '302': 'slide_whistle',
-    '304': 'ding',
-    '400': 'bruh',
-    '401': 'access_denied',
-    '403': 'open_up',
-    '404': 'fail',
-    '405': 'nope',
-    '408': 'thinking',
-    '409': 'metal_pipe',
-    '410': 'its_gone',
-    '418': 'kettle',
-    '422': 'task_failed',
-    '429': 'alarm',
-    '500': 'this_is_fine',
-    '501': 'construction',
-    '502': 'record_scratch',
-    '503': 'flatline',
-    '504': 'phone_ring',
-    '505': 'retro_startup',
-    '2xx': 'tada',
-    '3xx': 'whoosh',
-    '4xx': 'fail',
-    '5xx': 'dramatic',
-    'error': 'alarm',
-  },
+  _synthChaosRules,
 ];
 
 class AppSettings {
@@ -332,10 +355,26 @@ class AppSettings {
   static Map<String, String> _migrateChaosRules(Map<String, dynamic>? raw) {
     if (raw == null) return defaultChaosRules();
     final rules = raw.map((k, v) => MapEntry(k, v.toString()));
-    for (final legacy in legacyChaosRuleSets) {
-      if (rules.length == legacy.length &&
-          legacy.entries.every((e) => rules[e.key] == e.value)) {
+    // An untouched default set (an older one, or the meme set in a build
+    // without the clips) follows this build's defaults.
+    for (final known in [...legacyChaosRuleSets, _memeChaosRules]) {
+      if (rules.length == known.length &&
+          known.entries.every((e) => rules[e.key] == e.value)) {
         return defaultChaosRules();
+      }
+    }
+    if (!kChaosMemeSounds) {
+      // Customized rules that name a clip this build does not have: an exact
+      // code falls back to its class rule, a class rule to this build's
+      // default for that class.
+      final defaults = defaultChaosRules();
+      for (final key in rules.keys.toList()) {
+        if (chaosSoundAvailable(rules[key]!)) continue;
+        if (RegExp(r'^\d{3}$').hasMatch(key)) {
+          rules.remove(key);
+        } else {
+          rules[key] = defaults[key] ?? '';
+        }
       }
     }
     return rules;

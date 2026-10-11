@@ -5,6 +5,8 @@ import 'package:dio/dio.dart';
 import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 
+import '../models/models.dart';
+
 
 /// One playable sound: a bundled original or a user-imported meme clip.
 class SoundInfo {
@@ -15,31 +17,33 @@ class SoundInfo {
   final bool builtin;
 }
 
-/// (id, display name, bundled asset file under assets/sounds/).
+/// (id, display name, bundled asset file under assets/sounds/). The meme
+/// clips live in assets/sounds/meme/ and are left out of builds without
+/// them (see [kChaosMemeSounds]); use [availableBuiltinSounds].
 const builtinSounds = [
   // the real meme clips (bundled at the user's request)
-  ('meme_200', '🎉 Mission Passed! (GTA) — 200', 'meme_200.mp3'),
-  ('meme_201', '🎊 Vine Boom — 201', 'meme_201.mp3'),
-  ('meme_204', '🦗 Crickets — 204', 'meme_204.mp3'),
-  ('meme_302', '🔄 Slide whistle — 302', 'meme_302.mp3'),
-  ('meme_304', '😐 Windows notification — 304', 'meme_304.mp3'),
-  ('meme_400', '🤦 Bruh — 400', 'meme_400.mp3'),
-  ('meme_401', '🚫 Access Denied — 401', 'meme_401.mp3'),
-  ('meme_403', '👮 FBI OPEN UP! — 403', 'meme_403.mp3'),
-  ('meme_404', '💀 Sad trombone — 404', 'meme_404.mp3'),
-  ('meme_405', '🙅 Nope. — 405', 'meme_405.mp3'),
-  ('meme_408', '⏰ Thinking music — 408', 'meme_408.mp3'),
-  ('meme_409', '⚔️ Metal pipe — 409', 'meme_409.mp3'),
-  ('meme_410', '👻 And it\'s gone — 410', 'meme_410.mp3'),
-  ('meme_418', '🫖 Tea kettle — 418', 'meme_418.mp3'),
-  ('meme_422', '📋 Task failed successfully — 422', 'meme_422.mp3'),
-  ('meme_429', '🚨 Alarm siren — 429', 'meme_429.mp3'),
-  ('meme_500', '🔥 Explosion — 500', 'meme_500.mp3'),
-  ('meme_501', '🚧 Construction — 501', 'meme_501.mp3'),
-  ('meme_502', '🌉 Record scratch — 502', 'meme_502.mp3'),
-  ('meme_503', '🚑 Flatline — 503', 'meme_503.mp3'),
-  ('meme_504', '📞 Ringing forever — 504', 'meme_504.mp3'),
-  ('meme_505', '💾 Windows 98 startup — 505', 'meme_505.mp3'),
+  ('meme_200', '🎉 Mission Passed! (GTA) — 200', 'meme/meme_200.mp3'),
+  ('meme_201', '🎊 Vine Boom — 201', 'meme/meme_201.mp3'),
+  ('meme_204', '🦗 Crickets — 204', 'meme/meme_204.mp3'),
+  ('meme_302', '🔄 Slide whistle — 302', 'meme/meme_302.mp3'),
+  ('meme_304', '😐 Windows notification — 304', 'meme/meme_304.mp3'),
+  ('meme_400', '🤦 Bruh — 400', 'meme/meme_400.mp3'),
+  ('meme_401', '🚫 Access Denied — 401', 'meme/meme_401.mp3'),
+  ('meme_403', '👮 FBI OPEN UP! — 403', 'meme/meme_403.mp3'),
+  ('meme_404', '💀 Sad trombone — 404', 'meme/meme_404.mp3'),
+  ('meme_405', '🙅 Nope. — 405', 'meme/meme_405.mp3'),
+  ('meme_408', '⏰ Thinking music — 408', 'meme/meme_408.mp3'),
+  ('meme_409', '⚔️ Metal pipe — 409', 'meme/meme_409.mp3'),
+  ('meme_410', '👻 And it\'s gone — 410', 'meme/meme_410.mp3'),
+  ('meme_418', '🫖 Tea kettle — 418', 'meme/meme_418.mp3'),
+  ('meme_422', '📋 Task failed successfully — 422', 'meme/meme_422.mp3'),
+  ('meme_429', '🚨 Alarm siren — 429', 'meme/meme_429.mp3'),
+  ('meme_500', '🔥 Explosion — 500', 'meme/meme_500.mp3'),
+  ('meme_501', '🚧 Construction — 501', 'meme/meme_501.mp3'),
+  ('meme_502', '🌉 Record scratch — 502', 'meme/meme_502.mp3'),
+  ('meme_503', '🚑 Flatline — 503', 'meme/meme_503.mp3'),
+  ('meme_504', '📞 Ringing forever — 504', 'meme/meme_504.mp3'),
+  ('meme_505', '💾 Windows 98 startup — 505', 'meme/meme_505.mp3'),
   // synthesized originals (kept as alternates / class fallbacks)
   ('head_out', '🏃 Imma head out (synth) — 301', 'head_out.wav'),
   ('tada', 'Ta-da! (synth, 2xx fallback)', 'tada.wav'),
@@ -69,12 +73,20 @@ const builtinSounds = [
   ('retro_startup', 'Retro startup (synth)', 'retro_startup.wav'),
 ];
 
+/// The builtin sounds this build bundles.
+final List<(String, String, String)> availableBuiltinSounds = [
+  for (final b in builtinSounds)
+    if (chaosSoundAvailable(b.$1)) b,
+];
+
 /// Resolves which sound id applies to a response. Exact code rules win,
-/// then the status class ('4xx'), then 'error' for transport failures.
+/// then the status class ('4xx'), then 'error' for transport failures. A
+/// rule naming a meme clip this build does not bundle counts as unset, so an
+/// exact code falls back to its class sound.
 String? soundIdFor(Map<String, String> rules, int status, {bool isError = false}) {
   String? pick(String key) {
     final v = rules[key];
-    return (v == null || v.isEmpty) ? null : v;
+    return (v == null || v.isEmpty || !chaosSoundAvailable(v)) ? null : v;
   }
 
   if (isError || status <= 0) return pick('error');
@@ -114,7 +126,7 @@ class SoundService {
   bool _loaded = false;
 
   List<SoundInfo> get all => [
-        for (final (id, name, _) in builtinSounds)
+        for (final (id, name, _) in availableBuiltinSounds)
           SoundInfo(id: id, name: name, builtin: true),
         ...custom,
       ];
@@ -207,9 +219,9 @@ class SoundService {
   /// assets to disk on first use.
   Future<String?> resolvePath(String id) async {
     final dir = await _base();
-    for (final (bid, _, file) in builtinSounds) {
+    for (final (bid, _, file) in availableBuiltinSounds) {
       if (bid == id) {
-        final f = File('${dir.path}/builtin_$file');
+        final f = File('${dir.path}/builtin_${file.split('/').last}');
         if (!await f.exists()) {
           final data = await rootBundle.load('assets/sounds/$file');
           await f.writeAsBytes(data.buffer.asUint8List());

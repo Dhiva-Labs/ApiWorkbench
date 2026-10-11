@@ -70,6 +70,9 @@ flutter:
   # To add assets to your application, add an assets section, like this:
   assets:
     - assets/sounds/
+    # Third-party meme clips for Chaos Mode. tool/build_store_msix.ps1 drops
+    # this line for the Microsoft Store build (see kChaosMemeSounds).
+    - assets/sounds/meme/
   #   - images/a_dot_burr.jpeg
   #   - images/a_dot_ham.jpeg
 
@@ -99,7 +102,7 @@ flutter:
   # For details regarding fonts from package dependencies,
   # see https://flutter.dev/to/font-from-package
 
-# Microsoft Store package (`dart run msix:create --store`). The identity values
+# Microsoft Store package (tool/build_store_msix.ps1). The identity values
 # come from Partner Center > Product identity; the Store signs the package.
 msix_config:
   display_name: ApiWorkbench
@@ -113,4 +116,7 @@ msix_config:
   # Sends the HTTP requests the user builds, to the internet and to local or
   # LAN dev servers. It never listens. runFullTrust is always added.
   capabilities: internetClient,privateNetworkClientServer
+  # Build the Store package with tool/build_store_msix.ps1: it also leaves
+  # the meme clips out of the bundle. This define covers a plain msix:create.
+  windows_build_args: --dart-define=CHAOS_MEME_SOUNDS=false
   store: true

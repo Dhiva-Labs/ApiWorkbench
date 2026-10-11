@@ -94,11 +94,16 @@ flutter run -d <device>   # android / ios
 ```sh
 flutter build linux --release
 flutter build windows --release   # on Windows
-dart run msix:create --store      # Microsoft Store package (.msix), on Windows
+powershell -File tool\build_store_msix.ps1   # Microsoft Store .msix, on Windows
 flutter build macos --release     # on macOS
 flutter build apk --release
 flutter build ios --release       # on macOS
 ```
+
+The Microsoft Store package leaves out the third-party meme clips in
+`assets/sounds/meme/`: `tool/build_store_msix.ps1` drops them from the bundle
+and builds with `--dart-define=CHAOS_MEME_SOUNDS=false`, so Chaos Mode uses
+the synthesized sounds there. All other builds keep the clips.
 
 ## Tests
 
