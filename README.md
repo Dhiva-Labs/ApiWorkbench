@@ -1,5 +1,9 @@
 # ApiWorkbench
 
+[![ARM64 builds](https://github.com/Dhiva-Labs/ApiWorkbench/actions/workflows/desktop.yml/badge.svg?branch=main)](https://github.com/Dhiva-Labs/ApiWorkbench/actions/workflows/desktop.yml)
+![Linux x64 | arm64](https://img.shields.io/badge/Linux-x64%20%7C%20arm64-informational?logo=linux&logoColor=white)
+![Windows x64 | arm64](https://img.shields.io/badge/Windows-x64%20%7C%20arm64-informational?logo=windows&logoColor=white)
+
 A fast, keyboard-friendly API client in the spirit of Postman — one Flutter
 codebase for **Linux, Windows, macOS, Android and iOS**.
 
@@ -82,6 +86,34 @@ codebase for **Linux, Windows, macOS, Android and iOS**.
   request/response navigation on phones. Shortcuts: Ctrl+Enter send,
   Ctrl+S save, Ctrl+O import, Ctrl+T new tab, Ctrl+W close tab.
 
+## Install
+
+Download from the [releases page](https://github.com/Dhiva-Labs/ApiWorkbench/releases):
+
+| Platform | File |
+|---|---|
+| Linux x64 (Debian, Ubuntu) | `apiworkbench_<version>_amd64.deb` |
+| Linux arm64 (Debian, Ubuntu) | `apiworkbench_<version>_arm64.deb` |
+| Linux arm64 (other distributions) | `ApiWorkbench-<version>-linux-arm64.tar.gz` |
+| Windows arm64 | `ApiWorkbench-<version>-windows-arm64.zip` |
+| Android | `ApiWorkbench-<version>.apk` |
+
+```sh
+sudo apt install ./apiworkbench_<version>_arm64.deb       # or _amd64.deb
+sha256sum -c apiworkbench_<version>_arm64.deb.sha256      # optional check
+tar -xzf ApiWorkbench-<version>-linux-arm64.tar.gz && ./ApiWorkbench-<version>-linux-arm64/apiworkbench
+```
+
+The tarball needs GTK 3 (`libgtk-3-0`). On Windows, unzip and run
+`apiworkbench.exe`. The Snap Store listing (`sudo snap install apiworkbench`) is
+the amd64 build.
+
+Every push to `main` builds, tests and packages ApiWorkbench for Linux and
+Windows on x64 and arm64 (the **Desktop builds** workflow). Its run page has
+the Windows x64 zip, the Microsoft Store packages (`.msix`) and the snaps for
+both architectures as artifacts. The arm64 packages above are attached to a
+release when it is published.
+
 ## Run
 
 ```sh
@@ -92,9 +124,12 @@ flutter run -d <device>   # android / ios
 ## Build
 
 ```sh
-flutter build linux --release
-flutter build windows --release   # on Windows
+flutter build linux --release     # builds for the machine's architecture: x64 or arm64
+tool/build_deb.sh                 # dist/apiworkbench_<version>_<amd64|arm64>.deb
+tool/build_tarball.sh             # dist/ApiWorkbench-<version>-linux-<x64|arm64>.tar.gz
+flutter build windows --release   # on Windows (x64 or arm64)
 powershell -File tool\build_store_msix.ps1   # Microsoft Store .msix, on Windows
+pwsh tool\package_windows.ps1     # dist\ApiWorkbench-<version>-windows-<arch>.zip + the .msix
 flutter build macos --release     # on macOS
 flutter build apk --release
 flutter build ios --release       # on macOS
@@ -103,7 +138,8 @@ flutter build ios --release       # on macOS
 The Microsoft Store package leaves out the third-party meme clips in
 `assets/sounds/meme/`: `tool/build_store_msix.ps1` drops them from the bundle
 and builds with `--dart-define=CHAOS_MEME_SOUNDS=false`, so Chaos Mode uses
-the synthesized sounds there. All other builds keep the clips.
+the synthesized sounds there. All other builds keep the clips. On an ARM64
+Windows machine the same script produces `ApiWorkbench-arm64.msix`.
 
 ## Tests
 

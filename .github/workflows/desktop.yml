@@ -1,0 +1,522 @@
+name: Desktop builds
+
+# Builds, tests and packages ApiWorkbench for Linux and Windows on x64 and
+# arm64, plus a snap for both Linux architectures. Releases are made by hand;
+# when one is published, the arm64 packages are attached to it (the x64 ones
+# stay as they are).
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  FLUTTER_VERSION: '3.44.6'
+
+jobs:
+  linux:
+    name: Linux ${{ matrix.arch }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x64
+            deb_arch: amd64
+            runner: ubuntu-24.04
+            elf_machine: x86-64
+          - arch: arm64
+            deb_arch: arm64
+            runner: ubuntu-24.04-arm
+            elf_machine: ARM aarch64
+    env:
+      BUNDLE: build/linux/${{ matrix.arch }}/release/bundle
+      ELF_MACHINE: ${{ matrix.elf_machine }}
+    steps:
+      - uses: actions/checkout@v7
+
+      # There are no Flutter SDK archives for linux-arm64, so the release tag
+      # is cloned; every leg uses the same method.
+      - name: Install Flutter ${{ env.FLUTTER_VERSION }}
+        run: |
+          git clone --depth 1 --branch "$FLUTTER_VERSION" \
+            https://github.com/flutter/flutter.git "$RUNNER_TEMP/flutter"
+          echo "$RUNNER_TEMP/flutter/bin" >> "$GITHUB_PATH"
+
+      - name: Configure Flutter
+        run: |
+          uname -m
+          flutter config --no-analytics --enable-linux-desktop
+          flutter precache --linux
+          flutter --version
+          dart --version
+
+      # xvfb, xauth, xdotool, dbus-x11: the smoke run of the installed .deb.
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            clang cmake ninja-build pkg-config \
+            libgtk-3-dev liblzma-dev libstdc++-12-dev \
+            file xvfb xauth xdotool dbus-x11
+
+      - name: Get packages
+        run: flutter pub get
+
+      - name: Test
+        run: flutter test
+
+      - name: Build release
+        run: flutter build linux --release
+
+      - name: Assert every ELF file in the bundle is ${{ matrix.elf_machine }}
+        run: |
+          for f in apiworkbench lib/libapp.so lib/libflutter_linux_gtk.so; do
+            [ -f "$BUNDLE/$f" ] || { echo "::error::missing $BUNDLE/$f"; exit 1; }
+          done
+          checked=0
+          bad=0
+          while IFS= read -r -d '' f; do
+            desc="$(file -b "$f")"
+            case "$desc" in ELF*) ;; *) continue ;; esac
+            echo "$f: $desc"
+            checked=$((checked + 1))
+            case "$desc" in
+              *"$ELF_MACHINE"*) ;;
+              *) echo "::error file=$f::not $ELF_MACHINE"; bad=1 ;;
+            esac
+          done < <(find "$BUNDLE" -type f -print0)
+          echo "checked $checked ELF files"
+          [ "$checked" -ge 3 ] && [ "$bad" -eq 0 ]
+
+      - name: Package tarball and .deb
+        run: |
+          tool/build_tarball.sh dist
+          tool/build_deb.sh
+
+      - name: Check the packages
+        run: |
+          VERSION="$(grep '^version:' pubspec.yaml | sed 's/version: *//; s/+.*//')"
+          TARBALL="dist/ApiWorkbench-${VERSION}-linux-${{ matrix.arch }}.tar.gz"
+          DEB="dist/apiworkbench_${VERSION}_${{ matrix.deb_arch }}.deb"
+          ls -l dist
+          [ -f "$TARBALL" ] && [ -f "$DEB" ] && [ -f "$DEB.sha256" ]
+          (cd dist && sha256sum -c "$(basename "$DEB").sha256")
+          tar -xzf "$TARBALL" -C "$RUNNER_TEMP"
+          file "$RUNNER_TEMP/ApiWorkbench-${VERSION}-linux-${{ matrix.arch }}/apiworkbench" | grep "$ELF_MACHINE"
+          dpkg-deb --info "$DEB"
+          [ "$(dpkg-deb --field "$DEB" Architecture)" = "${{ matrix.deb_arch }}" ]
+          sudo apt-get install -y "./$DEB"
+          file /usr/lib/apiworkbench/apiworkbench | grep "$ELF_MACHINE"
+
+      # The native GTK runner titles the window "ApiWorkbench". Dart start-up
+      # creates the data folder <data home>/<app id>/apiworkbench through
+      # path_provider, which is what shows that the AOT snapshot really ran.
+      - name: Smoke-run the installed app (Xvfb)
+        timeout-minutes: 5
+        run: |
+          cat > "$RUNNER_TEMP/smoke.sh" <<'EOF'
+          export XDG_DATA_HOME="$RUNNER_TEMP/smoke-data"
+          rm -rf "$XDG_DATA_HOME"
+          mkdir -p "$XDG_DATA_HOME"
+          log="$RUNNER_TEMP/smoke.log"
+          apiworkbench > "$log" 2>&1 &
+          pid=$!
+          for i in $(seq 1 90); do
+            if xdotool search --name '^ApiWorkbench$' > /dev/null 2>&1 &&
+               [ -n "$(find "$XDG_DATA_HOME" -mindepth 2 -maxdepth 2 -type d -name apiworkbench)" ]; then
+              echo "ApiWorkbench window is up after ${i}s; data folder:"
+              find "$XDG_DATA_HOME" -maxdepth 2
+              sleep 5
+              kill -0 "$pid" || { echo "apiworkbench died after showing its window"; cat "$log"; exit 1; }
+              kill "$pid"
+              cat "$log"
+              exit 0
+            fi
+            kill -0 "$pid" 2> /dev/null || { echo "apiworkbench exited early"; cat "$log"; exit 1; }
+            sleep 1
+          done
+          echo "no ApiWorkbench window and data folder after 90s"
+          find "$XDG_DATA_HOME" -maxdepth 3
+          cat "$log"
+          exit 1
+          EOF
+          xvfb-run -a -s "-screen 0 1280x800x24" dbus-run-session -- bash "$RUNNER_TEMP/smoke.sh"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: linux-${{ matrix.arch }}
+          path: |
+            dist/*.tar.gz
+            dist/*.deb
+            dist/*.deb.sha256
+          if-no-files-found: error
+
+  windows:
+    name: Windows ${{ matrix.arch }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x64
+            runner: windows-latest
+            pe_machine: '0x8664'
+            elf_machine: '0x3E'
+          - arch: arm64
+            runner: windows-11-arm
+            pe_machine: '0xAA64'
+            elf_machine: '0xB7'
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      ARCH: ${{ matrix.arch }}
+      RELEASE_DIR: build\windows\${{ matrix.arch }}\runner\Release
+      # PE COFF machine of every .exe/.dll, and ELF e_machine of the AOT
+      # snapshot (data\app.so is an ELF file on Windows too).
+      PE_MACHINE: ${{ matrix.pe_machine }}
+      ELF_MACHINE: ${{ matrix.elf_machine }}
+    steps:
+      - uses: actions/checkout@v7
+
+      # On an ARM64 host (PROCESSOR_ARCHITECTURE=ARM64) the bootstrap fetches
+      # the arm64 Dart SDK and `flutter build windows` targets windows-arm64.
+      - name: Install Flutter ${{ env.FLUTTER_VERSION }}
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $true
+          git clone --depth 1 --branch $env:FLUTTER_VERSION `
+            https://github.com/flutter/flutter.git "$env:RUNNER_TEMP\flutter"
+          Add-Content -Path $env:GITHUB_PATH -Value "$env:RUNNER_TEMP\flutter\bin"
+
+      - name: Configure Flutter
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $true
+          "PROCESSOR_ARCHITECTURE=$env:PROCESSOR_ARCHITECTURE"
+          flutter config --no-analytics --enable-windows-desktop
+          flutter precache --windows
+          flutter --version
+          dart --version
+
+      - name: Get packages
+        run: flutter pub get
+
+      - name: Test
+        run: flutter test
+
+      - name: Build release
+        run: flutter build windows --release
+
+      - name: Assert every PE file is ${{ matrix.pe_machine }}
+        run: |
+          function Get-PeMachine([string]$Path) {
+            $fs = [IO.File]::OpenRead($Path)
+            try {
+              $br = New-Object IO.BinaryReader($fs)
+              $fs.Position = 0x3C
+              $fs.Position = $br.ReadInt32()
+              if ($br.ReadUInt32() -ne 0x4550) { throw "$Path is not a PE file" }
+              return $br.ReadUInt16()
+            } finally { $fs.Dispose() }
+          }
+          $expected = [Convert]::ToUInt16($env:PE_MACHINE, 16)
+          $files = Get-ChildItem -Path $env:RELEASE_DIR -Recurse -File -Include *.exe, *.dll
+          if (-not ($files.Name -contains 'apiworkbench.exe') -or -not ($files.Name -contains 'flutter_windows.dll')) {
+            throw "apiworkbench.exe or flutter_windows.dll missing from $env:RELEASE_DIR"
+          }
+          $bad = 0
+          foreach ($f in $files) {
+            $m = Get-PeMachine $f.FullName
+            '{0,-50} 0x{1:X4}' -f $f.Name, $m
+            if ($m -ne $expected) { Write-Host "::error file=$($f.FullName)::machine 0x$('{0:X4}' -f $m), expected $env:PE_MACHINE"; $bad++ }
+          }
+          $bytes = [IO.File]::ReadAllBytes("$env:RELEASE_DIR\data\app.so")
+          $elf = [BitConverter]::ToUInt16($bytes, 0x12)
+          'data\app.so ELF e_machine 0x{0:X2}' -f $elf
+          if ($elf -ne [Convert]::ToUInt16($env:ELF_MACHINE, 16)) { Write-Host "::error::app.so is not $env:ELF_MACHINE"; $bad++ }
+          "checked $($files.Count) PE files and app.so"
+          if ($bad) { exit 1 }
+
+      # Dart start-up creates %APPDATA%\<CompanyName>\<ProductName>\apiworkbench
+      # (path_provider, names from windows\runner\Runner.rc), which shows that
+      # the AOT snapshot really ran.
+      - name: Smoke-run the release build
+        timeout-minutes: 5
+        run: |
+          $dataRoot = Join-Path $env:APPDATA 'Dhiva Labs\ApiWorkbench'
+          $dataDir = Join-Path $dataRoot 'apiworkbench'
+          if (Test-Path $dataRoot) { Remove-Item -Recurse -Force $dataRoot }
+          $p = Start-Process -FilePath "$env:RELEASE_DIR\apiworkbench.exe" -PassThru
+          $up = $false
+          for ($i = 1; $i -le 90; $i++) {
+            Start-Sleep -Seconds 1
+            $p.Refresh()
+            if ($p.HasExited) { throw "apiworkbench.exe exited early with code $($p.ExitCode)" }
+            if ($p.MainWindowHandle -ne 0 -and (Test-Path $dataDir)) {
+              "window '$($p.MainWindowTitle)' is up after ${i}s; data folder $dataDir exists"
+              $up = $true
+              break
+            }
+          }
+          if (-not $up) {
+            Stop-Process -Id $p.Id -Force
+            throw "no window or data folder after 90 s (window handle $($p.MainWindowHandle), data folder exists: $(Test-Path $dataDir))"
+          }
+          Start-Sleep -Seconds 5
+          $p.Refresh()
+          if ($p.HasExited) { throw "apiworkbench.exe died after showing its window (code $($p.ExitCode))" }
+          Stop-Process -Id $p.Id -Force
+
+      # Zip first, then the Store package: tool\build_store_msix.ps1 rebuilds
+      # the app without the meme clips, which replaces the Release folder.
+      - name: Package zip and MSIX
+        run: ./tool/package_windows.ps1 -OutDir dist
+
+      - name: Check the packages
+        run: |
+          function Get-PeMachine([string]$Path) {
+            $fs = [IO.File]::OpenRead($Path)
+            try {
+              $br = New-Object IO.BinaryReader($fs)
+              $fs.Position = 0x3C
+              $fs.Position = $br.ReadInt32()
+              if ($br.ReadUInt32() -ne 0x4550) { throw "$Path is not a PE file" }
+              return $br.ReadUInt16()
+            } finally { $fs.Dispose() }
+          }
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          $expected = [Convert]::ToUInt16($env:PE_MACHINE, 16)
+          $version = ((Select-String -Path pubspec.yaml -Pattern '^version:\s*(\S+)').Matches[0].Groups[1].Value -split '\+')[0]
+          $zipName = "ApiWorkbench-$version-windows-$env:ARCH"
+          $msixName = if ($env:ARCH -eq 'x64') { 'ApiWorkbench' } else { "ApiWorkbench-$env:ARCH" }
+          Get-ChildItem dist | Format-Table Name, Length
+          if ((Get-ChildItem dist).Count -ne 2) { throw 'expected exactly one zip and one msix in dist' }
+
+          $zip = [IO.Compression.ZipFile]::OpenRead((Resolve-Path "dist\$zipName.zip"))
+          try {
+            $entry = $zip.GetEntry("$zipName/apiworkbench.exe")
+            if (-not $entry) { throw "$zipName/apiworkbench.exe not in the zip" }
+            $tmp = Join-Path $env:RUNNER_TEMP 'zip_apiworkbench.exe'
+            [IO.Compression.ZipFileExtensions]::ExtractToFile($entry, $tmp, $true)
+            $m = Get-PeMachine $tmp
+            $memes = @($zip.Entries | Where-Object { $_.Name -like 'meme_*' }).Count
+            'zip: {0} entries, {1} meme clips, apiworkbench.exe 0x{2:X4}' -f $zip.Entries.Count, $memes, $m
+            if ($m -ne $expected) { throw 'zip holds the wrong architecture' }
+          } finally { $zip.Dispose() }
+
+          $msix = [IO.Compression.ZipFile]::OpenRead((Resolve-Path "dist\$msixName.msix"))
+          try {
+            $reader = New-Object IO.StreamReader($msix.GetEntry('AppxManifest.xml').Open())
+            $manifest = [xml]$reader.ReadToEnd()
+            $reader.Dispose()
+            $id = $manifest.Package.Identity
+            "msix identity: Name=$($id.Name) Version=$($id.Version) ProcessorArchitecture=$($id.ProcessorArchitecture) Publisher=$($id.Publisher)"
+            if ($id.ProcessorArchitecture -ne $env:ARCH) { throw "msix ProcessorArchitecture is $($id.ProcessorArchitecture)" }
+            if ($id.Name -ne 'Dhiva-Labs.ApiWorkbench') { throw "msix identity is $($id.Name)" }
+            if ($id.Publisher -ne 'CN=0F69015A-AA5B-431D-970A-165099309E53') { throw "msix publisher is $($id.Publisher)" }
+            # The Store package must not carry the third-party meme clips.
+            $memes = @($msix.Entries | Where-Object { $_.Name -like 'meme_*' })
+            if ($memes.Count -gt 0) { throw "msix still holds $($memes.Count) meme clips" }
+            $tmp = Join-Path $env:RUNNER_TEMP 'msix_apiworkbench.exe'
+            [IO.Compression.ZipFileExtensions]::ExtractToFile($msix.GetEntry('apiworkbench.exe'), $tmp, $true)
+            $m = Get-PeMachine $tmp
+            'msix: {0} entries, no meme clips, apiworkbench.exe 0x{1:X4}' -f $msix.Entries.Count, $m
+            if ($m -ne $expected) { throw 'msix holds the wrong architecture' }
+          } finally { $msix.Dispose() }
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: windows-${{ matrix.arch }}
+          path: |
+            dist/*.zip
+            dist/*.msix
+          if-no-files-found: error
+
+  snap:
+    name: Snap ${{ matrix.arch }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+            elf_machine: x86-64
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+            elf_machine: ARM aarch64
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: snapcore/action-build@v1
+        id: build
+
+      # The binary, the engine and the bundled gst-play-1.0 (Chaos Mode) must
+      # all be of the snap's architecture.
+      - name: Assert the snap is ${{ matrix.arch }}
+        env:
+          SNAP_FILE: ${{ steps.build.outputs.snap }}
+          ELF_MACHINE: ${{ matrix.elf_machine }}
+        run: |
+          ls -l "$SNAP_FILE"
+          case "$SNAP_FILE" in
+            *_${{ matrix.arch }}.snap) ;;
+            *) echo "::error::unexpected snap file name $SNAP_FILE"; exit 1 ;;
+          esac
+          command -v unsquashfs > /dev/null || sudo apt-get install -y squashfs-tools
+          unsquashfs -q -d "$RUNNER_TEMP/snap" "$SNAP_FILE" meta/snap.yaml apiworkbench lib usr/bin/gst-play-1.0
+          sed -n '/^architectures:/,/^[a-z]/p' "$RUNNER_TEMP/snap/meta/snap.yaml"
+          grep -qx -- '- ${{ matrix.arch }}' "$RUNNER_TEMP/snap/meta/snap.yaml"
+          checked=0
+          for f in apiworkbench usr/bin/gst-play-1.0 lib/libapp.so lib/libflutter_linux_gtk.so; do
+            [ -f "$RUNNER_TEMP/snap/$f" ] || { echo "::error::missing $f in the snap"; exit 1; }
+            file "$RUNNER_TEMP/snap/$f" | tee /dev/stderr | grep -q "$ELF_MACHINE"
+            checked=$((checked + 1))
+          done
+          echo "checked $checked ELF files"
+
+      # Installs the snap the way the Store does (strict, no --devmode) with
+      # the gnome content snap it plugs, and starts it on this architecture.
+      # Xvfb runs without access control because a confined app cannot read
+      # xvfb-run's Xauthority file in /tmp. `snap run` is not wrapped in
+      # dbus-run-session: it needs the runner's own systemd to track the app.
+      - name: Install the snap confined and start it (Xvfb)
+        timeout-minutes: 10
+        env:
+          SNAP_FILE: ${{ steps.build.outputs.snap }}
+        run: |
+          sudo apt-get install -y xvfb xdotool
+          sudo snap install gnome-42-2204
+          sudo snap install --dangerous "$SNAP_FILE"
+          snap list apiworkbench
+          grep -x 'confinement: strict' /snap/apiworkbench/current/meta/snap.yaml
+          snap connections apiworkbench
+
+          # Chaos Mode plays sounds with the gst-play-1.0 that ships in the snap.
+          snap run --shell apiworkbench -c 'gst-play-1.0 --version'
+
+          cat > "$RUNNER_TEMP/snap-smoke.sh" <<'EOF'
+          log="$RUNNER_TEMP/snap-smoke.log"
+          snap run apiworkbench > "$log" 2>&1 &
+          pid=$!
+          for i in $(seq 1 120); do
+            if xdotool search --name '^ApiWorkbench$' > /dev/null 2>&1 &&
+               [ -n "$(find "$HOME/snap/apiworkbench" -mindepth 2 -type d -name apiworkbench)" ]; then
+              echo "ApiWorkbench window is up after ${i}s; data folder:"
+              find "$HOME/snap/apiworkbench" -type d -name apiworkbench
+              sleep 5
+              pgrep -u "$USER" -f '/snap/apiworkbench/.*/apiworkbench' > /dev/null || { echo "the snap died after showing its window"; cat "$log"; exit 1; }
+              snap run --shell apiworkbench -c 'echo "running as $SNAP_NAME rev $SNAP_REVISION on $(uname -m)"'
+              pkill -u "$USER" -f '/snap/apiworkbench/.*/apiworkbench' || true
+              cat "$log"
+              exit 0
+            fi
+            kill -0 "$pid" 2> /dev/null || { echo "snap run exited early"; cat "$log"; exit 1; }
+            sleep 1
+          done
+          echo "no ApiWorkbench window and data folder after 120s"
+          find "$HOME/snap/apiworkbench" -maxdepth 5
+          cat "$log"
+          exit 1
+          EOF
+          Xvfb :99 -screen 0 1280x800x24 -ac &
+          export DISPLAY=:99
+          sleep 2
+          bash "$RUNNER_TEMP/snap-smoke.sh"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: snap-${{ matrix.arch }}
+          path: ${{ steps.build.outputs.snap }}
+          if-no-files-found: error
+
+  # Releases are made by hand, with whatever assets the maintainer attaches.
+  # When one is published, this job adds the packages built above (x64 and
+  # arm64) that the release does not have yet. A name that is already on the
+  # release wins and is never replaced. It runs on every event so the asset
+  # selection is tested on pull requests; only the upload is gated to
+  # `release`.
+  release:
+    name: Release assets
+    needs: [linux, windows]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          sparse-checkout: pubspec.yaml
+          sparse-checkout-cone-mode: false
+
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: linux-*
+          path: assets
+          merge-multiple: true
+
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: windows-*
+          path: assets
+          merge-multiple: true
+
+      - name: Select the release assets
+        id: select
+        run: |
+          VERSION="$(grep '^version:' pubspec.yaml | sed 's/version: *//; s/+.*//')"
+          FILES=""
+          for a in "amd64 x64" "arm64 arm64"; do
+            set -- $a
+            deb="assets/apiworkbench_${VERSION}_$1.deb"
+            (cd assets && sha256sum -c "$(basename "$deb").sha256")
+            FILES="$FILES $deb $deb.sha256 assets/ApiWorkbench-${VERSION}-linux-$2.tar.gz assets/ApiWorkbench-${VERSION}-windows-$2.zip"
+          done
+          ls -l assets
+          ls -l $FILES
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "files=$FILES" >> "$GITHUB_OUTPUT"
+
+      - name: Add the missing assets to release ${{ github.event.release.tag_name }}
+        if: github.event_name == 'release'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.release.tag_name }}
+          VERSION: ${{ steps.select.outputs.version }}
+          FILES: ${{ steps.select.outputs.files }}
+        run: |
+          if [ "$TAG" != "v$VERSION" ]; then
+            echo "::error::release tag $TAG does not match pubspec.yaml version $VERSION"
+            exit 1
+          fi
+          existing="$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name')"
+          echo "already on the release:"
+          echo "$existing"
+          upload=()
+          for f in $FILES; do
+            name="$(basename "$f")"
+            base="${name%.sha256}"
+            # A .deb and its .sha256 go together: if either is there, skip both.
+            if grep -qxF -e "$name" -e "$base" -e "$base.sha256" <<< "$existing"; then
+              echo "skip $name (the release has it already)"
+            else
+              upload+=("$f")
+            fi
+          done
+          if [ "${#upload[@]}" -gt 0 ]; then
+            gh release upload "$TAG" "${upload[@]}" --repo "$GITHUB_REPOSITORY"
+          fi
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[] | "\(.name)\t\(.size)"'

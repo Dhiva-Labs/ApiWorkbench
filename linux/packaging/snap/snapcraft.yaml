@@ -43,5 +43,5 @@ parts:
     # Self-contained: this folder holds the prebuilt Flutter Linux bundle
     # (the apiworkbench binary + data/ + lib/). To ship a new build, run
     #   flutter build linux --release
-    # and copy build/linux/x64/release/bundle/* over ./bundle/ .
+    # and copy build/linux/<x64|arm64>/release/bundle/* over ./bundle/ .
     source: ./bundle
