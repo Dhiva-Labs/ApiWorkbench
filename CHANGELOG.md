@@ -32,11 +32,11 @@ Releases before 1.3.1 are described on the
 - The Windows executable is labelled ApiWorkbench / Dhiva Labs in its version
   info, so the Windows data folder is `%APPDATA%\Dhiva Labs\ApiWorkbench`.
 - Locked `jni` to 1.0.3, which compiles on Linux arm64.
+- The load test's test teardown waits for the log file to be deleted, so the
+  test suite passes on Windows.
 
 ### Fixed
 
 - Windows: Chaos Mode played no sound because PowerShell did not load the
   media player assembly, and a user name with an apostrophe (for example
   `O'Neil`) broke the clip path.
-- The load test teardown now waits for its log file to be deleted, which
-  failed on Windows.
