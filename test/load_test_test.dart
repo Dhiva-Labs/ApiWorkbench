@@ -144,7 +144,15 @@ void main() {
     setUp(
       () async => logDir = await Directory.systemTemp.createTemp('aw_log_'),
     );
-    tearDown(() => logDir.delete(recursive: true));
+    tearDown(() async {
+      // LoadTestService.dispose() closes and deletes its log in the
+      // background. Windows cannot remove a folder while a file in it is
+      // still open or being deleted, so let that finish first.
+      for (var i = 0; i < 50 && logDir.listSync().isNotEmpty; i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+      }
+      await logDir.delete(recursive: true);
+    });
 
     test('100 parallel calls are each logged and exported', () async {
       final svc = LoadTestService(AppSettings(), logDir: logDir);
