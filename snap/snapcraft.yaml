@@ -5,7 +5,10 @@
 # container so the binary matches the snap's runtime libraries.
 #
 #   snapcraft --use-lxd
-#   snapcraft upload --release=stable apiworkbench_<version>_amd64.snap
+#   snapcraft upload --release=stable apiworkbench_<version>_<amd64|arm64>.snap
+#
+# Snapcraft builds for the architecture of the machine it runs on: amd64 on an
+# x86-64 host, arm64 on an ARM64 host. The Desktop builds workflow builds both.
 name: apiworkbench
 title: ApiWorkbench
 base: core22
@@ -48,7 +51,8 @@ issues: https://github.com/Dhiva-Labs/ApiWorkbench/issues
 contact: dhivakar1010@gmail.com
 
 architectures:
-  - build-on: amd64
+  - build-on: [amd64]
+  - build-on: [arm64]
 
 apps:
   apiworkbench:
