@@ -10,6 +10,10 @@
 # entry must exist in linux/packaging/debian/changelog — this script refuses
 # to re-upload an already-published version, since Launchpad rejects those.
 #
+# The kit packages the bundle built on this machine, so it targets this
+# machine's architecture (amd64 or arm64): the staged debian/control gets the
+# matching Architecture line. (A PPA only builds arm64 when it is enabled there.)
+#
 # Regression guard: debian/source/options must ship in every kit. Without it
 # dpkg-source silently strips *.so (the default ignore list), which is what
 # broke 1.0.0 — the app installed but crashed on launch with
@@ -19,12 +23,19 @@ set -euo pipefail
 KEY=0D3EFC9C8CE20ADE3CE809AD3D8D857AAF4D50E6
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
 PKG="$REPO/linux/packaging"
-BUNDLE="$REPO/build/linux/x64/release/bundle"
 OUT="$REPO/dist/release-kit"
 
 BOLD=$'\e[1m'; GRN=$'\e[32m'; RED=$'\e[31m'; RST=$'\e[0m'
 say(){ echo "${BOLD}${GRN}>>> $*${RST}"; }
 die(){ echo "${BOLD}${RED}XXX $*${RST}" >&2; exit 1; }
+
+DEB_ARCH="$(dpkg --print-architecture)"
+case "$DEB_ARCH" in
+  amd64) FLUTTER_ARCH=x64 ;;
+  arm64) FLUTTER_ARCH=arm64 ;;
+  *) die "unsupported architecture '$DEB_ARCH' (amd64 or arm64)" ;;
+esac
+BUNDLE="$REPO/build/linux/$FLUTTER_ARCH/release/bundle"
 
 SKIP_BUILD=0; UPLOAD=0
 for a in "$@"; do case "$a" in
@@ -63,6 +74,7 @@ mkdir -p "$PPA/usr/lib/apiworkbench" "$PPA/usr/bin" \
          "$PPA/usr/share/icons/hicolor/512x512/apps" \
          "$PPA/usr/share/icons/hicolor/256x256/apps"
 cp -a "$PKG/debian" "$PPA/debian"
+sed -i "s/^Architecture: .*/Architecture: $DEB_ARCH/" "$PPA/debian/control"
 cp -a "$BUNDLE/." "$PPA/usr/lib/apiworkbench/"
 cp "$PKG/apiworkbench.desktop" "$PPA/usr/share/applications/"
 cp "$PKG/icons/apiworkbench-512.png" "$PPA/usr/share/icons/hicolor/512x512/apps/apiworkbench.png"
@@ -94,7 +106,7 @@ if [ "$UPLOAD" = 1 ]; then
   (cd "$OUT/ppa" && dput ppa:dhiva-labs/apps "apiworkbench_${VER}_source.changes") \
     || die "dput failed"
   say "PPA upload done — watch for the Launchpad build email."
-  say "Snap: cd $SNAPKIT && snapcraft && snapcraft upload --release=stable apiworkbench_${VER}_amd64.snap"
+  say "Snap: cd $SNAPKIT && snapcraft && snapcraft upload --release=stable apiworkbench_${VER}_${DEB_ARCH}.snap"
 else
   say "Next: bash tool/make_release_kit.sh --skip-build --upload"
 fi
