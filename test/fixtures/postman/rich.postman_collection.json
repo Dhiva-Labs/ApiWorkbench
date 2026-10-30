@@ -1,0 +1,901 @@
+{
+  "info": {
+    "_postman_id": "f3b7c0de-1111-4222-8333-444455556666",
+    "name": "Rich Shop",
+    "description": {
+      "content": "Everything the shop API does.\n\nSee **docs**.",
+      "type": "text/markdown"
+    },
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{token}}",
+        "type": "string"
+      }
+    ]
+  },
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "pm.collectionVariables.set(\"started\", Date.now());"
+        ]
+      }
+    },
+    {
+      "listen": "test",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "pm.test(\"fast enough\", function () {",
+          "  pm.expect(pm.response.responseTime).to.be.below(2000);",
+          "});"
+        ]
+      }
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "https://api.shop.test",
+      "type": "string",
+      "description": "Root of the API"
+    },
+    {
+      "key": "pageSize",
+      "value": 20,
+      "type": "number"
+    },
+    {
+      "key": "apiSecret",
+      "value": "s3cr3t",
+      "type": "secret"
+    },
+    {
+      "key": "legacy",
+      "value": "old",
+      "type": "string",
+      "disabled": true
+    }
+  ],
+  "item": [
+    {
+      "name": "Auth",
+      "description": "Everything to do with signing in.",
+      "auth": {
+        "type": "oauth2",
+        "oauth2": [
+          {
+            "key": "grant_type",
+            "value": "authorization_code_with_pkce",
+            "type": "string"
+          },
+          {
+            "key": "authUrl",
+            "value": "{{baseUrl}}/oauth/authorize",
+            "type": "string"
+          },
+          {
+            "key": "accessTokenUrl",
+            "value": "{{baseUrl}}/oauth/token",
+            "type": "string"
+          },
+          {
+            "key": "clientId",
+            "value": "shop-web",
+            "type": "string"
+          },
+          {
+            "key": "clientSecret",
+            "value": "{{clientSecret}}",
+            "type": "string"
+          },
+          {
+            "key": "scope",
+            "value": "read write",
+            "type": "string"
+          },
+          {
+            "key": "redirect_uri",
+            "value": "https://app.shop.test/cb",
+            "type": "string"
+          },
+          {
+            "key": "addTokenTo",
+            "value": "header",
+            "type": "string"
+          },
+          {
+            "key": "headerPrefix",
+            "value": "Bearer",
+            "type": "string"
+          },
+          {
+            "key": "useBrowser",
+            "value": true,
+            "type": "boolean"
+          },
+          {
+            "key": "client_authentication",
+            "value": "header",
+            "type": "string"
+          },
+          {
+            "key": "challengeAlgorithm",
+            "value": "S256",
+            "type": "string"
+          },
+          {
+            "key": "tokenName",
+            "value": "Shop token",
+            "type": "string"
+          },
+          {
+            "key": "tokenRequestParams",
+            "value": [
+              {
+                "key": "audience",
+                "value": "shop",
+                "enabled": true,
+                "send_as": "request_body"
+              }
+            ],
+            "type": "any"
+          }
+        ]
+      },
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "console.log(\"entering Auth\");"
+            ]
+          }
+        },
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"not a server error\", function () {",
+              "  pm.expect(pm.response.code).to.be.below(500);",
+              "});"
+            ]
+          }
+        }
+      ],
+      "item": [
+        {
+          "name": "Login",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.variables.set(\"nonce\", pm.variables.replaceIn(\"{{$guid}}\"));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"ok\", function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "var jsonData = pm.response.json();",
+                  "pm.environment.set(\"token\", jsonData.data.token);",
+                  "console.log(new Date());"
+                ]
+              }
+            }
+          ],
+          "protocolProfileBehavior": {
+            "followRedirects": false,
+            "maxRedirects": 3,
+            "strictSSL": false,
+            "disableUrlEncoding": true,
+            "disableCookies": true,
+            "followOriginalHttpMethod": true,
+            "followAuthorizationHeader": true,
+            "removeRefererHeaderOnRedirect": true,
+            "disableBodyPruning": true
+          },
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "description": "We send JSON"
+              },
+              {
+                "key": "X-Debug",
+                "value": "1",
+                "disabled": true
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"user\":\"{{user}}\",\"pass\":\"{{pass}}\"}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "login"
+              ]
+            },
+            "description": "Exchanges credentials for a token."
+          },
+          "response": [
+            {
+              "name": "Success",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\"user\":\"ada\",\"pass\":\"x\"}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/auth/login",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "auth",
+                    "login"
+                  ]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                },
+                {
+                  "key": "X-Request-Id",
+                  "value": "abc"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"data\": {\"token\": \"tok-123\"}\n}"
+            },
+            {
+              "name": "Bad password",
+              "status": "Unauthorized",
+              "code": 401,
+              "_postman_previewlanguage": "text",
+              "header": [],
+              "cookie": [],
+              "body": "nope"
+            }
+          ]
+        },
+        {
+          "name": "Tokens",
+          "description": "Short-lived tokens.",
+          "auth": {
+            "type": "noauth"
+          },
+          "item": [
+            {
+              "name": "Refresh",
+              "request": {
+                "method": "POST",
+                "auth": {
+                  "type": "digest",
+                  "digest": [
+                    {
+                      "key": "username",
+                      "value": "u",
+                      "type": "string"
+                    },
+                    {
+                      "key": "password",
+                      "value": "p",
+                      "type": "string"
+                    },
+                    {
+                      "key": "realm",
+                      "value": "shop",
+                      "type": "string"
+                    },
+                    {
+                      "key": "nonce",
+                      "value": "n1",
+                      "type": "string"
+                    },
+                    {
+                      "key": "algorithm",
+                      "value": "MD5",
+                      "type": "string"
+                    },
+                    {
+                      "key": "qop",
+                      "value": "auth",
+                      "type": "string"
+                    },
+                    {
+                      "key": "nonceCount",
+                      "value": "00000001",
+                      "type": "string"
+                    },
+                    {
+                      "key": "clientNonce",
+                      "value": "c1",
+                      "type": "string"
+                    },
+                    {
+                      "key": "opaque",
+                      "value": "o1",
+                      "type": "string"
+                    },
+                    {
+                      "key": "disableRetryRequest",
+                      "value": false,
+                      "type": "boolean"
+                    }
+                  ]
+                },
+                "body": {
+                  "mode": "urlencoded",
+                  "urlencoded": [
+                    {
+                      "key": "refresh_token",
+                      "value": "{{refresh}}",
+                      "description": "The long-lived one"
+                    },
+                    {
+                      "key": "scope",
+                      "value": "all",
+                      "disabled": true
+                    }
+                  ]
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/auth/refresh",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "auth",
+                    "refresh"
+                  ]
+                }
+              },
+              "response": []
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Orders",
+      "description": "Order management.",
+      "auth": {
+        "type": "apikey",
+        "apikey": [
+          {
+            "key": "key",
+            "value": "api_key",
+            "type": "string"
+          },
+          {
+            "key": "value",
+            "value": "{{apiKey}}",
+            "type": "string"
+          },
+          {
+            "key": "in",
+            "value": "query",
+            "type": "string"
+          }
+        ]
+      },
+      "item": [
+        {
+          "name": "Admin",
+          "auth": {
+            "type": "awsv4",
+            "awsv4": [
+              {
+                "key": "accessKey",
+                "value": "AKIA",
+                "type": "string"
+              },
+              {
+                "key": "secretKey",
+                "value": "sk",
+                "type": "string"
+              },
+              {
+                "key": "sessionToken",
+                "value": "st",
+                "type": "string"
+              },
+              {
+                "key": "region",
+                "value": "eu-west-1",
+                "type": "string"
+              },
+              {
+                "key": "service",
+                "value": "execute-api",
+                "type": "string"
+              },
+              {
+                "key": "addAuthDataToQuery",
+                "value": false,
+                "type": "boolean"
+              }
+            ]
+          },
+          "item": [
+            {
+              "name": "Get order",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/orders/:orderId/items/:itemId?expand=true&debug=1#top",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "orders",
+                    ":orderId",
+                    "items",
+                    ":itemId"
+                  ],
+                  "query": [
+                    {
+                      "key": "expand",
+                      "value": "true",
+                      "description": "Include line items"
+                    },
+                    {
+                      "key": "debug",
+                      "value": "1",
+                      "disabled": true
+                    }
+                  ],
+                  "variable": [
+                    {
+                      "key": "orderId",
+                      "value": "42",
+                      "description": "The order number"
+                    },
+                    {
+                      "key": "itemId",
+                      "value": ""
+                    }
+                  ],
+                  "hash": "top"
+                },
+                "description": {
+                  "content": "Fetch one order",
+                  "type": "text/markdown"
+                }
+              },
+              "response": []
+            }
+          ]
+        },
+        {
+          "name": "Upload invoice",
+          "request": {
+            "method": "POST",
+            "auth": {
+              "type": "hawk",
+              "hawk": [
+                {
+                  "key": "authId",
+                  "value": "id",
+                  "type": "string"
+                },
+                {
+                  "key": "authKey",
+                  "value": "key",
+                  "type": "string"
+                },
+                {
+                  "key": "algorithm",
+                  "value": "sha256",
+                  "type": "string"
+                },
+                {
+                  "key": "user",
+                  "value": "u",
+                  "type": "string"
+                },
+                {
+                  "key": "nonce",
+                  "value": "n",
+                  "type": "string"
+                },
+                {
+                  "key": "extraData",
+                  "value": "ext",
+                  "type": "string"
+                },
+                {
+                  "key": "app",
+                  "value": "app",
+                  "type": "string"
+                },
+                {
+                  "key": "delegation",
+                  "value": "d",
+                  "type": "string"
+                },
+                {
+                  "key": "timestamp",
+                  "value": "1700000000",
+                  "type": "string"
+                },
+                {
+                  "key": "includePayloadHash",
+                  "value": true,
+                  "type": "boolean"
+                }
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "multipart/form-data"
+              }
+            ],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "orderId",
+                  "value": "42",
+                  "type": "text",
+                  "description": "Which order"
+                },
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": "/tmp/invoice.pdf"
+                },
+                {
+                  "key": "extra",
+                  "type": "file",
+                  "src": [
+                    "/tmp/a.png",
+                    "/tmp/b.png"
+                  ]
+                },
+                {
+                  "key": "note",
+                  "value": "x",
+                  "type": "text",
+                  "disabled": true
+                }
+              ]
+            },
+            "url": "{{baseUrl}}/orders/upload"
+          }
+        },
+        {
+          "name": "Search",
+          "request": {
+            "method": "POST",
+            "auth": {
+              "type": "ntlm",
+              "ntlm": [
+                {
+                  "key": "username",
+                  "value": "dom\\u",
+                  "type": "string"
+                },
+                {
+                  "key": "password",
+                  "value": "p",
+                  "type": "string"
+                },
+                {
+                  "key": "domain",
+                  "value": "DOM",
+                  "type": "string"
+                },
+                {
+                  "key": "workstation",
+                  "value": "WS",
+                  "type": "string"
+                },
+                {
+                  "key": "disableRetryRequest",
+                  "value": true,
+                  "type": "boolean"
+                }
+              ]
+            },
+            "body": {
+              "mode": "graphql",
+              "graphql": {
+                "query": "{ orders { id } }",
+                "variables": "{\"first\": 10}"
+              }
+            },
+            "url": "{{baseUrl}}/graphql"
+          }
+        },
+        {
+          "name": "Blob",
+          "request": {
+            "method": "PUT",
+            "auth": {
+              "type": "edgegrid",
+              "edgegrid": [
+                {
+                  "key": "accessToken",
+                  "value": "at",
+                  "type": "string"
+                },
+                {
+                  "key": "clientToken",
+                  "value": "ct",
+                  "type": "string"
+                },
+                {
+                  "key": "clientSecret",
+                  "value": "cs",
+                  "type": "string"
+                },
+                {
+                  "key": "nonce",
+                  "value": "n",
+                  "type": "string"
+                },
+                {
+                  "key": "timestamp",
+                  "value": "1",
+                  "type": "string"
+                },
+                {
+                  "key": "baseURL",
+                  "value": "https://x.akamai.test",
+                  "type": "string"
+                },
+                {
+                  "key": "headersToSign",
+                  "value": "x-a",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "file",
+              "file": {
+                "src": "/tmp/blob.bin"
+              }
+            },
+            "url": "{{baseUrl}}/blob"
+          }
+        },
+        {
+          "name": "Signed",
+          "request": {
+            "method": "POST",
+            "auth": {
+              "type": "oauth1",
+              "oauth1": [
+                {
+                  "key": "consumerKey",
+                  "value": "ck",
+                  "type": "string"
+                },
+                {
+                  "key": "consumerSecret",
+                  "value": "cs",
+                  "type": "string"
+                },
+                {
+                  "key": "token",
+                  "value": "t",
+                  "type": "string"
+                },
+                {
+                  "key": "tokenSecret",
+                  "value": "ts",
+                  "type": "string"
+                },
+                {
+                  "key": "signatureMethod",
+                  "value": "HMAC-SHA1",
+                  "type": "string"
+                },
+                {
+                  "key": "timestamp",
+                  "value": "1",
+                  "type": "string"
+                },
+                {
+                  "key": "nonce",
+                  "value": "n",
+                  "type": "string"
+                },
+                {
+                  "key": "version",
+                  "value": "1.0",
+                  "type": "string"
+                },
+                {
+                  "key": "realm",
+                  "value": "r",
+                  "type": "string"
+                },
+                {
+                  "key": "addParamsToHeader",
+                  "value": true,
+                  "type": "boolean"
+                },
+                {
+                  "key": "addEmptyParamsToSign",
+                  "value": false,
+                  "type": "boolean"
+                },
+                {
+                  "key": "includeBodyHash",
+                  "value": true,
+                  "type": "boolean"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "<a>1</a>",
+              "options": {
+                "raw": {
+                  "language": "xml"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/xml"
+          }
+        },
+        {
+          "name": "Token check",
+          "request": {
+            "method": "GET",
+            "auth": {
+              "type": "jwt",
+              "jwt": [
+                {
+                  "key": "algorithm",
+                  "value": "HS256",
+                  "type": "string"
+                },
+                {
+                  "key": "secret",
+                  "value": "shh",
+                  "type": "string"
+                },
+                {
+                  "key": "isSecretBase64Encoded",
+                  "value": false,
+                  "type": "boolean"
+                },
+                {
+                  "key": "payload",
+                  "value": "{\"sub\":\"1\"}",
+                  "type": "string"
+                },
+                {
+                  "key": "addTokenTo",
+                  "value": "header",
+                  "type": "string"
+                },
+                {
+                  "key": "headerPrefix",
+                  "value": "Bearer",
+                  "type": "string"
+                },
+                {
+                  "key": "queryParamKey",
+                  "value": "token",
+                  "type": "string"
+                },
+                {
+                  "key": "header",
+                  "value": "{}",
+                  "type": "string"
+                }
+              ]
+            },
+            "url": "{{baseUrl}}/check"
+          }
+        },
+        {
+          "name": "Plain text",
+          "request": {
+            "method": "POST",
+            "auth": {
+              "type": "basic",
+              "basic": [
+                {
+                  "key": "username",
+                  "value": "ada",
+                  "type": "string"
+                },
+                {
+                  "key": "password",
+                  "value": "lovelace",
+                  "type": "string"
+                },
+                {
+                  "key": "showPassword",
+                  "value": false,
+                  "type": "boolean"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "hello",
+              "options": {
+                "raw": {
+                  "language": "text"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/echo"
+          }
+        },
+        {
+          "name": "Explicit inherit",
+          "request": {
+            "method": "GET",
+            "auth": {
+              "type": "inherit"
+            },
+            "url": "{{baseUrl}}/inherit"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Health",
+      "request": {
+        "method": "GET",
+        "url": "{{baseUrl}}/health"
+      }
+    }
+  ]
+}
