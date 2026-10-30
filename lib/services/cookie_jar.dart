@@ -279,24 +279,33 @@ class StoredCookie {
 
   /// Reads one saved cookie; null when it is damaged.
   static StoredCookie? fromJson(Object? j) {
+    try {
+      return _fromJson(j);
+    } catch (_) {
+      return null; // e.g. a timestamp outside DateTime's range
+    }
+  }
+
+  static StoredCookie? _fromJson(Object? j) {
     if (j is! Map) return null;
     final name = j['name'], value = j['value'], domain = j['domain'];
     if (name is! String || name.isEmpty || value is! String) return null;
     if (domain is! String || domain.isEmpty) return null;
     final path = j['path'];
     final expires = j['expires'], created = j['created'];
+    final sameSite = j['sameSite'];
     return StoredCookie(
       name: name,
       value: value,
       domain: domain.toLowerCase(),
-      hostOnly: j['hostOnly'] as bool? ?? true,
+      hostOnly: j['hostOnly'] is bool ? j['hostOnly'] as bool : true,
       path: path is String && path.startsWith('/') ? path : '/',
       expires: expires is int
           ? DateTime.fromMicrosecondsSinceEpoch(expires, isUtc: true)
           : null,
-      secure: j['secure'] as bool? ?? false,
-      httpOnly: j['httpOnly'] as bool? ?? false,
-      sameSite: _cleanSameSite(j['sameSite'] as String?),
+      secure: j['secure'] == true,
+      httpOnly: j['httpOnly'] == true,
+      sameSite: sameSite is String ? _cleanSameSite(sameSite) : null,
       created: created is int
           ? DateTime.fromMicrosecondsSinceEpoch(created, isUtc: true)
           : DateTime.now().toUtc(),

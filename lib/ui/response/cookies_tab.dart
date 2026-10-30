@@ -65,16 +65,18 @@ class ResponseCookies extends StatelessWidget {
 Widget _heading(String title, int count, String help, {Widget? trailing}) =>
     Padding(
       padding: const EdgeInsets.only(bottom: 8),
-      child: Row(
+      // A Wrap, so the button drops under the title on narrow screens
+      // instead of squeezing it.
+      child: Wrap(
+        alignment: WrapAlignment.spaceBetween,
+        crossAxisAlignment: WrapCrossAlignment.center,
         children: [
-          Flexible(
-            child: LabelWithHelp(
-              count == 0 ? title : '$title ($count)',
-              help,
-              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
-            ),
+          LabelWithHelp(
+            count == 0 ? title : '$title ($count)',
+            help,
+            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
           ),
-          if (trailing != null) ...[const Spacer(), trailing],
+          ?trailing,
         ],
       ),
     );
@@ -135,8 +137,7 @@ class _SetCookieCard extends StatelessWidget {
             ),
             const SizedBox(height: 2),
             SelectableText(
-              sc.value.isEmpty ? '(empty value)' : sc.value,
-              maxLines: 4,
+              sc.value.isEmpty ? '(empty value)' : shortValue(sc.value),
               style: _mono.copyWith(
                 color: sc.value.isEmpty ? Palette.textDim : Palette.text,
               ),

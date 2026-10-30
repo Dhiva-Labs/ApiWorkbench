@@ -35,6 +35,11 @@ TextStyle get _mono => TextStyle(
   color: Palette.text,
 );
 
+/// A cookie value cut for display: tokens can run to several KB, and a tile
+/// stays readable (the editor shows the whole value).
+String shortValue(String v, [int max = 600]) =>
+    v.length <= max ? v : '${v.substring(0, max)}… (${v.length} characters)';
+
 /// A small labelled badge for one cookie attribute, with hover help.
 class CookieChip extends StatelessWidget {
   const CookieChip(
@@ -226,8 +231,7 @@ class CookieTile extends StatelessWidget {
           Padding(
             padding: const EdgeInsets.only(right: 8, top: 2, bottom: 6),
             child: SelectableText(
-              c.value.isEmpty ? '(empty value)' : c.value,
-              maxLines: 3,
+              c.value.isEmpty ? '(empty value)' : shortValue(c.value),
               style: _mono.copyWith(
                 color: c.value.isEmpty ? Palette.textDim : Palette.text,
               ),
@@ -490,7 +494,7 @@ class _CookieManagerState extends State<CookieManager> {
           onChanged: (_) => setState(() {}),
           decoration: InputDecoration(
             isDense: true,
-            hintText: 'Search domains and names',
+            hintText: 'Search cookies',
             prefixIcon: const Icon(Icons.search, size: 18),
             suffixIcon: _search.text.isEmpty
                 ? null

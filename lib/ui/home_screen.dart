@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -114,13 +116,20 @@ class _DesktopLayoutState extends State<_DesktopLayout> {
   // every drag frame expensive).
   final _panelWidth = ValueNotifier<double>(300);
   final _split = ValueNotifier<double>(0.55); // editor's share of the height
+  final _consoleHeight = ValueNotifier<double>(220);
 
   @override
   void dispose() {
     _panelWidth.dispose();
     _split.dispose();
+    _consoleHeight.dispose();
     super.dispose();
   }
+
+  /// The console may grow until the editor and response above it still
+  /// have the room their splitter needs (about 250 px plus the top bar).
+  double _maxConsoleHeight(BuildContext context) =>
+      math.max(120.0, MediaQuery.sizeOf(context).height - 340);
 
   void _select(SidebarSection s) => setState(() {
     if (s == _section) {
@@ -223,14 +232,32 @@ class _DesktopLayoutState extends State<_DesktopLayout> {
                   ),
                 ),
                 if (_consoleOpen) ...[
-                  Divider(height: 1, color: Palette.border),
-                  SizedBox(
-                    height: 220,
+                  // Draggable splitter above the console, like the one
+                  // between editor and response.
+                  MouseRegion(
+                    cursor: SystemMouseCursors.resizeRow,
+                    child: GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onVerticalDragUpdate: (d) => _consoleHeight.value =
+                          (_consoleHeight.value - d.delta.dy).clamp(
+                            120.0,
+                            _maxConsoleHeight(context),
+                          ),
+                      child: const _SplitHandle(),
+                    ),
+                  ),
+                  ValueListenableBuilder<double>(
+                    valueListenable: _consoleHeight,
+                    // Built once: dragging resizes the box only.
                     child: ColoredBox(
                       color: Palette.surface,
                       child: ConsolePanel(
                         onClose: () => setState(() => _consoleOpen = false),
                       ),
+                    ),
+                    builder: (context, h, panel) => SizedBox(
+                      height: h.clamp(120.0, _maxConsoleHeight(context)),
+                      child: panel,
                     ),
                   ),
                 ],

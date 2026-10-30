@@ -731,12 +731,21 @@ void main() {
             {'name': 'x'},
             {'name': 'ok', 'value': '1', 'domain': 'X.test'},
             {'name': '', 'value': '1', 'domain': 'x.test'},
+            {
+              'name': 'typed',
+              'value': '1',
+              'domain': 'x.test',
+              'hostOnly': 'yes',
+            },
           ],
         }),
       );
       await jar.load();
-      expect(_names(jar.all()), ['ok']);
-      expect(jar.all().single.domain, 'x.test');
+      expect(_names(jar.all()), ['ok', 'typed']);
+      expect(
+        jar.all().every((c) => c.domain == 'x.test' && c.hostOnly),
+        isTrue,
+      );
     });
 
     test('a jar without a store works in memory', () async {
