@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../models/models.dart';
+import '../services/import_any.dart';
 import '../services/postman_import.dart';
 import '../state/app_state.dart';
 import '../theme.dart';
@@ -61,7 +62,7 @@ class _ImportDialogState extends State<_ImportDialog> {
 
   void _add(String label, String text) {
     try {
-      _report = importApiFile(text, into: _report);
+      _report = importAnyFile(text, into: _report);
       _sources.add(label);
     } on FormatException catch (e) {
       _errors.add('$label: ${e.message}');
