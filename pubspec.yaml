@@ -89,6 +89,8 @@ flutter:
     # Third-party meme clips for Chaos Mode. tool/build_store_msix.ps1 drops
     # this line for the Microsoft Store build (see kChaosMemeSounds).
     - assets/sounds/meme/
+    # Script sandbox and the libraries scripts can require() (issue #10).
+    - assets/js/
   #   - images/a_dot_burr.jpeg
   #   - images/a_dot_ham.jpeg
 
