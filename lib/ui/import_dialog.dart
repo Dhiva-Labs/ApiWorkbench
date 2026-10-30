@@ -7,14 +7,14 @@ import 'package:provider/provider.dart';
 
 import '../models/models.dart';
 import '../services/import_any.dart';
-import '../services/postman_import.dart';
 import '../state/app_state.dart';
 import '../theme.dart';
 import 'adaptive.dart';
 import 'help_tip.dart';
 
 /// Import Postman collections (v1, v2.0, v2.1), environments, globals and
-/// data exports, or an ApiWorkbench workspace, from files or pasted JSON.
+/// data exports, OpenAPI 3.x and Swagger 2.0 specs (JSON or YAML), HAR
+/// captures, or an ApiWorkbench workspace, from files or pasted text.
 /// Shows what will be added, and what could not be carried over, before
 /// anything changes.
 ///
@@ -47,6 +47,12 @@ class _ImportDialogState extends State<_ImportDialog> {
   final _errors = <String>[];
   bool _busy = false;
 
+  /// Everything added so far, kept so changing a HAR option can read it again.
+  final _inputs = <(String, String)>[];
+
+  /// HAR files: leave out images, fonts, CSS and JS.
+  bool _skipStatic = true;
+
   /// Destination: null creates new collections; otherwise an existing id.
   late String? _target = widget.collectionId;
 
@@ -61,8 +67,17 @@ class _ImportDialogState extends State<_ImportDialog> {
   }
 
   void _add(String label, String text) {
+    _inputs.add((label, text));
+    _read(label, text);
+  }
+
+  void _read(String label, String text) {
     try {
-      _report = importAnyFile(text, into: _report);
+      _report = importAnyFile(
+        text,
+        into: _report,
+        skipStaticAssets: _skipStatic,
+      );
       _sources.add(label);
     } on FormatException catch (e) {
       _errors.add('$label: ${e.message}');
@@ -71,13 +86,23 @@ class _ImportDialogState extends State<_ImportDialog> {
     }
   }
 
+  /// Reads everything again, after an option that changes the result.
+  void _readAgain() {
+    _report = null;
+    _sources.clear();
+    _errors.clear();
+    for (final (label, text) in _inputs) {
+      _read(label, text);
+    }
+  }
+
   Future<void> _chooseFiles() async {
     setState(() => _busy = true);
     try {
       final picked = await FilePicker.platform.pickFiles(
-        dialogTitle: 'Import Postman or ApiWorkbench files',
+        dialogTitle: 'Import API files',
         type: FileType.custom,
-        allowedExtensions: ['json'],
+        allowedExtensions: ['json', 'yaml', 'yml', 'har'],
         allowMultiple: true,
         withData: true,
       );
@@ -100,7 +125,7 @@ class _ImportDialogState extends State<_ImportDialog> {
     final text = _paste.text.trim();
     if (text.isEmpty) return;
     setState(() {
-      _add('Pasted JSON', text);
+      _add('Pasted text', text);
       _paste.clear();
     });
   }
@@ -306,10 +331,12 @@ class _ImportDialogState extends State<_ImportDialog> {
               children: [
                 Expanded(
                   child: Text(
-                    'Postman collections (v1, v2.0, v2.1), single requests '
-                    'or folders, environments, globals and full data '
-                    'exports, or an ApiWorkbench workspace. Add as many as '
-                    'you like, then choose where they go.',
+                    'OpenAPI 3.x and Swagger 2.0 specs (JSON or YAML), HAR '
+                    'captures from browser dev tools, Postman collections '
+                    '(v1, v2.0, v2.1), single requests or folders, '
+                    'environments, globals and full data exports, or an '
+                    'ApiWorkbench workspace. Add as many as you like, then '
+                    'choose where they go.',
                     style: TextStyle(
                       fontSize: 13,
                       color: Palette.textDim,
@@ -318,11 +345,14 @@ class _ImportDialogState extends State<_ImportDialog> {
                   ),
                 ),
                 const HelpTip(
-                  'In Postman, open the … menu on a collection or '
-                  'environment and choose Export. Nothing changes here until '
-                  'you press Import.',
-                  title: 'Getting files from Postman',
-                  example: 'Shop API.postman_collection.json',
+                  'Postman: open the … menu on a collection or environment '
+                  'and choose Export. OpenAPI and Swagger: use the .json or '
+                  '.yaml file of your API. HAR: in the browser dev tools '
+                  'Network tab, right-click and choose "Save all as HAR". '
+                  'Nothing changes here until you press Import.',
+                  title: 'Getting files to import',
+                  example:
+                      'openapi.yaml, shop.har, Shop API.postman_collection.json',
                 ),
               ],
             ),
@@ -335,14 +365,15 @@ class _ImportDialogState extends State<_ImportDialog> {
               maxLines: 6,
               style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
               decoration: InputDecoration(
-                hintText: 'Or paste Postman JSON here',
+                hintText: 'Or paste JSON or YAML here',
                 suffixIcon: Padding(
                   padding: const EdgeInsets.all(6),
                   child: HelpHover(
-                    'Add the pasted JSON to the list to import. You can '
-                    'paste several, one after another.',
-                    title: 'Add pasted JSON',
-                    example: '{"info": {"name": "Shop API"}, "item": [ … ]}',
+                    'Add the pasted text to the list to import. It can be '
+                    'JSON or YAML; you can paste several, one after another.',
+                    title: 'Add pasted text',
+                    example:
+                        'openapi: 3.0.3, or {"info": {"name": "Shop API"}, …}',
                     child: TextButton(
                       onPressed: _addPasted,
                       child: const Text('Add'),
@@ -351,6 +382,7 @@ class _ImportDialogState extends State<_ImportDialog> {
                 ),
               ),
             ),
+            _harOption(),
             if (_errors.isNotEmpty) ...[
               const SizedBox(height: 12),
               for (final e in _errors)
@@ -378,11 +410,45 @@ class _ImportDialogState extends State<_ImportDialog> {
     );
   }
 
+  /// Applies to HAR files only; changing it reads the added files again.
+  Widget _harOption() => CheckboxListTile(
+    contentPadding: EdgeInsets.zero,
+    controlAffinity: ListTileControlAffinity.leading,
+    dense: true,
+    value: _skipStatic,
+    onChanged: (v) => setState(() {
+      _skipStatic = v ?? true;
+      _readAgain();
+    }),
+    title: Row(
+      children: [
+        const Flexible(
+          child: Text(
+            'Skip static assets (images, fonts, CSS, JS)',
+            style: TextStyle(fontSize: 13),
+          ),
+        ),
+        const HelpTip(
+          'HAR captures list every file the page loaded. With this on, '
+          'images, fonts, stylesheets, scripts and media are left out so '
+          'only the API calls are imported. It only affects HAR files.',
+          title: 'Skip static assets',
+          example: 'logo.png, app.js, site.css, font.woff2',
+        ),
+      ],
+    ),
+    subtitle: Text(
+      'Applies to HAR files from browser dev tools.',
+      style: TextStyle(fontSize: 12, color: Palette.textDim),
+    ),
+  );
+
   Widget _dropZone() => HelpHover(
-    'Pick one or more .json files exported from Postman or ApiWorkbench. '
-    'Each one is checked and added to the summary below.',
+    'Pick one or more files: OpenAPI or Swagger specs (.json, .yaml, .yml), '
+    'HAR captures (.har), or Postman and ApiWorkbench exports (.json). Each '
+    'one is checked and added to the summary below.',
     title: 'Choose files',
-    example: 'Shop API.postman_collection.json',
+    example: 'openapi.yaml, shop.har, Shop API.postman_collection.json',
     child: _dropZoneBox(),
   );
 
@@ -418,7 +484,8 @@ class _ImportDialogState extends State<_ImportDialog> {
           const SizedBox(height: 2),
           Text(
             _sources.isEmpty
-                ? '.json exported from Postman or ApiWorkbench'
+                ? '.json, .yaml, .yml or .har: OpenAPI, Swagger, HAR, '
+                      'Postman or ApiWorkbench'
                 : 'Added: ${_sources.join(', ')}',
             textAlign: TextAlign.center,
             style: TextStyle(fontSize: 12, color: Palette.textDim),
@@ -462,9 +529,9 @@ class _ImportDialogState extends State<_ImportDialog> {
         children: [
           LabelWithHelp(
             'Ready to import · ${r.formats.join(', ')}',
-            'What was found in the files and pasted JSON so far. Nothing is '
+            'What was found in the files and pasted text so far. Nothing is '
                 'saved until you press Import.',
-            example: 'Postman collection v2.1',
+            example: 'OpenAPI 3.0, Postman collection v2.1',
             style: TextStyle(
               fontSize: 12.5,
               fontWeight: FontWeight.w600,
