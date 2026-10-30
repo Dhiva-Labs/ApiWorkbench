@@ -392,8 +392,7 @@ class SseConnection extends LiveConnection {
 
   void _onEvent(SseEvent e) {
     final meta = <String, String>{
-      'event': e.event,
-      if (e.id != null) 'id': e.id!,
+      'id': ?e.id,
       if (e.retry != null) 'retry': '${e.retry} ms',
     };
     log.add(Direction.received, label: e.event, text: e.data, meta: meta);
