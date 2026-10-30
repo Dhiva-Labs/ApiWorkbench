@@ -69,11 +69,21 @@ class ScriptContext {
 
 /// A `pm.test` result.
 class ScriptTestResult {
-  const ScriptTestResult(this.name, this.pass, {this.error, this.origin = ''});
+  const ScriptTestResult(
+    this.name,
+    this.pass, {
+    this.error,
+    this.origin = '',
+    this.skipped = false,
+  });
   final String name;
   final bool pass;
   final String? error;
   final String origin;
+
+  /// `pm.test.skip(...)` or a test without a function: neither passed nor
+  /// failed ([pass] is true so it never fails a run).
+  final bool skipped;
 }
 
 /// `pm.visualizer.set(template, data, options)`: rendered HTML.

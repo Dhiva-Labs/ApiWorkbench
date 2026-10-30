@@ -1,0 +1,16 @@
+name: quickjs_ffi
+description: >-
+  QuickJS-ng compiled from source by a build hook, with a small C bridge for
+  Dart FFI. Used by ApiWorkbench to run Postman-style scripts.
+version: 0.1.0
+publish_to: 'none'
+
+environment:
+  sdk: ^3.10.0
+
+dependencies:
+  code_assets: ^1.2.1
+  ffi: ^2.1.0
+  hooks: ^2.0.2
+  logging: ^1.3.0
+  native_toolchain_c: ^0.19.2

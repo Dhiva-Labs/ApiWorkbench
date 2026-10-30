@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart' show rootBundle;
 
 import '../models/models.dart';
 import '../services/cookie_store.dart';
@@ -55,7 +56,11 @@ class AppState extends ChangeNotifier {
   final HttpService http = HttpService();
 
   /// Script engine for this platform; null when none is available.
-  final ScriptEngine? scripts = createScriptEngine();
+  /// Reads its sandbox from the asset bundle, which on Android lives
+  /// inside the APK rather than on disk.
+  final ScriptEngine? scripts = createScriptEngine(
+    loadAsset: rootBundle.loadString,
+  );
   late final RequestExecutor executor = RequestExecutor(http, engine: scripts);
   late final PersistentCookieJar cookies = PersistentCookieJar(_storage);
   late final CollectionHistory collectionHistory = CollectionHistory(_storage);
