@@ -1,0 +1,27 @@
+{
+  "id": "99999999-aaaa-4bbb-8ccc-ddddeeeeffff",
+  "name": "Workspace Globals",
+  "values": [
+    {
+      "key": "tenant",
+      "value": "acme",
+      "type": "default",
+      "enabled": true
+    },
+    {
+      "key": "apiToken",
+      "value": "g-secret",
+      "type": "secret",
+      "enabled": true
+    },
+    {
+      "key": "off",
+      "value": "0",
+      "type": "default",
+      "enabled": false
+    }
+  ],
+  "_postman_variable_scope": "globals",
+  "_postman_exported_at": "2026-10-01T10:00:00.000Z",
+  "_postman_exported_using": "Postman/11.0.0"
+}

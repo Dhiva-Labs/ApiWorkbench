@@ -14,16 +14,22 @@ class ImportReport {
 
   int requests = 0;
   int folders = 0;
+
+  /// Scripts are imported as they are and run, never converted, so these
+  /// stay 0. They remain for callers written before scripts ran.
   int assertionsFromScripts = 0;
   int capturesFromScripts = 0;
 
-  /// Requests (or folders/collections) whose script text was kept but not
-  /// fully converted.
+  /// Pre-request and test scripts carried over (request, folder and
+  /// collection level).
   int scriptsKept = 0;
-  int examplesSkipped = 0;
+
+  /// Saved response examples carried over.
+  int examples = 0;
   int bodiesOnGetOrHead = 0;
 
-  /// Postman auth type → requests that used it without an equivalent here.
+  /// Postman auth type names with no equivalent here (e.g. `asap`) →
+  /// how many requests, folders and collections used them.
   final unsupportedAuth = <String, int>{};
   final notes = <String>[];
 
@@ -33,16 +39,8 @@ class ImportReport {
   /// One line per thing the user may need to act on.
   List<String> get warnings => [
     for (final e in unsupportedAuth.entries)
-      '${e.value} request(s) use ${authLabel(e.key)} auth, which '
-          'ApiWorkbench does not support yet; their auth was left empty.',
-    if (scriptsKept > 0)
-      '$scriptsKept Postman script(s) were found. ApiWorkbench does not run '
-          'JavaScript, so recognised checks became Tests '
-          '($assertionsFromScripts) and saved values became Captures '
-          '($capturesFromScripts); the scripts themselves are kept on each '
-          'request under Docs for reference.',
-    if (examplesSkipped > 0)
-      '$examplesSkipped saved response example(s) were not imported.',
+      '${e.value} request(s) or folder(s) use ${authLabel(e.key)} auth, '
+          'which ApiWorkbench does not support; their auth was left empty.',
     if (bodiesOnGetOrHead > 0)
       '$bodiesOnGetOrHead HEAD request(s) have a body, which '
           'ApiWorkbench does not send for HEAD.',
@@ -51,14 +49,6 @@ class ImportReport {
 }
 
 String authLabel(String t) => switch (t) {
-  'digest' => 'Digest',
-  'oauth1' => 'OAuth 1.0',
-  'oauth2' => 'OAuth 2.0 (no saved token)',
-  'hawk' => 'Hawk',
-  'awsv4' => 'AWS Signature',
-  'ntlm' => 'NTLM',
-  'edgegrid' => 'Akamai EdgeGrid',
-  'jwt' => 'JWT Bearer',
   'asap' => 'ASAP (Atlassian)',
-  _ => t,
+  _ => authTypeFromPostman(t)?.label ?? t,
 };
