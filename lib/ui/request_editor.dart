@@ -809,63 +809,71 @@ class _RequestEditorState extends State<RequestEditor> {
               valueExample: '/home/me/photo.png',
             ),
             BodyType.binary => _binaryBody(),
-            BodyType.graphql => Padding(
-              padding: const EdgeInsets.all(12),
-              child: Column(
-                children: [
-                  GraphqlToolbar(
-                    request: req,
-                    queryController: _bodyCtrl,
-                    variablesController: _gqlVarsCtrl,
-                    vars: () => context.read<AppState>().varsFor(
-                      widget.tab.sourceCollectionId,
-                    ),
-                    onChanged: _touch,
+            BodyType.graphql => LayoutBuilder(
+              builder: (context, box) {
+                final toolbar = GraphqlToolbar(
+                  request: req,
+                  queryController: _bodyCtrl,
+                  variablesController: _gqlVarsCtrl,
+                  vars: () => context.read<AppState>().varsFor(
+                    widget.tab.sourceCollectionId,
                   ),
-                  Expanded(
-                    flex: 3,
-                    child: TextField(
-                      controller: _bodyCtrl,
-                      maxLines: null,
-                      expands: true,
-                      textAlignVertical: TextAlignVertical.top,
-                      style: const TextStyle(
-                        fontFamily: 'monospace',
-                        fontSize: 13,
-                      ),
-                      decoration: const InputDecoration(
-                        hintText:
-                            'query Users(\$limit: Int) {\n  users(limit: \$limit) { id name }\n}',
-                      ),
-                      onChanged: (v) {
-                        req.body = v;
-                        _touch();
-                      },
-                    ),
+                  onChanged: _touch,
+                );
+                final query = TextField(
+                  controller: _bodyCtrl,
+                  maxLines: null,
+                  expands: true,
+                  textAlignVertical: TextAlignVertical.top,
+                  style: const TextStyle(fontFamily: 'monospace', fontSize: 13),
+                  decoration: const InputDecoration(
+                    hintText:
+                        'query Users(\$limit: Int) {\n  users(limit: \$limit) { id name }\n}',
                   ),
-                  const SizedBox(height: 8),
-                  Expanded(
-                    flex: 2,
-                    child: TextField(
-                      controller: _gqlVarsCtrl,
-                      maxLines: null,
-                      expands: true,
-                      textAlignVertical: TextAlignVertical.top,
-                      style: const TextStyle(
-                        fontFamily: 'monospace',
-                        fontSize: 13,
-                      ),
-                      decoration: const InputDecoration(
-                        hintText: 'Variables (JSON): {"limit": 10}',
-                      ),
-                      onChanged: (v) {
-                        req.graphqlVariables = v;
-                        _touch();
-                      },
-                    ),
+                  onChanged: (v) {
+                    req.body = v;
+                    _touch();
+                  },
+                );
+                final variables = TextField(
+                  controller: _gqlVarsCtrl,
+                  maxLines: null,
+                  expands: true,
+                  textAlignVertical: TextAlignVertical.top,
+                  style: const TextStyle(fontFamily: 'monospace', fontSize: 13),
+                  decoration: const InputDecoration(
+                    hintText: 'Variables (JSON): {"limit": 10}',
                   ),
-                ],
-              ),
+                  onChanged: (v) {
+                    req.graphqlVariables = v;
+                    _touch();
+                  },
+                );
+                // Short panes (a phone with the keyboard up) scroll with
+                // fixed-height editors instead of squeezing them.
+                if (box.maxHeight < 300) {
+                  return ListView(
+                    padding: const EdgeInsets.all(12),
+                    children: [
+                      toolbar,
+                      SizedBox(height: 160, child: query),
+                      const SizedBox(height: 8),
+                      SizedBox(height: 110, child: variables),
+                    ],
+                  );
+                }
+                return Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Column(
+                    children: [
+                      toolbar,
+                      Expanded(flex: 3, child: query),
+                      const SizedBox(height: 8),
+                      Expanded(flex: 2, child: variables),
+                    ],
+                  ),
+                );
+              },
             ),
             _ => Padding(
               padding: const EdgeInsets.all(12),

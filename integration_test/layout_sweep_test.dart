@@ -1363,7 +1363,7 @@ class _Sweep {
       await show('import into folder', () async {
         await tap(find.text('Import into folder').last);
         await enter(
-          find.widgetWithText(TextField, 'Or paste Postman JSON here'),
+          find.widgetWithText(TextField, 'Or paste JSON or YAML here'),
           jsonEncode({
             'name': 'Refund order with a long name for the import summary',
             'request': {
@@ -1429,12 +1429,18 @@ class _Sweep {
         'headers',
         'body',
         'auth',
+        'scripts',
         'tests',
         'captures',
+        'settings',
         'docs',
       ];
       for (var i = 0; i < tabs.length; i++) {
-        await show('editor · ${tabs[i]}', () => editorTab(i), keyboard: i != 5);
+        await show(
+          'editor · ${tabs[i]}',
+          () => editorTab(i),
+          keyboard: tabs[i] != 'captures',
+        );
       }
       await editorTab(2);
       for (final t in BodyType.values) {
@@ -1463,20 +1469,17 @@ class _Sweep {
       }
       await tap(find.byType(DropdownButtonFormField<AuthType>));
       await tap(find.text(AuthType.basic.label).last);
-      await editorTab(4);
+      await editorTab(5);
       await show(
         'assertion kind menu',
         () => tap(find.byType(DropdownButtonFormField<AssertKind>).first),
       );
       await popTop();
-      await editorTab(6);
-      await show('docs · script expanded', () async {
-        await reveal(
-          find.text('Test script'),
-          within: find.byType(RequestEditor),
-        );
-        await tap(find.text('Test script'));
-      });
+      await editorTab(4);
+      await show(
+        'scripts · post-response',
+        () => tap(find.textContaining('Post-response').first),
+      );
       await editorTab(0);
       await show('more menu', () => tap(find.byTooltip('More')));
       await show(
@@ -1548,8 +1551,10 @@ class _Sweep {
       await mobileSection('Response');
       await show('response · pretty', () async {});
       await show('response · raw', () => responseTab(1));
-      await show('response · headers', () => responseTab(2));
-      await show('response · tests', () => responseTab(3));
+      await show('response · preview', () => responseTab(2));
+      await show('response · headers', () => responseTab(3));
+      await show('response · cookies', () => responseTab(4));
+      await show('response · tests', () => responseTab(5));
       await show('response · chaos status bar', () async {
         state.updateSettings(state.settings..chaosMode = true);
       });
@@ -1640,7 +1645,7 @@ class _Sweep {
       await show('import · summary', () async {
         final paste = find.widgetWithText(
           TextField,
-          'Or paste Postman JSON here',
+          'Or paste JSON or YAML here',
         );
         await enter(paste, jsonEncode(_shopApi(base)));
         await tap(find.text('Add').last);
@@ -1676,7 +1681,7 @@ class _Sweep {
           find.byWidgetPredicate(
             (w) =>
                 w is TextField &&
-                (w.decoration?.hintText ?? '').startsWith('JSON array'),
+                (w.decoration?.hintText ?? '').startsWith('Or paste JSON'),
           ),
           '[{"userId": "1"}, {"userId": "2"}]',
         );
@@ -1687,7 +1692,7 @@ class _Sweep {
         find.byWidgetPredicate(
           (w) =>
               w is TextField &&
-              (w.decoration?.hintText ?? '').startsWith('JSON array'),
+              (w.decoration?.hintText ?? '').startsWith('Or paste JSON'),
         ),
         '',
       );
@@ -1759,6 +1764,76 @@ class _Sweep {
         () => tap(find.text('Load test (parallel calls)…')),
       );
       await popTop();
+    });
+
+    await flow('1.4.0 panels and dialogs', () async {
+      state.openRequest(kitchen, collectionId: long.id);
+      await settle();
+      await tap(find.byTooltip('More'));
+      await show(
+        'code snippet dialog',
+        () => tap(find.text('Code snippet…')),
+      );
+      await popTop();
+
+      if (cfg.desktop) {
+        await show('console panel', () => tap(find.text('Console').first));
+        await tap(find.text('Console').first);
+        await show('cookie manager', () => tap(find.text('Cookies').first));
+        await popTop();
+        await show('export dialog', () => tap(find.text('Export').first));
+        await popTop();
+      } else {
+        await tap(find.byTooltip('Workspace menu'));
+        await show('console page', () => tap(find.text('Console').last));
+        await popTop();
+        await tap(find.byTooltip('Workspace menu'));
+        await show('cookie manager', () => tap(find.text('Cookies…').last));
+        await popTop();
+        await tap(find.byTooltip('Workspace menu'));
+        await show(
+          'export dialog',
+          () => tap(find.text('Export workspace…').last),
+        );
+        await popTop();
+      }
+
+      await showSection(SidebarSection.environments);
+      await show(
+        'globals editor',
+        () => tap(inPanel(find.textContaining('Globals')).first),
+        keyboard: true,
+      );
+      await popTop();
+      if (cfg.touch) await leaveDrawer();
+
+      await showSection(SidebarSection.collections);
+      await tap(find.byTooltip('Collection actions').first);
+      await show(
+        'collection settings',
+        () => tap(find.text('Auth, scripts and docs').last),
+        keyboard: true,
+      );
+      await popTop();
+      if (cfg.touch) await leaveDrawer();
+
+      for (final kind in RequestKind.values.skip(1)) {
+        await tap(
+          find.byTooltip('New WebSocket, Socket.IO, MQTT, SSE or gRPC tab'),
+        );
+        await show(
+          'new ${kind.label} tab',
+          () => tap(find.text(kind.label).last),
+          keyboard: true,
+        );
+        if (cfg.touch) {
+          await show(
+            '${kind.label} messages',
+            () => mobileSection('Response'),
+          );
+          await mobileSection('Request');
+        }
+      }
     });
 
     await unpump();

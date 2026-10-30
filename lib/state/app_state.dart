@@ -190,11 +190,12 @@ class AppState extends ChangeNotifier {
 
   /// Writes everything that is saved lazily (cookies, collection history,
   /// queued files). Called when the app is hidden or about to exit.
-  Future<void> flushPending() => Future.wait([
-    cookies.flush(),
-    collectionHistory.flush(),
-    _storage.flush(),
-  ]);
+  Future<void> flushPending() async {
+    await cookies.flush();
+    // History writes go through storage, so storage drains last.
+    await collectionHistory.flush();
+    await _storage.flush();
+  }
 
   /// Lets UI trigger a rebuild after mutating owned services (sound library).
   void notifyRefresh() => notifyListeners();

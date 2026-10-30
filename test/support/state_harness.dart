@@ -5,6 +5,7 @@ import 'package:api_workbench/services/storage.dart';
 import 'package:api_workbench/state/app_state.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'temp_dir.dart';
 
 /// An [AppState] over a temporary data folder, for widget tests.
 ///
@@ -29,7 +30,9 @@ class StateHarness {
   /// Waits for queued writes to reach the disk.
   Future<void> drain(WidgetTester tester) async {
     var done = false;
-    storage.flush().then((_) => done = true);
+    // flushPending also drains collection history and cookies, which
+    // write after a save.
+    state.flushPending().then((_) => done = true);
     for (var i = 0; i < 200 && !done; i++) {
       await tester.runAsync(
         () => Future<void>.delayed(const Duration(milliseconds: 10)),
@@ -41,7 +44,7 @@ class StateHarness {
 
   Future<void> tearDown(WidgetTester tester) async {
     await drain(tester);
-    await tester.runAsync(() => dir.delete(recursive: true));
+    await tester.runAsync(() => deleteTempDir(dir));
   }
 
   /// The collections as saved on disk.

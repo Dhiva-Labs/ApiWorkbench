@@ -211,8 +211,10 @@ class _GraphqlToolbarState extends State<GraphqlToolbar> {
   Widget build(BuildContext context) {
     final schema = _schema;
     final error = _errorUrl == _url ? _error : null;
+    final touch = isTouch(context);
     final compact = OutlinedButton.styleFrom(
-      visualDensity: VisualDensity.compact,
+      visualDensity: touch ? VisualDensity.standard : VisualDensity.compact,
+      minimumSize: touch ? const Size(64, minTouchTarget) : null,
       padding: const EdgeInsets.symmetric(horizontal: 10),
       textStyle: const TextStyle(fontSize: 12.5),
     );

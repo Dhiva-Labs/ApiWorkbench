@@ -9,6 +9,7 @@ import '../../models/models.dart';
 import '../../state/app_state.dart';
 import '../../theme.dart';
 import '../help_tip.dart';
+import '../adaptive.dart';
 
 /// Pre-request and post-response (test) scripts of a request, run with
 /// Postman's `pm` API: an editor per phase and a menu of snippets.
@@ -86,6 +87,21 @@ class _ScriptsTabState extends State<ScriptsTab> {
       for (final s in scriptSnippets)
         if (_post ? s.post : s.pre) s,
     ];
+    // Short panes (a phone with the keyboard up) scroll, with the editor at
+    // a usable height, instead of squeezing it to nothing.
+    return LayoutBuilder(
+      builder: (context, box) => box.maxHeight >= 300
+          ? _content(engine, enabled, snippets)
+          : SingleChildScrollView(
+              child: SizedBox(
+                height: 300,
+                child: _content(engine, enabled, snippets),
+              ),
+            ),
+    );
+  }
+
+  Widget _content(bool engine, bool enabled, List<ScriptSnippet> snippets) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
       child: Column(
@@ -141,7 +157,10 @@ class _ScriptsTabState extends State<ScriptsTab> {
                         ),
                       ),
                   ],
-                  child: Padding(
+                  child: Container(
+                    constraints: BoxConstraints(
+                      minHeight: isTouch(context) ? minTouchTarget : 0,
+                    ),
                     padding: const EdgeInsets.symmetric(
                       horizontal: 8,
                       vertical: 8,

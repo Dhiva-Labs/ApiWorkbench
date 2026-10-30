@@ -18,6 +18,10 @@ import 'package:http2/http2.dart' as h2;
 
 String fx(String name) => '${Directory.current.path}/test/fixtures/certs/$name';
 
+/// A --cert path as curlNetworkArgs writes it: forward slashes on Windows.
+String certArg(String path) =>
+    Platform.isWindows ? path.replaceAll(r'\', '/') : path;
+
 NetworkSettings net({
   ProxyMode mode = ProxyMode.none,
   String host = '',
@@ -1489,7 +1493,7 @@ void main() {
       );
       expect(args.sublist(2), [
         '--cert',
-        fx('client.pem'),
+        certArg(fx('client.pem')),
         '--key',
         fx('client-enc.key'),
         '--pass',
@@ -1512,7 +1516,7 @@ void main() {
         '--cert-type',
         'P12',
         '--cert',
-        '${fx('client.p12')}:pfxpass',
+        '${certArg(fx('client.p12'))}:pfxpass',
       ]);
     });
 
@@ -1563,7 +1567,12 @@ void main() {
   });
 
   group('curl against local servers', () {
-    final skip = curlAvailable ? null : 'curl is not installed';
+    // Windows' curl uses Schannel, which takes client certificates from the
+    // certificate store rather than PEM files, so these runs are Linux and
+    // macOS only; the arguments themselves are tested above.
+    final skip = !curlAvailable
+        ? 'curl is not installed'
+        : (Platform.isWindows ? 'Schannel curl' : null);
 
     test('custom CA, then client certificates in each form', () async {
       final server = await httpsServer();

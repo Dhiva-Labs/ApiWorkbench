@@ -159,32 +159,29 @@ class _CodeSnippetDialogState extends State<CodeSnippetDialog> {
 
   Widget _controls() => LayoutBuilder(
     builder: (context, box) {
-      final picker = DropdownMenu<CodeGenerator>(
-        key: const ValueKey('snippet-language'),
+      // A plain dropdown: DropdownMenu lays out every entry, invisibly, on
+      // top of its field to measure its width.
+      final picker = SizedBox(
         width: box.maxWidth.clamp(0, 320).toDouble(),
-        label: const Text('Language'),
-        initialSelection: _generator,
-        enableFilter: true,
-        requestFocusOnTap: true,
-        menuHeight: 320,
-        filterCallback: (entries, filter) {
-          final q = filter.trim().toLowerCase();
-          return [
-            for (final e in entries)
-              if (q.isEmpty ||
-                  '${e.label} ${e.value.keywords}'.toLowerCase().contains(q))
-                e,
-          ];
-        },
-        dropdownMenuEntries: [
-          for (final g in codeGenerators)
-            DropdownMenuEntry(value: g, label: g.label),
-        ],
-        onSelected: (g) {
-          if (g == null) return;
-          _lastLanguageId = g.id;
-          setState(() => _generator = g);
-        },
+        child: DropdownButtonFormField<CodeGenerator>(
+          key: const ValueKey('snippet-language'),
+          initialValue: _generator,
+          isExpanded: true,
+          menuMaxHeight: 360,
+          decoration: const InputDecoration(labelText: 'Language'),
+          items: [
+            for (final g in codeGenerators)
+              DropdownMenuItem(
+                value: g,
+                child: Text(g.label, overflow: TextOverflow.ellipsis),
+              ),
+          ],
+          onChanged: (g) {
+            if (g == null) return;
+            _lastLanguageId = g.id;
+            setState(() => _generator = g);
+          },
+        ),
       );
       final toggle = HelpHover(
         'Keep {{variables}} as written instead of filling in their current '

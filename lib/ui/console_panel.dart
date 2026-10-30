@@ -10,6 +10,7 @@ import '../state/app_state.dart';
 import '../state/console_log.dart';
 import '../theme.dart';
 import 'help_tip.dart';
+import 'adaptive.dart';
 
 /// Below this width the console uses the two-line phone layout.
 const _compactWidth = 560.0;
@@ -326,8 +327,12 @@ class _ConsolePanelState extends State<ConsolePanel> {
         title: f.label,
         child: ChoiceChip(
           key: Key('console-filter-${f.name}'),
-          visualDensity: VisualDensity.compact,
-          materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          visualDensity: isTouch(context)
+              ? VisualDensity.standard
+              : VisualDensity.compact,
+          materialTapTargetSize: isTouch(context)
+              ? MaterialTapTargetSize.padded
+              : MaterialTapTargetSize.shrinkWrap,
           padding: const EdgeInsets.symmetric(horizontal: 2),
           label: Text('${f.label} $n', style: const TextStyle(fontSize: 12)),
           selected: _filter == f,
@@ -406,7 +411,15 @@ class _ConsolePanelState extends State<ConsolePanel> {
       essential: true,
       child: IconButton(
         key: key,
-        visualDensity: VisualDensity.compact,
+        visualDensity: isTouch(context)
+            ? VisualDensity.standard
+            : VisualDensity.compact,
+        constraints: isTouch(context)
+            ? const BoxConstraints(
+                minWidth: minTouchTarget,
+                minHeight: minTouchTarget,
+              )
+            : null,
         iconSize: 20,
         isSelected: selected,
         color: Palette.textDim,
@@ -728,9 +741,14 @@ class _ExchangeTile extends StatelessWidget {
         children: [
           InkWell(
             onTap: onTap,
-            child: Padding(
-              padding: EdgeInsets.fromLTRB(indent, 6, 10, 6),
-              child: summary,
+            child: ConstrainedBox(
+              constraints: BoxConstraints(
+                minHeight: isTouch(context) ? minTouchTarget : 0,
+              ),
+              child: Padding(
+                padding: EdgeInsets.fromLTRB(indent, 6, 10, 6),
+                child: summary,
+              ),
             ),
           ),
           if (expanded)
@@ -1123,7 +1141,10 @@ class _LineTile extends StatelessWidget {
       decoration: _rowDecoration(tint: tint),
       child: InkWell(
         onTap: onTap,
-        child: Padding(
+        child: Container(
+          constraints: BoxConstraints(
+            minHeight: isTouch(context) ? minTouchTarget : 0,
+          ),
           padding: const EdgeInsets.fromLTRB(12, 6, 10, 6),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,

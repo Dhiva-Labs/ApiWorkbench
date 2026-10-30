@@ -4,15 +4,18 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:api_workbench/models/models.dart';
 import 'package:api_workbench/services/storage.dart';
 import 'package:api_workbench/state/app_state.dart';
+import 'support/temp_dir.dart';
 
 void main() {
   late Directory tmp;
   final storages = <Storage>[];
+  final states = <AppState>[];
 
   Future<AppState> loadedState(Directory dir) async {
     final storage = Storage(overrideDir: dir);
     storages.add(storage);
     final state = AppState(storage: storage);
+    states.add(state);
     while (!state.loaded) {
       await Future<void>.delayed(const Duration(milliseconds: 10));
     }
@@ -24,11 +27,17 @@ void main() {
   });
 
   tearDown(() async {
+    // Collection history and cookies write after a save; let them land so
+    // the folder isn't deleted under a file being renamed.
+    for (final s in states) {
+      await s.flushPending();
+    }
+    states.clear();
     for (final s in storages) {
       await s.flush();
     }
     storages.clear();
-    await tmp.delete(recursive: true);
+    await deleteTempDir(tmp);
   });
 
   test(

@@ -146,11 +146,12 @@ void main() {
       'requests run in parallel; transport errors reach the script',
       () async {
         final scopes = VarScopes(session: {'base': base});
-        final sw = Stopwatch()..start();
         final out = await engine.run([
           ScriptSource('''
           const b = pm.variables.get('base');
+          const t0 = Date.now();
           const all = await Promise.all([1, 2, 3].map(() => pm.sendRequest(b + '/slow')));
+          pm.variables.set('parallelMs', String(Date.now() - t0));
           pm.test('all', () => pm.expect(all.map(r => r.text())).to.deep.equal(['slow', 'slow', 'slow']));
           try {
             await pm.sendRequest('http://127.0.0.1:1/closed');
@@ -168,8 +169,10 @@ void main() {
           expect(t.pass, isTrue, reason: '${t.name}: ${t.error}');
         }
         expect(out.tests.length, 3);
+        // Timed inside the script: on Windows a refused connection to a
+        // closed localhost port takes about two seconds by itself.
         expect(
-          sw.elapsedMilliseconds,
+          int.parse(scopes.local['parallelMs']!),
           lessThan(2500),
           reason: 'not sequential',
         );
