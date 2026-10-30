@@ -76,6 +76,14 @@ mkdir -p "$PPA/usr/lib/apiworkbench" "$PPA/usr/bin" \
 cp -a "$PKG/debian" "$PPA/debian"
 sed -i "s/^Architecture: .*/Architecture: $DEB_ARCH/" "$PPA/debian/control"
 cp -a "$BUNDLE/." "$PPA/usr/lib/apiworkbench/"
+
+# The command-line runner ships next to the app, as in the GitHub .deb.
+say "Building apiworkbench-cli..."
+CLI_OUT="$REPO/build/cli/release-kit"
+(cd "$REPO" && tool/build_cli.sh "$CLI_OUT") || die "apiworkbench-cli build failed"
+# shellcheck source=tool/cli_bundle.sh
+. "$REPO/tool/cli_bundle.sh"
+install_cli "$CLI_OUT" "$PPA/usr/lib/apiworkbench" || die "could not add apiworkbench-cli"
 cp "$PKG/apiworkbench.desktop" "$PPA/usr/share/applications/"
 cp "$PKG/icons/apiworkbench-512.png" "$PPA/usr/share/icons/hicolor/512x512/apps/apiworkbench.png"
 cp "$PKG/icons/apiworkbench-256.png" "$PPA/usr/share/icons/hicolor/256x256/apps/apiworkbench.png"
@@ -88,10 +96,12 @@ cp -a "$PKG/snap/gui" "$SNAPKIT/snap/gui" 2>/dev/null || { mkdir -p "$SNAPKIT/sn
 mkdir -p "$SNAPKIT/bundle"
 cp -a "$BUNDLE/." "$SNAPKIT/bundle/"
 
-for so in libflutter_linux_gtk.so libapp.so; do
+# libquickjs_ffi.so runs pre-request and test scripts.
+for so in libflutter_linux_gtk.so libapp.so libquickjs_ffi.so; do
   [ -f "$PPA/usr/lib/apiworkbench/lib/$so" ] || die "staging is missing $so"
 done
-say "Staged OK: $OUT (both .so files present)"
+[ -x "$PPA/usr/lib/apiworkbench/apiworkbench-cli" ] || die "staging is missing apiworkbench-cli"
+say "Staged OK: $OUT (engine, app, script engine and CLI present)"
 
 if [ "$UPLOAD" = 1 ]; then
   say "Building signed source package (GPG passphrase expected)..."
