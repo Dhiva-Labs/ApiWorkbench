@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:api_workbench/models/models.dart';
@@ -66,6 +67,45 @@ void main() {
       expect(
         c.log.entries.any(
           (e) => e.text == 'Connected' && e.meta['sid'] == 'sio-1',
+        ),
+        isTrue,
+      );
+      c.close();
+    });
+
+    test('connects through the client the app provides', () async {
+      var built = 0;
+      final c = SocketIoConnection();
+      await c.connect(
+        SocketIoConfig(
+          origin: 'http://127.0.0.1:${server.port}',
+          clientFactory: () {
+            built++;
+            return HttpClient();
+          },
+        ),
+      );
+      await waitFor(() => c.state == LinkState.connected);
+      expect(built, 1);
+      c.close();
+    });
+
+    test('long polling falls back to WebSocket with a note', () async {
+      final c = SocketIoConnection();
+      await c.connect(
+        SocketIoConfig(
+          origin: 'http://127.0.0.1:${server.port}',
+          transports: SocketTransports.both.names,
+        ),
+      );
+      await waitFor(() => c.state == LinkState.connected);
+      expect(
+        server.handshakes.single.uri.queryParameters['transport'],
+        'websocket',
+      );
+      expect(
+        c.log.entries.any(
+          (e) => e.text.startsWith('Long polling is not available'),
         ),
         isTrue,
       );

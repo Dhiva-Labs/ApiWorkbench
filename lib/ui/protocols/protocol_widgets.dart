@@ -379,22 +379,45 @@ Future<void> saveOrAsk(
                 TextField(
                   controller: nameCtrl,
                   autofocus: true,
-                  decoration: const InputDecoration(labelText: 'Request name'),
+                  decoration: const InputDecoration(
+                    labelText: 'Request name',
+                    suffixIcon: HelpTip(
+                      'How this request is listed in its collection. You can '
+                      'rename it later by clicking its name.',
+                      title: 'Request name',
+                      example: 'Prices feed',
+                    ),
+                    suffixIconConstraints: BoxConstraints(
+                      minWidth: 32,
+                      minHeight: 32,
+                    ),
+                  ),
                 ),
                 const SizedBox(height: 16),
                 if (state.collections.isNotEmpty) ...[
-                  DropdownButtonFormField<String>(
-                    initialValue: selected,
-                    isExpanded: true,
-                    decoration: const InputDecoration(labelText: 'Collection'),
-                    items: [
-                      for (final c in state.collections)
-                        DropdownMenuItem(
-                          value: c.id,
-                          child: Text(c.name, overflow: TextOverflow.ellipsis),
-                        ),
-                    ],
-                    onChanged: (v) => setLocal(() => selected = v),
+                  HelpHover(
+                    'The collection to keep this request in. Collections group '
+                    'saved requests, for example one per API.',
+                    title: 'Collection',
+                    example: 'Shop API',
+                    child: DropdownButtonFormField<String>(
+                      initialValue: selected,
+                      isExpanded: true,
+                      decoration: const InputDecoration(
+                        labelText: 'Collection',
+                      ),
+                      items: [
+                        for (final c in state.collections)
+                          DropdownMenuItem(
+                            value: c.id,
+                            child: Text(
+                              c.name,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                      ],
+                      onChanged: (v) => setLocal(() => selected = v),
+                    ),
                   ),
                   const SizedBox(height: 12),
                 ],
@@ -866,14 +889,19 @@ class _HelpFieldState extends State<HelpField> {
           mainAxisSize: MainAxisSize.min,
           children: [
             if (widget.obscure)
-              IconButton(
-                iconSize: 18,
-                visualDensity: VisualDensity.compact,
-                tooltip: _hidden ? 'Show' : 'Hide',
-                icon: Icon(
-                  _hidden ? Icons.visibility_outlined : Icons.visibility_off,
+              HelpHover(
+                _hidden
+                    ? 'Show the text instead of dots.'
+                    : 'Hide the text behind dots again.',
+                title: _hidden ? 'Show' : 'Hide',
+                child: IconButton(
+                  iconSize: 18,
+                  visualDensity: VisualDensity.compact,
+                  icon: Icon(
+                    _hidden ? Icons.visibility_outlined : Icons.visibility_off,
+                  ),
+                  onPressed: () => setState(() => _hidden = !_hidden),
                 ),
-                onPressed: () => setState(() => _hidden = !_hidden),
               ),
             ?widget.trailing,
             HelpTip(widget.help, title: widget.label, example: widget.example),

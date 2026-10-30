@@ -513,8 +513,10 @@ class _HandshakeTabState extends State<_HandshakeTab> {
         label: 'Transports',
         help:
             'How the client talks to the server. WebSocket connects '
-            'directly. Long polling uses plain HTTP requests. Polling, then '
-            'upgrade starts with polling and switches to WebSocket.',
+            'directly. Long polling and Polling-then-upgrade are for '
+            'servers that allow only those; the Socket.IO client used here '
+            'speaks WebSocket only on desktop and mobile, so it connects '
+            'over WebSocket and says so in the log.',
         example: 'WebSocket',
         value: s.transports,
         items: {for (final t in SocketTransports.values) t: t.label},

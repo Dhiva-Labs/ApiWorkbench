@@ -4,6 +4,9 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:socket_io_client/socket_io_client.dart' as sio;
+// The client library's own WebSocket type; it is one of its dependencies.
+// ignore: depend_on_referenced_packages
+import 'package:web_socket/io_web_socket.dart' show IOWebSocket;
 
 import '../../models/models.dart';
 import '../request_builder.dart';
@@ -52,12 +55,17 @@ extension SocketTransportsInfo on SocketTransports {
     SocketTransports.both => 'Polling, then upgrade',
   };
 
+  /// The transports as the Socket.IO options name them.
   List<String> get names => switch (this) {
     SocketTransports.websocket => const ['websocket'],
     SocketTransports.polling => const ['polling'],
     SocketTransports.both => const ['polling', 'websocket'],
   };
 }
+
+/// The transports the client library can use on desktop and mobile: it speaks
+/// WebSocket only, so a request for polling is answered with WebSocket.
+const usableTransports = ['websocket'];
 
 /// What a Socket.IO request keeps in [RequestModel.protocolConfig].
 class SocketIoSettings {
@@ -354,12 +362,18 @@ class SocketIoConnection extends LiveConnection {
       'Connecting to ${config.target}',
       meta: {
         'path': config.path,
-        'transport': config.transports.join(', '),
+        'transport': 'websocket',
         if (config.namespace != '/') 'namespace': config.namespace,
       },
     );
+    if (config.transports.contains('polling')) {
+      note(
+        'Long polling is not available in this client on desktop and mobile; '
+        'connecting over WebSocket instead.',
+      );
+    }
     try {
-      _withClient(config.clientFactory, () => _start(config));
+      _start(config);
     } catch (e) {
       note('Could not connect: ${describeError(e)}', error: true);
       _teardown();
@@ -370,7 +384,7 @@ class SocketIoConnection extends LiveConnection {
   void _start(SocketIoConfig config) {
     final builder = sio.OptionBuilder()
         .setPath(config.path)
-        .setTransports(config.transports)
+        .setTransports(usableTransports)
         .disableAutoConnect()
         .enableForceNew()
         .setQuery(config.query);
@@ -383,6 +397,8 @@ class SocketIoConnection extends LiveConnection {
       builder.disableReconnection();
     }
     if (config.headers.isNotEmpty) builder.setExtraHeaders(config.headers);
+    final factory = config.clientFactory;
+    if (factory != null) builder.setWebSocketConnector(_connector(factory));
     final auth = config.auth;
     if (auth != null) builder.setAuth(auth);
     final socket = sio.io(config.target, builder.build());
@@ -571,13 +587,26 @@ class SocketIoConnection extends LiveConnection {
   }
 }
 
-T _withClient<T>(ClientFactory? factory, T Function() body) {
-  if (factory == null) return body();
-  // The override builds clients in the zone outside it, which has no override
-  // of its own; building them inside would recurse.
-  final outer = Zone.current;
-  return HttpOverrides.runZoned(
-    body,
-    createHttpClient: (_) => outer.run(factory),
-  );
-}
+/// Opens the WebSocket through a client from [factory], so the connection
+/// follows the app's proxy and TLS settings.
+Future<IOWebSocket> Function(
+  Uri uri, {
+  Iterable<String>? protocols,
+  Map<String, String>? headers,
+})
+_connector(ClientFactory factory) => (uri, {protocols, headers}) async {
+  final client = factory();
+  try {
+    final socket = await WebSocket.connect(
+      uri.toString(),
+      protocols: protocols,
+      headers: headers,
+      customClient: client,
+    );
+    socket.done.whenComplete(() => client.close(force: true)).ignore();
+    return IOWebSocket.fromWebSocket(socket);
+  } catch (_) {
+    client.close(force: true);
+    rethrow;
+  }
+};

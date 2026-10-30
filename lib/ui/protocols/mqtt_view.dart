@@ -76,14 +76,17 @@ class _MqttEditorState extends State<MqttEditor> {
     await _conn.connect(config);
   }
 
+  /// [topic] with variables filled in, as sent to the broker.
+  String _resolve(String topic) => substituteVars(
+    topic,
+    context.read<AppState>().varsFor(widget.tab.sourceCollectionId),
+  ).trim();
+
   /// Subscribes or unsubscribes [sub] on the open connection to match its
   /// switch.
   void _applySubscription(MqttSubscription sub) {
     if (!_conn.isConnected) return;
-    final vars = context.read<AppState>().varsFor(
-      widget.tab.sourceCollectionId,
-    );
-    final topic = substituteVars(sub.topic, vars).trim();
+    final topic = _resolve(sub.topic);
     try {
       if (sub.enabled) {
         _conn.subscribe(topic, sub.qos);
@@ -98,13 +101,20 @@ class _MqttEditorState extends State<MqttEditor> {
   /// Changes the QoS of a live subscription by subscribing again.
   void _resubscribe(MqttSubscription sub) {
     if (!_conn.isConnected || !sub.enabled) return;
-    final vars = context.read<AppState>().varsFor(
-      widget.tab.sourceCollectionId,
-    );
-    final topic = substituteVars(sub.topic, vars).trim();
+    final topic = _resolve(sub.topic);
     if (!_conn.subscribedTopics.contains(topic)) return;
     _conn.unsubscribe(topic);
     _applySubscription(sub);
+  }
+
+  /// Editing the topic of a live subscription drops the old one; the row then
+  /// offers to subscribe to the new text.
+  void _editTopic(MqttSubscription sub, String value) {
+    if (_conn.isConnected && sub.enabled) {
+      final old = _resolve(sub.topic);
+      if (_conn.subscribedTopics.contains(old)) _conn.unsubscribe(old);
+    }
+    sub.topic = value;
   }
 
   void _publish() {
@@ -176,6 +186,8 @@ class _MqttEditorState extends State<MqttEditor> {
             onChanged: _save,
             onApply: _applySubscription,
             onQosChanged: _resubscribe,
+            onTopicEdit: _editTopic,
+            resolve: _resolve,
           ),
         ),
         ProtocolTabSpec(
@@ -344,6 +356,8 @@ class _SubscribeTab extends StatefulWidget {
     required this.onChanged,
     required this.onApply,
     required this.onQosChanged,
+    required this.onTopicEdit,
+    required this.resolve,
   });
 
   final LiveSession<MqttConnection> session;
@@ -351,6 +365,8 @@ class _SubscribeTab extends StatefulWidget {
   final VoidCallback onChanged;
   final void Function(MqttSubscription) onApply;
   final void Function(MqttSubscription) onQosChanged;
+  final void Function(MqttSubscription, String) onTopicEdit;
+  final String Function(String) resolve;
 
   @override
   State<_SubscribeTab> createState() => _SubscribeTabState();
@@ -401,8 +417,9 @@ class _SubscribeTabState extends State<_SubscribeTab> {
   );
 
   Widget _row(MqttSubscription sub, MqttConnection conn, {Key? key}) {
-    final topic = sub.topic.trim();
+    final topic = widget.resolve(sub.topic);
     final live = conn.isConnected && conn.subscribedTopics.contains(topic);
+    final stale = conn.isConnected && sub.enabled && topic.isNotEmpty && !live;
     final count = conn.counts[topic] ?? 0;
     return Container(
       key: key,
@@ -442,7 +459,10 @@ class _SubscribeTabState extends State<_SubscribeTab> {
                   example: 'sensors/+/temp  or  home/#',
                   value: sub.topic,
                   mono: true,
-                  onChanged: (v) => _change(() => sub.topic = v),
+                  onChanged: (v) => _change(() => widget.onTopicEdit(sub, v)),
+                  onSubmitted: (_) {
+                    if (stale) widget.onApply(sub);
+                  },
                 ),
               ),
               HelpHover(
@@ -498,6 +518,16 @@ class _SubscribeTabState extends State<_SubscribeTab> {
                     ),
                   ),
                 ),
+                if (stale)
+                  HelpHover(
+                    'The topic was edited, so the old subscription was '
+                    'dropped. Subscribe to the topic as it is now.',
+                    title: 'Subscribe now',
+                    child: OutlinedButton(
+                      onPressed: () => widget.onApply(sub),
+                      child: const Text('Subscribe'),
+                    ),
+                  ),
               ],
             ),
           ),

@@ -222,6 +222,23 @@ void main() {
       c.close();
     });
 
+    test('connects through the client the app provides', () async {
+      var built = 0;
+      final c = WebSocketConnection();
+      await c.connect(
+        WebSocketConfig(
+          url: Uri.parse('ws://127.0.0.1:$port/echo'),
+          clientFactory: () {
+            built++;
+            return HttpClient();
+          },
+        ),
+      );
+      expect(c.state, LinkState.connected);
+      expect(built, 1);
+      c.close();
+    });
+
     test('sending while disconnected throws', () {
       final c = WebSocketConnection();
       expect(() => c.sendText('x'), throwsStateError);

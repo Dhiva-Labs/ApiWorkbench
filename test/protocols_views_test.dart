@@ -1,6 +1,12 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:api_workbench/models/models.dart';
+import 'package:api_workbench/services/protocols/mqtt_connection.dart';
+import 'package:api_workbench/services/protocols/socketio_connection.dart';
+import 'package:api_workbench/services/protocols/sse_connection.dart';
+import 'package:api_workbench/services/protocols/live_connection.dart';
+import 'package:api_workbench/services/protocols/websocket_connection.dart';
 import 'package:api_workbench/services/storage.dart';
 import 'package:api_workbench/state/app_state.dart';
 import 'package:api_workbench/theme.dart';
@@ -49,6 +55,47 @@ Future<(AppState, RequestTab)> pump(
 }
 
 void main() {
+  group('saved with the request', () {
+    test('every protocol keeps its settings through JSON', () {
+      final configs = {
+        RequestKind.websocket: WebSocketSettings(
+          subprotocols: 'chat',
+          pingSeconds: 10,
+          autoReconnect: true,
+          draft: 'hi',
+          messages: [SavedMessage(name: 'a', body: 'b')],
+        ).toJson(),
+        RequestKind.socketio: SocketIoSettings(
+          path: '/io',
+          auth: '{"t":1}',
+          catchAll: false,
+          emitEvent: 'ev',
+          listeners: [SocketListener(event: 'x', enabled: false)],
+        ).toJson(),
+        RequestKind.mqtt: MqttSettings(
+          clientId: 'id',
+          willEnabled: true,
+          willTopic: 't',
+          subscriptions: [MqttSubscription(topic: 'a/#', qos: 2)],
+        ).toJson(),
+        RequestKind.sse: SseSettings(defaultRetryMs: 99).toJson(),
+      };
+      for (final e in configs.entries) {
+        final r = RequestModel(
+          kind: e.key,
+          url: 'x://y',
+          protocolConfig: Map.of(e.value),
+        );
+        final back = RequestModel.fromJson(
+          jsonDecode(jsonEncode(r.toJson())) as Map<String, dynamic>,
+        );
+        expect(back.kind, e.key);
+        expect(back.protocolConfig, e.value, reason: e.key.name);
+        expect(r.clone().protocolConfig, e.value, reason: e.key.name);
+      }
+    });
+  });
+
   final kinds = {
     RequestKind.websocket: ['Message', 'Params', 'Headers', 'Settings'],
     RequestKind.socketio: ['Emit', 'Listen', 'Handshake', 'Params', 'Headers'],

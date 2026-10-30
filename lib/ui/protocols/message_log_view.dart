@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 
 import '../../services/protocols/message_log.dart';
@@ -80,9 +79,18 @@ class _MessageLogViewState extends State<MessageLogView> {
     _lastLength = log.length;
   }
 
-  void _toBottom() {
+  /// Jumps to the newest message. Rows differ in height, so the scroll extent
+  /// is only an estimate until they are laid out; a few passes settle it.
+  void _toBottom([int pass = 0]) {
     if (!mounted || !_scroll.hasClients) return;
-    _scroll.jumpTo(_scroll.position.maxScrollExtent);
+    final before = _scroll.position.maxScrollExtent;
+    _scroll.jumpTo(before);
+    if (pass < 3) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || !_scroll.hasClients || !v.autoScroll) return;
+        if (_scroll.position.maxScrollExtent != before) _toBottom(pass + 1);
+      });
+    }
   }
 
   void _copy(String text, String what) {
@@ -104,14 +112,12 @@ class _MessageLogViewState extends State<MessageLogView> {
         Expanded(
           child: shown.isEmpty
               ? _empty(filtering)
-              : NotificationListener<UserScrollNotification>(
+              : NotificationListener<ScrollUpdateNotification>(
                   onNotification: (n) {
                     // Scrolling up to read pauses auto-scroll.
-                    if (n.direction == ScrollDirection.forward &&
+                    if ((n.scrollDelta ?? 0) < 0 &&
                         v.autoScroll &&
-                        _scroll.hasClients &&
-                        _scroll.position.maxScrollExtent - _scroll.offset >
-                            40) {
+                        n.metrics.maxScrollExtent - n.metrics.pixels > 40) {
                       setState(() => v.autoScroll = false);
                     }
                     return false;
@@ -306,10 +312,10 @@ class _MessageLogViewState extends State<MessageLogView> {
             icon: const Icon(Icons.delete_sweep_outlined),
             onPressed: log.isEmpty
                 ? null
-                : () {
+                : () => setState(() {
                     v.expanded.clear();
                     log.clear();
-                  },
+                  }),
           ),
         ),
       ],

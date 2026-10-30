@@ -193,6 +193,23 @@ void main() {
       c.close();
     });
 
+    test('streams through the client the app provides', () async {
+      var built = 0;
+      final c = SseConnection();
+      await c.start(
+        SseConfig(
+          url: Uri.parse('http://127.0.0.1:$port/stream'),
+          clientFactory: () {
+            built++;
+            return HttpClient();
+          },
+        ),
+      );
+      await waitFor(() => c.log.entries.any((e) => e.text == 'plain'));
+      expect(built, 1);
+      c.close();
+    });
+
     test('sends request headers', () async {
       final c = SseConnection();
       await c.start(
