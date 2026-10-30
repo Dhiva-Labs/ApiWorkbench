@@ -1,3 +1,24 @@
+apiworkbench (1.4.0) noble; urgency=medium
+
+  * Scripts: pre-request and test scripts run with Postman's pm API on an
+    embedded QuickJS engine (pm.test, pm.expect, pm.sendRequest, variables,
+    visualizer, lodash, crypto-js, moment and more).
+  * Auth: OAuth 2.0 (browser sign-in, refresh), OAuth 1.0, Digest, NTLM,
+    AWS Signature v4, Hawk, Akamai EdgeGrid and JWT; auth inherited from
+    folders and collections.
+  * Cookie jar and manager, a Console of every request on the wire, proxy
+    and client certificate settings, per-request settings.
+  * WebSocket, Socket.IO, MQTT, Server-Sent Events and gRPC requests, and a
+    GraphQL schema explorer.
+  * Globals, initial and current variable values, secret variables, path
+    variables, bulk edit, response preview, find in body, saved examples.
+  * Postman export, OpenAPI and Swagger import and export, HAR import, code
+    snippets in 19 languages, CSV data files in the runner.
+  * New apiworkbench-cli command-line runner with JUnit and HTML reports.
+  * Collection docs (HTML or Markdown) and local version history.
+
+ -- Dhivakar R <dhivakar1010@gmail.com>  Sat, 31 Oct 2026 04:00:36 +0530
+
 apiworkbench (1.3.0) noble; urgency=medium
 
   * Hover help on every field, tab, button and badge: a card with a
