@@ -1,0 +1,27 @@
+// proto2 basics: labels, defaults, groups, packed and extensions.
+syntax = "proto2";
+
+package legacy;
+
+message Inventory {
+  required string name = 1;
+  optional int32 count = 2 [default = 10];
+  optional string label = 3 [default = "none"];
+  repeated int32 codes = 4;
+  repeated sint64 deltas = 5 [packed = true];
+  optional group Result = 6 {
+    required string url = 7;
+    optional string title = 8;
+  }
+  extensions 100 to 199;
+  optional Kind kind = 9 [default = BIG];
+
+  enum Kind {
+    SMALL = 1;
+    BIG = 2;
+  }
+}
+
+extend Inventory {
+  optional string extra = 100;
+}
