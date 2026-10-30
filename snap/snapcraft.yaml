@@ -12,31 +12,40 @@
 name: apiworkbench
 title: ApiWorkbench
 base: core22
-version: '1.3.1'
+version: '1.4.0'
 summary: API client for building, testing and load testing HTTP requests
 description: |
   ApiWorkbench is a fast, keyboard-friendly API client in the spirit of
   Postman.
 
   - Request tabs and a full request builder: every HTTP method including
-    QUERY, params, headers, JSON / XML / form / multipart / file / GraphQL
-    bodies, Bearer / Basic / API-key auth
-  - Environments with {{variables}}, collections and request history
-  - Response assertions and a collection runner with recurring and
-    data-driven runs
-  - Load testing: hit one request or a whole collection with up to 1,000
-    parallel users, for a number of iterations, a duration, or until you
-    stop it, with live throughput and p50/p95/p99 latency; every call can
-    be logged with its response and saved as an HTML, CSV or JSON report
-  - Postman import: collections (v1, v2.0, v2.1), environments, globals and
-    data exports, into a new or an existing collection, with folders,
-    variables, auth and checks carried over
-  - Captures: save response values into variables for later requests
-  - Teal light/dark and Graphite and orange themes
-  - Hover help on every field, tab and button, with examples (can be
-    turned off), and a phone-friendly layout
-  - cURL import/export, workspace import/export, Markdown docs export
-  - HTTP/1.1 and HTTP/2, self-signed certificate support
+    QUERY, path variables, params, headers, bulk edit, JSON / XML / form /
+    multipart / file / GraphQL bodies
+  - Auth: Bearer, Basic, API key, OAuth 2.0 (browser sign-in, refresh),
+    OAuth 1.0, Digest, NTLM, AWS Signature v4, Hawk, Akamai EdgeGrid and
+    JWT, inherited from folders and collections
+  - Pre-request and test scripts with Postman's pm API (chai, lodash,
+    crypto-js, moment, pm.sendRequest, visualizer)
+  - Environments, Globals, collection variables, initial and current
+    values, secret variables
+  - Cookie jar and manager, a Console of every request on the wire, proxy
+    and client certificate (mTLS) settings, per-request settings
+  - WebSocket, Socket.IO, MQTT, Server-Sent Events and gRPC (reflection
+    or .proto files) requests
+  - GraphQL schema explorer with field suggestions
+  - Response preview (HTML, images, SVG, PDF), find in body, save to file,
+    saved examples
+  - Postman import and export, OpenAPI / Swagger import and export, HAR
+    import, workspace import and export
+  - Code snippets in 19 languages and cURL import
+  - Collection runner with CSV and JSON data files, and the apiworkbench.cli
+    command-line runner with JUnit and HTML reports
+  - Load testing with up to 1,000 parallel users, live p50/p95/p99 latency
+    and HTML, CSV or JSON reports
+  - Collection docs (HTML or Markdown) and local version history
+  - HTTP/1.1, HTTP/2 and HTTP/3, self-signed certificate support
+  - Teal light/dark and Graphite and orange themes, hover help on every
+    field, a phone-friendly layout
   - Chaos Mode: a sound per status code, confetti and screen shake
 
   A Dhiva Labs project.
