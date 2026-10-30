@@ -72,7 +72,7 @@ class _SseEditorState extends State<SseEditor> {
     final post = req.method.toUpperCase() == 'POST';
     return HelpHover(
       'GET opens the stream with a plain request. POST sends a body first, '
-      'which some streaming APIs (such as AI chat completions) require.',
+      'which some streaming APIs (such as chat completion endpoints) require.',
       title: 'Method',
       example: 'POST with a JSON body',
       child: Container(
