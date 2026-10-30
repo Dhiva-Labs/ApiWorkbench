@@ -4,8 +4,27 @@ import '../models/models.dart';
 import 'curl.dart';
 
 /// Builds a shareable Markdown document from a request + its response,
-/// for API documentation. Secrets (Authorization, API keys) are masked.
-String buildMarkdownDoc(RequestModel r, ResponseData res) {
+/// for API documentation. Secrets (Authorization, API keys, and any of
+/// [secrets], the values of secret variables) are masked.
+String buildMarkdownDoc(
+  RequestModel r,
+  ResponseData res, {
+  Set<String> secrets = const {},
+}) => maskSecrets(_buildMarkdownDoc(r, res), secrets);
+
+/// [text] with every occurrence of [secrets] replaced by a mask. Values
+/// shorter than 4 characters are left alone (they would mask too much).
+String maskSecrets(String text, Set<String> secrets) {
+  var out = text;
+  final sorted = secrets.where((s) => s.length >= 4).toList()
+    ..sort((a, b) => b.length.compareTo(a.length));
+  for (final s in sorted) {
+    out = out.replaceAll(s, _mask);
+  }
+  return out;
+}
+
+String _buildMarkdownDoc(RequestModel r, ResponseData res) {
   final b = StringBuffer();
   final title = r.name == 'Untitled request' ? r.url : r.name;
   b.writeln('# $title\n');

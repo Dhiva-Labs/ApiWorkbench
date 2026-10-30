@@ -108,6 +108,22 @@ class AppState extends ChangeNotifier {
 
   Map<String, String> get activeVars => kvMap(activeEnvironment?.variables);
 
+  /// Values of every secret variable (globals, collections,
+  /// environments), initial and current, for masking in the console, docs
+  /// and exports.
+  Set<String> get secretValues => {
+    for (final list in [
+      globals,
+      for (final c in collections) c.variables,
+      for (final e in environments) e.variables,
+    ])
+      for (final v in list)
+        if (v.secret) ...[
+          if (v.value.isNotEmpty) v.value,
+          if ((v.current ?? '').isNotEmpty) v.current!,
+        ],
+  };
+
   /// Values captured by requests outside any collection while no
   /// environment is active; kept for this session only.
   final Map<String, String> sessionVars = {};
