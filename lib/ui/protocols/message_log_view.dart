@@ -444,7 +444,7 @@ class _EntryTile extends StatelessWidget {
                         ),
                       for (final m in e.meta.entries)
                         _Chip('${m.key} ${m.value}', Palette.textDim),
-                      if (e.direction != Direction.system || e.size > 0)
+                      if (e.direction != Direction.system)
                         Text(
                           formatSize(e.size),
                           style: TextStyle(

@@ -139,9 +139,7 @@ class LogEntry {
     for (final e in meta.entries) {
       head.write(' ${e.key}=${e.value}');
     }
-    if (direction != Direction.system || size > 0) {
-      head.write(' ($size B)');
-    }
+    if (direction != Direction.system) head.write(' ($size B)');
     final payload = body(format);
     return payload.isEmpty ? head.toString() : '$head\n$payload';
   }

@@ -114,6 +114,80 @@ void main() {
     '1280x800': const Size(1280, 800),
   };
 
+  // Editors with plenty of saved content, long text and every optional
+  // section switched on.
+  final long = 'A fairly long value that has to wrap or be cut: ' * 4;
+  final busy = <RequestKind, Map<String, dynamic>>{
+    RequestKind.websocket: WebSocketSettings(
+      subprotocols: long,
+      pingSeconds: 30,
+      autoReconnect: true,
+      compose: PayloadKind.json,
+      draft: '{"a": 1}\n' * 12,
+      messages: [
+        for (var i = 0; i < 4; i++)
+          SavedMessage(name: 'Saved message number $i $long', body: long),
+      ],
+    ).toJson(),
+    RequestKind.socketio: SocketIoSettings(
+      auth: '{"token": "$long"}',
+      catchAll: false,
+      emitEvent: 'event $long',
+      wantAck: true,
+      listeners: [
+        for (var i = 0; i < 4; i++)
+          SocketListener(event: 'listener $i $long', enabled: i.isEven),
+      ],
+      args: [
+        for (var i = 0; i < 3; i++)
+          SocketArg(
+            kind: i == 1 ? SocketArgKind.text : SocketArgKind.json,
+            body: '{"n": $i}\n' * 5,
+          ),
+      ],
+    ).toJson(),
+    RequestKind.mqtt: MqttSettings(
+      clientId: long,
+      username: long,
+      willEnabled: true,
+      willTopic: long,
+      willPayload: long,
+      pubTopic: long,
+      pubPayload: long,
+      subscriptions: [
+        for (var i = 0; i < 4; i++)
+          MqttSubscription(topic: 'sensors/$i/$long', qos: i % 3),
+      ],
+    ).toJson(),
+    RequestKind.sse: SseSettings(showComments: true).toJson(),
+  };
+  for (final kind in busy.keys) {
+    for (final entry in sizes.entries) {
+      testWidgets('${kind.label} editor with content fits at ${entry.key}', (
+        tester,
+      ) async {
+        final req = newRequestOfKind(kind)
+          ..method = kind == RequestKind.sse ? 'POST' : 'GET'
+          ..body = long
+          ..headers = [KV(key: 'X-Long-Header-Name-$long', value: long)]
+          ..params = [KV(key: 'param-$long', value: long)]
+          ..protocolConfig = Map.of(busy[kind]!);
+        await pump(tester, req, entry.value);
+        for (final label in kinds[kind]!) {
+          final tabFinder = find.descendant(
+            of: find.byType(TabBar),
+            matching: find.textContaining(label),
+          );
+          await tester.ensureVisible(tabFinder.first);
+          await tester.pumpAndSettle();
+          await tester.tap(tabFinder.first);
+          await tester.pumpAndSettle();
+          expect(tester.takeException(), isNull, reason: 'tab $label');
+        }
+      });
+    }
+  }
+
   for (final kind in kinds.keys) {
     for (final entry in sizes.entries) {
       testWidgets('${kind.label} editor fits at ${entry.key}', (tester) async {

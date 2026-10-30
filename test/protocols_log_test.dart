@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'dart:typed_data';
 
 import 'package:api_workbench/services/protocols/message_log.dart';
 import 'package:api_workbench/theme.dart';
