@@ -98,7 +98,16 @@ class HttpService {
         // Cronet (Android) / NSURLSession (iOS, macOS) negotiate HTTP/3
         // themselves and fall back to h2/h1 per server support. Desktop
         // requests go to the curl engine; this adapter covers the rest.
-        dio.httpClientAdapter = _platformHasNativeH3 ? NativeAdapter() : h1();
+        // The platform stacks ignore our proxy, CA, client certificates and
+        // "don't verify", so those settings fall back to HTTP/1.1.
+        final custom =
+            !key.verifySsl ||
+            key.clientCertId != null ||
+            net.proxyMode == ProxyMode.custom ||
+            net.caCertPath.isNotEmpty;
+        dio.httpClientAdapter = _platformHasNativeH3 && !custom
+            ? NativeAdapter()
+            : h1();
     }
     return dio;
   });

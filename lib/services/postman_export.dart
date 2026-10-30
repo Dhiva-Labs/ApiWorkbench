@@ -468,7 +468,9 @@ Map<String, dynamic>? _auth(AuthConfig a) {
     default:
       type = a.type.postmanName;
   }
-  attrs.addAll(a.params);
+  // The saved-token list is ApiWorkbench's own token history; Postman keeps
+  // its tokens outside the collection, so it stays local.
+  attrs.addAll(Map.of(a.params)..remove('savedTokens'));
   return {
     'type': type,
     type: [for (final e in attrs.entries) _attribute(e.key, e.value)],

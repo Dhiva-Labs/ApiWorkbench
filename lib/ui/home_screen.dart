@@ -82,6 +82,8 @@ class HomeScreen extends StatelessWidget {
             _quickSave(context, state),
         const SingleActivator(LogicalKeyboardKey.keyO, control: true): () =>
             showImportDialog(context),
+        const SingleActivator(LogicalKeyboardKey.keyF, control: true): () =>
+            responseFindRequests.value++,
       },
       child: FocusScope(
         autofocus: true,

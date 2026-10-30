@@ -54,6 +54,10 @@ class ResponseView extends StatefulWidget {
   State<ResponseView> createState() => _ResponseViewState();
 }
 
+/// Bumped by the window-wide Ctrl+F so the visible response opens its find
+/// bar wherever the focus is.
+final responseFindRequests = ValueNotifier<int>(0);
+
 class _ResponseViewState extends State<ResponseView> {
   RequestTab get tab => widget.tab;
   ResponseData? get response => widget.response;
@@ -78,7 +82,14 @@ class _ResponseViewState extends State<ResponseView> {
   bool _showFull = false;
 
   @override
+  void initState() {
+    super.initState();
+    responseFindRequests.addListener(_openFind);
+  }
+
+  @override
   void dispose() {
+    responseFindRequests.removeListener(_openFind);
     _find.dispose();
     _paneFocus.dispose();
     super.dispose();

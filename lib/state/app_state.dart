@@ -183,6 +183,14 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Writes everything that is saved lazily (cookies, collection history,
+  /// queued files). Called when the app is hidden or about to exit.
+  Future<void> flushPending() => Future.wait([
+    cookies.flush(),
+    collectionHistory.flush(),
+    _storage.flush(),
+  ]);
+
   /// Lets UI trigger a rebuild after mutating owned services (sound library).
   void notifyRefresh() => notifyListeners();
 
@@ -416,11 +424,18 @@ class AppState extends ChangeNotifier {
     if (tab == null) return;
     if (name != null && name.isNotEmpty) tab.request.name = name;
 
-    // Remove any older copy from all collections, then insert the new one.
+    // Replace the saved copy where it is, so saving keeps the request's
+    // place in the collection; remove copies from other collections.
+    final saved = tab.request.clone(sameId: true);
+    final at = collection.requests.indexWhere((r) => r.id == saved.id);
     for (final c in collections) {
-      c.requests.removeWhere((r) => r.id == tab.request.id);
+      if (c != collection) c.requests.removeWhere((r) => r.id == saved.id);
     }
-    collection.requests.add(tab.request.clone(sameId: true));
+    if (at >= 0) {
+      collection.requests[at] = saved;
+    } else {
+      collection.requests.add(saved);
+    }
     tab.sourceCollectionId = collection.id;
     tab.dirty = false;
     _persistCollections();
