@@ -2,6 +2,23 @@ import 'dart:convert';
 
 import '../../models/models.dart';
 import '../request_builder.dart';
+import 'aws_sigv4.dart';
+import 'digest.dart';
+import 'edgegrid.dart';
+import 'hawk.dart';
+import 'jwt.dart';
+import 'ntlm.dart';
+import 'oauth1.dart';
+import 'oauth2.dart';
+
+export 'aws_sigv4.dart' show AwsSigV4;
+export 'digest.dart' show DigestAuth;
+export 'edgegrid.dart' show EdgeGridAuth;
+export 'hawk.dart' show HawkAuth;
+export 'jwt.dart' show JwtAuth;
+export 'ntlm.dart' show NtlmAuth, NtlmChallenge, md4;
+export 'oauth1.dart' show OAuth1Auth;
+export 'oauth2.dart' show OAuth2, OAuth2Grant, OAuth2Token, OAuth2Redirect;
 
 /// Auth could not be applied (missing field, token fetch failed, ...).
 class AuthException implements Exception {
@@ -20,7 +37,8 @@ class AuthContext {
     this.sendRaw,
     this.onUpdated,
     this.offline = false,
-  });
+    DateTime Function()? clock,
+  }) : _clock = clock ?? DateTime.now;
 
   /// Variables for {{substitution}} in auth fields.
   final Map<String, String> vars;
@@ -39,8 +57,13 @@ class AuthContext {
   /// True for code snippets: never touch the network or block on a user.
   final bool offline;
 
+  final DateTime Function() _clock;
+
   /// Scratch space kept for one send, e.g. a challenge's state.
   final Map<String, Object?> state = {};
+
+  /// The time signatures and token expiry use (fixed in tests).
+  DateTime now() => _clock();
 
   String resolve(String s) => substituteVars(s, vars);
 
@@ -62,12 +85,26 @@ AuthConfig resolveAuth(RequestModel r, CollectionModel? c) {
   return c.auth.type == AuthType.inherit ? AuthConfig() : c.auth;
 }
 
-/// Adds [auth] to [p] before it is sent.
+/// Adds [auth] to [p] before it is sent. Signers see the final method,
+/// URL, headers and body bytes, so this runs last.
+///
+/// Throws [AuthException] only: a crypto library error (say, a key too
+/// small for RSA-PSS) is reported the same way instead of failing the send.
 Future<void> applyAuth(
   PreparedRequest p,
   AuthConfig auth,
   AuthContext ctx,
 ) async {
+  try {
+    await _apply(p, auth, ctx);
+  } on AuthException {
+    rethrow;
+  } catch (e) {
+    throw AuthException('${auth.type.label} could not be applied: $e');
+  }
+}
+
+Future<void> _apply(PreparedRequest p, AuthConfig auth, AuthContext ctx) async {
   switch (auth.type) {
     case AuthType.none || AuthType.inherit:
       break;
@@ -89,16 +126,22 @@ Future<void> applyAuth(
       } else {
         p.url = appendQuery(p.url, k, v);
       }
-    case AuthType.oauth2 ||
-        AuthType.oauth1 ||
-        AuthType.digest ||
-        AuthType.awsV4 ||
-        AuthType.ntlm ||
-        AuthType.hawk ||
-        AuthType.edgegrid ||
-        AuthType.jwt:
-      // Implemented by the auth schemes (issues #6, #7, #8).
-      break;
+    case AuthType.oauth2:
+      await OAuth2.apply(p, auth, ctx);
+    case AuthType.oauth1:
+      OAuth1Auth.apply(p, auth, ctx);
+    case AuthType.digest:
+      DigestAuth.apply(p, auth, ctx);
+    case AuthType.awsV4:
+      AwsSigV4.apply(p, auth, ctx);
+    case AuthType.ntlm:
+      NtlmAuth.apply(p, auth, ctx);
+    case AuthType.hawk:
+      HawkAuth.apply(p, auth, ctx);
+    case AuthType.edgegrid:
+      EdgeGridAuth.apply(p, auth, ctx);
+    case AuthType.jwt:
+      JwtAuth.apply(p, auth, ctx);
   }
 }
 
@@ -110,7 +153,19 @@ Future<PreparedRequest?> retryAfterChallenge(
   ResponseData res,
   AuthConfig auth,
   AuthContext ctx,
-) async => null;
+) async {
+  if (ctx.offline) return null;
+  try {
+    return switch (auth.type) {
+      AuthType.digest => DigestAuth.retry(sent, res, auth, ctx),
+      AuthType.ntlm => NtlmAuth.retry(sent, res, auth, ctx),
+      _ => null,
+    };
+  } catch (_) {
+    // A challenge we can't answer: the 401 is the answer.
+    return null;
+  }
+}
 
 /// [url] with `key=value` appended to its query, keeping what is there.
 Uri appendQuery(Uri url, String key, String value) {
