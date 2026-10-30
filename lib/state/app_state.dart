@@ -1,12 +1,19 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 
 import '../models/models.dart';
-import '../services/assertions.dart';
-import '../services/captures.dart';
+import '../services/cookie_store.dart';
+import '../services/executor.dart';
 import '../services/http_service.dart';
+import '../services/scripting/engine_factory.dart';
+import '../services/scripting/script_engine.dart';
 import '../services/sound_service.dart';
 import '../services/storage.dart';
+import '../services/var_scopes.dart';
+import '../services/version_history.dart';
 import '../ui/help_tip.dart';
+import 'console_log.dart';
 
 /// One open editor tab: a working copy of a request plus its latest response.
 class RequestTab {
@@ -17,8 +24,24 @@ class RequestTab {
   String? sourceCollectionId; // set when the tab was opened from a collection
   ResponseData? response;
   List<AssertionResult> assertionResults = [];
+
+  /// `pm.test` results and the script failure of the last send, if any.
+  List<ScriptTestResult> scriptTests = [];
+  String? scriptError;
+
+  /// `pm.visualizer.set` output of the last send.
+  VisualizerOutput? visualizer;
   bool loading = false;
   bool dirty = false;
+
+  /// Live connection of a non-HTTP tab (WebSocket, MQTT, ...). Owned and
+  /// disposed by that protocol's view; closed when the tab closes.
+  Object? session;
+}
+
+/// A protocol session that must be closed with its tab.
+abstract interface class TabSession {
+  void close();
 }
 
 class AppState extends ChangeNotifier {
@@ -31,6 +54,16 @@ class AppState extends ChangeNotifier {
   final Storage _storage;
   final HttpService http = HttpService();
 
+  /// Script engine for this platform; null when none is available.
+  final ScriptEngine? scripts = createScriptEngine();
+  late final RequestExecutor executor = RequestExecutor(http, engine: scripts);
+  late final PersistentCookieJar cookies = PersistentCookieJar(_storage);
+  late final CollectionHistory collectionHistory = CollectionHistory(_storage);
+
+  /// Every exchange and script line, for the console panel.
+  final ConsoleLog console = ConsoleLog();
+  StreamSubscription<Object>? _exchangeSub;
+
   /// Injected in tests so the sound library lives in a temp directory.
   final SoundService sounds;
 
@@ -40,7 +73,13 @@ class AppState extends ChangeNotifier {
   @override
   void dispose() {
     _disposed = true;
+    _exchangeSub?.cancel();
+    for (final t in tabs) {
+      _closeSession(t);
+    }
     http.dispose();
+    scripts?.dispose();
+    console.dispose();
     tabs.clear();
     super.dispose();
   }
@@ -50,6 +89,9 @@ class AppState extends ChangeNotifier {
 
   List<CollectionModel> collections = [];
   List<EnvironmentModel> environments = [];
+
+  /// The Globals scope: seen by every request, lowest precedence.
+  List<KV> globals = [];
   String? activeEnvironmentId;
   List<HistoryEntry> history = [];
   AppSettings settings = AppSettings();
@@ -64,10 +106,7 @@ class AppState extends ChangeNotifier {
     return null;
   }
 
-  Map<String, String> get activeVars => {
-    for (final v in activeEnvironment?.variables ?? <KV>[])
-      if (v.enabled && v.key.isNotEmpty) v.key: v.value,
-  };
+  Map<String, String> get activeVars => kvMap(activeEnvironment?.variables);
 
   /// Values captured by requests outside any collection while no
   /// environment is active; kept for this session only.
@@ -81,41 +120,32 @@ class AppState extends ChangeNotifier {
     return null;
   }
 
-  /// Variables for a request: collection variables, then session captures,
-  /// then the active environment (highest), matching Postman's scope order.
-  Map<String, String> varsFor(String? collectionId) => {
-    ...?collectionById(collectionId)?.variableMap,
-    ...sessionVars,
-    ...activeVars,
-  };
+  /// Live variable scopes for a request in [collectionId] (or none).
+  VarScopes scopesFor(String? collectionId) => VarScopes(
+    globals: globals,
+    collection: collectionById(collectionId)?.variables,
+    environment: activeEnvironment?.variables,
+    session: sessionVars,
+  );
 
-  /// Stores captured values where later requests will see them: the active
-  /// environment if one is selected, else the request's collection, else the
-  /// session.
-  void _storeCaptures(Map<String, String> values, String? collectionId) {
-    if (values.isEmpty) return;
-    final env = activeEnvironment;
-    final col = collectionById(collectionId);
-    final target = env?.variables ?? col?.variables;
-    if (target == null) {
-      sessionVars.addAll(values);
-      return;
-    }
-    values.forEach((k, v) {
-      final row = target.where((x) => x.key == k).firstOrNull;
-      if (row != null) {
-        row
-          ..value = v
-          ..enabled = true;
-      } else {
-        target.add(KV(key: k, value: v));
-      }
-    });
-    if (env != null) {
+  /// Variables for a request: globals, collection, session captures, then
+  /// the active environment (highest), matching Postman's scope order.
+  Map<String, String> varsFor(String? collectionId) =>
+      scopesFor(collectionId).resolve();
+
+  /// Saves what an execution changed (variables) and logs its script
+  /// output. Used by the editor and the runner.
+  void absorb(VarScopes scopes, ExecResult result) {
+    if (scopes.environmentChanged) {
       _storage.saveEnvironments(environments, activeEnvironmentId);
-    } else {
-      _storage.saveCollections(collections);
     }
+    if (scopes.collectionChanged) _storage.saveCollections(collections);
+    if (scopes.globalsChanged) _storage.saveGlobals(globals);
+    scopes
+      ..environmentChanged = false
+      ..collectionChanged = false
+      ..globalsChanged = false;
+    console.addLines(result.logs);
   }
 
   Future<void> _init() async {
@@ -124,7 +154,11 @@ class AppState extends ChangeNotifier {
     environments = envs;
     activeEnvironmentId = activeId;
     history = await _storage.loadHistory();
+    globals = await _storage.loadGlobals();
     settings = await _storage.loadSettings();
+    await cookies.load();
+    http.cookieJar = cookies;
+    _exchangeSub = http.exchanges.listen(console.addExchange);
     hoverHelpEnabled.value = settings.hoverHelp;
     if (_disposed) return;
     http.configure(settings);
@@ -164,6 +198,23 @@ class AppState extends ChangeNotifier {
     }
     notifyListeners();
     return (cols.length, envs.length);
+  }
+
+  /// Adds imported globals; an existing name gets the imported value.
+  int mergeGlobals(List<KV> imported) {
+    for (final v in imported) {
+      if (v.key.isEmpty) continue;
+      globals.removeWhere((x) => x.key == v.key);
+      globals.add(v);
+    }
+    if (imported.isNotEmpty) updateGlobals();
+    return imported.length;
+  }
+
+  /// Persists after editing [globals] in place.
+  void updateGlobals() {
+    _storage.saveGlobals(globals);
+    notifyListeners();
   }
 
   /// Adds imported requests into an existing collection instead of creating
@@ -227,8 +278,15 @@ class AppState extends ChangeNotifier {
     newTab(r.clone(sameId: true), collectionId);
   }
 
+  void _closeSession(RequestTab t) {
+    final session = t.session;
+    if (session is TabSession) session.close();
+    t.session = null;
+  }
+
   void closeTab(int index) {
     http.cancel(tabs[index].id);
+    _closeSession(tabs[index]);
     tabs.removeAt(index);
     if (tabs.isEmpty) {
       newTab();
@@ -255,26 +313,38 @@ class AppState extends ChangeNotifier {
   Future<void> sendActive() async {
     final tab = activeTab;
     if (tab == null || tab.loading) return;
+    if (tab.request.kind != RequestKind.http) return; // protocols connect
     tab.loading = true;
     tab.response = null;
     tab.assertionResults = [];
+    tab.scriptTests = [];
+    tab.scriptError = null;
+    tab.visualizer = null;
     notifyListeners();
 
-    final res = await http.send(
+    final collection = collectionById(tab.sourceCollectionId);
+    final scopes = scopesFor(tab.sourceCollectionId);
+    final result = await executor.execute(
       tab.request,
-      varsFor(tab.sourceCollectionId),
-      tabId: tab.id,
+      ExecContext(
+        scopes: scopes,
+        collection: collection,
+        tabId: tab.id,
+        onAuthUpdated: () {
+          if (collection != null) _storage.saveCollections(collections);
+          tab.dirty = true;
+        },
+      ),
     );
     if (_disposed || !tabs.contains(tab)) return;
+    final res = result.response;
     tab.loading = false;
     tab.response = res;
-    tab.assertionResults = evaluateAssertions(tab.request, res);
-    if (res.error == null && tab.request.captures.isNotEmpty) {
-      _storeCaptures(
-        captureValues(tab.request.captures, res),
-        tab.sourceCollectionId,
-      );
-    }
+    tab.assertionResults = result.assertions;
+    tab.scriptTests = result.scriptTests;
+    tab.scriptError = result.scriptError;
+    tab.visualizer = result.visualizer;
+    absorb(scopes, result);
 
     if (settings.chaosMode) {
       // Fire and forget — a missing player must never block the response.
@@ -288,7 +358,7 @@ class AppState extends ChangeNotifier {
     history.insert(
       0,
       HistoryEntry(
-        request: tab.request.clone(),
+        request: tab.request.clone()..examples = [],
         statusCode: res.statusCode,
         durationMs: res.durationMs,
         at: DateTime.now(),
@@ -356,6 +426,7 @@ class AppState extends ChangeNotifier {
 
   void _persistCollections() {
     _storage.saveCollections(collections);
+    collectionHistory.record(collections);
     notifyListeners();
   }
 

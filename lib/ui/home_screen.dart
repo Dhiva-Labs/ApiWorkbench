@@ -8,10 +8,14 @@ import '../theme.dart';
 import 'adaptive.dart';
 import 'app_menu.dart';
 import 'chaos_effects.dart';
+import 'console_panel.dart';
+import 'cookies_dialog.dart';
+import 'export_dialog.dart';
 import 'help_tip.dart';
 import 'import_dialog.dart';
 import 'logo.dart';
 import 'mode_toggle.dart';
+import 'protocols/protocol_view.dart';
 import 'request_editor.dart';
 import 'response_view.dart';
 import 'sidebar.dart';
@@ -103,6 +107,7 @@ class _DesktopLayout extends StatefulWidget {
 class _DesktopLayoutState extends State<_DesktopLayout> {
   SidebarSection _section = SidebarSection.collections;
   bool _panelOpen = true;
+  bool _consoleOpen = false;
 
   // Drag state lives in notifiers so a drag rebuilds only the sized boxes,
   // not the side panel, editor and response (a large response would make
@@ -130,18 +135,29 @@ class _DesktopLayoutState extends State<_DesktopLayout> {
   Widget build(BuildContext context) {
     final state = context.watch<AppState>();
     final tab = state.activeTab!;
+    final http = tab.request.kind == RequestKind.http;
     final editor = ColoredBox(
       color: Palette.surface,
-      child: RequestEditor(key: ValueKey(tab.id), tab: tab),
+      child: http
+          ? RequestEditor(key: ValueKey(tab.id), tab: tab)
+          : ProtocolEditor(key: ValueKey(tab.id), tab: tab),
     );
     final response = ColoredBox(
       color: Palette.surface,
-      child: _responseArea(state, tab),
+      child: http
+          ? _responseArea(state, tab)
+          : ProtocolMessages(key: ValueKey('${tab.id}-log'), tab: tab),
     );
     return Scaffold(
       body: Row(
         children: [
-          _NavRail(section: _section, panelOpen: _panelOpen, onSelect: _select),
+          _NavRail(
+            section: _section,
+            panelOpen: _panelOpen,
+            onSelect: _select,
+            consoleOpen: _consoleOpen,
+            onToggleConsole: () => setState(() => _consoleOpen = !_consoleOpen),
+          ),
           if (_panelOpen) ...[
             ValueListenableBuilder<double>(
               valueListenable: _panelWidth,
@@ -206,6 +222,18 @@ class _DesktopLayoutState extends State<_DesktopLayout> {
                     ),
                   ),
                 ),
+                if (_consoleOpen) ...[
+                  Divider(height: 1, color: Palette.border),
+                  SizedBox(
+                    height: 220,
+                    child: ColoredBox(
+                      color: Palette.surface,
+                      child: ConsolePanel(
+                        onClose: () => setState(() => _consoleOpen = false),
+                      ),
+                    ),
+                  ),
+                ],
               ],
             ),
           ),
@@ -244,11 +272,15 @@ class _NavRail extends StatelessWidget {
     required this.section,
     required this.panelOpen,
     required this.onSelect,
+    required this.consoleOpen,
+    required this.onToggleConsole,
   });
 
   final SidebarSection section;
   final bool panelOpen;
   final ValueChanged<SidebarSection> onSelect;
+  final bool consoleOpen;
+  final VoidCallback onToggleConsole;
 
   @override
   Widget build(BuildContext context) {
@@ -294,6 +326,25 @@ class _NavRail extends StatelessWidget {
             ),
           const Spacer(),
           _RailItem(
+            icon: Icons.terminal,
+            label: 'Console',
+            tooltip: 'Console',
+            help:
+                'Every request and response on the wire, redirects '
+                'included, plus console.log output from scripts.',
+            selected: consoleOpen,
+            onTap: onToggleConsole,
+          ),
+          _RailItem(
+            icon: Icons.cookie_outlined,
+            label: 'Cookies',
+            tooltip: 'Cookies',
+            help:
+                'The cookie jar: cookies servers set, sent back to them on '
+                'later requests. Browse, edit or delete them.',
+            onTap: () => showCookieManager(context),
+          ),
+          _RailItem(
             icon: Icons.download_outlined,
             label: 'Import',
             tooltip: 'Import',
@@ -307,9 +358,9 @@ class _NavRail extends StatelessWidget {
             label: 'Export',
             tooltip: 'Export',
             help:
-                'Save all collections and environments to one JSON file, '
-                'to back up or share with a teammate.',
-            onTap: () => exportWorkspace(context),
+                'Save collections and environments as an ApiWorkbench '
+                'workspace, Postman or OpenAPI files.',
+            onTap: () => showExportDialog(context),
           ),
           _RailItem(
             icon: Palette.isDark
@@ -633,7 +684,14 @@ class _MobileLayoutState extends State<_MobileLayout> {
             Expanded(
               child: ColoredBox(
                 color: Palette.surface,
-                child: _section == 0
+                child: tab.request.kind != RequestKind.http
+                    ? (_section == 0
+                          ? ProtocolEditor(key: ValueKey(tab.id), tab: tab)
+                          : ProtocolMessages(
+                              key: ValueKey('${tab.id}-log'),
+                              tab: tab,
+                            ))
+                    : _section == 0
                     ? RequestEditor(key: ValueKey(tab.id), tab: tab)
                     : _responseArea(state, tab),
               ),
@@ -689,13 +747,15 @@ class _TabStrip extends StatelessWidget {
                     onTap: () => state.selectTab(i),
                     child: HelpHover(
                       [
-                        httpMethodHelp(t.request.method).message,
+                        t.request.kind == RequestKind.http
+                            ? httpMethodHelp(t.request.method).message
+                            : '${t.request.kind.label} connection.',
                         t.request.url.isEmpty
                             ? 'No URL yet.'
                             : 'Address: ${t.request.url}',
                         if (t.dirty) 'Has unsaved changes (Ctrl+S to save).',
                       ].join('\n'),
-                      title: '${t.request.method} ${t.request.name}',
+                      title: '${requestBadge(t.request)} ${t.request.name}',
                       child: Container(
                         constraints: const BoxConstraints(maxWidth: 230),
                         padding: const EdgeInsets.only(left: 12, right: 2),
@@ -713,11 +773,9 @@ class _TabStrip extends StatelessWidget {
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             Text(
-                              t.request.method == 'DELETE'
-                                  ? 'DEL'
-                                  : t.request.method,
+                              requestBadge(t.request),
                               style: TextStyle(
-                                color: methodColor(t.request.method),
+                                color: requestBadgeColor(t.request),
                                 fontSize: 10.5,
                                 fontWeight: FontWeight.w800,
                               ),
@@ -774,6 +832,15 @@ class _TabStrip extends StatelessWidget {
           tooltip: 'New request tab (Ctrl+T)',
           icon: Icon(Icons.add, size: 19, color: Palette.textDim),
           onPressed: () => state.newTab(),
+        ),
+        PopupMenuButton<RequestKind>(
+          tooltip: 'New WebSocket, Socket.IO, MQTT, SSE or gRPC tab',
+          icon: Icon(Icons.expand_more, size: 18, color: Palette.textDim),
+          onSelected: (k) => state.newTab(newRequestOfKind(k)),
+          itemBuilder: (_) => [
+            for (final k in RequestKind.values)
+              PopupMenuItem(value: k, child: Text(k.label)),
+          ],
         ),
       ],
     );

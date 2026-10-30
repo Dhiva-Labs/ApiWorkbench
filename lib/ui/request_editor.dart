@@ -12,9 +12,15 @@ import '../services/curl.dart' as curl;
 import '../state/app_state.dart';
 import '../theme.dart';
 import 'adaptive.dart';
+import 'code_snippets.dart';
+import 'graphql_explorer.dart';
 import 'help_tip.dart';
 import 'kv_editor.dart';
 import 'load_test_screen.dart';
+import 'request/auth_editor.dart';
+import 'request/params_tab.dart';
+import 'request/scripts_tab.dart';
+import 'request/settings_tab.dart';
 import 'runner_screen.dart';
 import 'tab_memory.dart';
 
@@ -83,8 +89,8 @@ class _RequestEditorState extends State<RequestEditor> {
         ),
         Expanded(
           child: DefaultTabController(
-            length: 7,
-            initialIndex: TabMemory.initialIndex(_selectedTab, widget.tab, 7),
+            length: 9,
+            initialIndex: TabMemory.initialIndex(_selectedTab, widget.tab, 9),
             child: TabMemory(
               owner: widget.tab,
               memory: _selectedTab,
@@ -114,7 +120,7 @@ class _RequestEditorState extends State<RequestEditor> {
                       ),
                       HelpHover(
                         'Data sent with the request, such as JSON or a form. '
-                        'GET and HEAD requests never send a body.',
+                        'HEAD requests never send a body.',
                         title: 'Request body',
                         example: '{"name": "Ada"}',
                         child: Tab(
@@ -132,6 +138,20 @@ class _RequestEditorState extends State<RequestEditor> {
                           text: req.authType == AuthType.none
                               ? 'Auth'
                               : 'Auth • ${req.authType.label}',
+                        ),
+                      ),
+                      HelpHover(
+                        'JavaScript run before the request is sent and after '
+                        'the response arrives, with Postman\'s pm API: set '
+                        'variables, sign requests, write tests.',
+                        title: 'Scripts',
+                        example: 'pm.environment.set("ts", Date.now())',
+                        child: Tab(
+                          text:
+                              req.preRequestScript.trim().isNotEmpty ||
+                                  req.testScript.trim().isNotEmpty
+                              ? 'Scripts •'
+                              : 'Scripts',
                         ),
                       ),
                       HelpHover(
@@ -158,16 +178,24 @@ class _RequestEditorState extends State<RequestEditor> {
                         ),
                       ),
                       HelpHover(
-                        'Notes about this request. A dot means it has scripts '
-                        'imported from Postman, shown for reference but never '
-                        'run.',
+                        'How this request handles redirects, certificates, '
+                        'URL encoding, cookies and timeouts.',
+                        title: 'Request settings',
+                        example: 'Follow redirects: off',
+                        child: Tab(
+                          text: req.settings.isDefault
+                              ? 'Settings'
+                              : 'Settings •',
+                        ),
+                      ),
+                      HelpHover(
+                        'Notes about this request, kept with it and included '
+                        'in exports and generated docs.',
                         title: 'Docs',
                         child: Tab(
-                          text:
-                              req.preRequestScript.isNotEmpty ||
-                                  req.testScript.isNotEmpty
-                              ? 'Docs •'
-                              : 'Docs',
+                          text: req.description.trim().isEmpty
+                              ? 'Docs'
+                              : 'Docs •',
                         ),
                       ),
                     ],
@@ -175,20 +203,7 @@ class _RequestEditorState extends State<RequestEditor> {
                   Expanded(
                     child: TabBarView(
                       children: [
-                        KVEditor(
-                          rows: req.params,
-                          onChanged: _touch,
-                          keyHint: 'Parameter',
-                          addLabel: 'Add parameter',
-                          keyHelp:
-                              'The name part of a query parameter. Rows are '
-                              'added to the URL when you send.',
-                          keyExample: 'page',
-                          valueHelp:
-                              'The value for that name. {{variables}} are '
-                              'filled in when you send.',
-                          valueExample: '2  or  {{pageSize}}',
-                        ),
+                        ParamsTab(request: req, onChanged: _touch),
                         KVEditor(
                           rows: req.headers,
                           onChanged: _touch,
@@ -205,9 +220,16 @@ class _RequestEditorState extends State<RequestEditor> {
                           valueExample: '{{\$guid}}',
                         ),
                         _bodyTab(),
-                        _authTab(),
+                        AuthEditor(
+                          key: ValueKey('auth-${req.id}'),
+                          auth: req.auth,
+                          onChanged: _touch,
+                          inheritedFrom: _inheritedAuth(state),
+                        ),
+                        ScriptsTab(request: req, onChanged: _touch),
                         _testsTab(),
                         _capturesTab(),
+                        RequestSettingsTab(request: req, onChanged: _touch),
                         _docsTab(),
                       ],
                     ),
@@ -259,6 +281,7 @@ class _RequestEditorState extends State<RequestEditor> {
       ),
       onChanged: (v) {
         req.url = v;
+        syncPathVariables(req);
         _touch();
       },
       onSubmitted: (_) => _send(state),
@@ -307,6 +330,7 @@ class _RequestEditorState extends State<RequestEditor> {
             ),
           ),
         ),
+        'code' => showCodeSnippetDialog(context, state, widget.tab),
         'copy_curl' => _copyCurl(),
         'import_curl' => _importCurl(state),
         _ => null,
@@ -339,6 +363,16 @@ class _RequestEditorState extends State<RequestEditor> {
             title: 'Load test',
             example: '50 users × 20 iterations',
             child: Text('Load test (parallel calls)…'),
+          ),
+        ),
+        PopupMenuItem(
+          value: 'code',
+          child: HelpHover(
+            'Show this request as code for curl, Python, JavaScript, Go and '
+            'more, with variables and auth filled in.',
+            title: 'Code snippet',
+            example: 'Python requests',
+            child: Text('Code snippet…'),
           ),
         ),
         PopupMenuItem(
@@ -779,6 +813,15 @@ class _RequestEditorState extends State<RequestEditor> {
               padding: const EdgeInsets.all(12),
               child: Column(
                 children: [
+                  GraphqlToolbar(
+                    request: req,
+                    queryController: _bodyCtrl,
+                    variablesController: _gqlVarsCtrl,
+                    vars: () => context.read<AppState>().varsFor(
+                      widget.tab.sourceCollectionId,
+                    ),
+                    onChanged: _touch,
+                  ),
                   Expanded(
                     flex: 3,
                     child: TextField(
@@ -910,8 +953,8 @@ class _RequestEditorState extends State<RequestEditor> {
     BodyType.none => (
       title: 'Request body',
       message:
-          'Pick a body type to send data. GET and HEAD never send a body, so '
-          'use POST, PUT, PATCH or QUERY.',
+          'Pick a body type to send data. Any method except HEAD sends it, '
+          'GET included (some search APIs expect that).',
       example: null,
     ),
     BodyType.json || BodyType.text || BodyType.xml => (
@@ -1299,209 +1342,23 @@ class _RequestEditorState extends State<RequestEditor> {
           _touch();
         },
       ),
-      if (req.preRequestScript.isNotEmpty)
-        _scriptBlock('Pre-request script', req.preRequestScript),
-      if (req.testScript.isNotEmpty)
-        _scriptBlock('Test script', req.testScript),
     ],
   );
 
-  Widget _scriptBlock(String title, String code) => Padding(
-    padding: const EdgeInsets.only(top: 14),
-    child: Container(
-      decoration: BoxDecoration(
-        border: Border.all(color: Palette.border),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: ExpansionTile(
-        shape: const Border(),
-        dense: true,
-        leading: Icon(Icons.code, size: 18, color: Palette.textDim),
-        title: Text(title, style: const TextStyle(fontSize: 13)),
-        subtitle: Text(
-          'Imported from Postman, kept for reference. ApiWorkbench does not '
-          'run JavaScript; recognised checks were added to Tests and Captures.',
-          style: TextStyle(fontSize: 11.5, color: Palette.textDim),
-        ),
-        childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-        children: [
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(
-              color: Palette.surfaceAlt,
-              borderRadius: BorderRadius.circular(6),
-            ),
-            child: SelectableText(
-              code,
-              style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
-            ),
-          ),
-        ],
-      ),
-    ),
-  );
-
-  // ---------------- Auth tab ----------------
-
-  Widget _authTab() {
-    return ListView(
-      padding: const EdgeInsets.all(16),
-      children: [
-        Row(
-          children: [
-            Flexible(
-              child: SizedBox(
-                width: 260,
-                child: DropdownButtonFormField<AuthType>(
-                  initialValue: req.authType,
-                  decoration: const InputDecoration(labelText: 'Auth type'),
-                  items: [
-                    for (final t in AuthType.values)
-                      DropdownMenuItem(
-                        value: t,
-                        child: HelpHover(
-                          _authTypeHelp(t).message,
-                          title: t.label,
-                          example: _authTypeHelp(t).example,
-                          child: Text(t.label),
-                        ),
-                      ),
-                  ],
-                  onChanged: (t) {
-                    if (t != null) {
-                      setState(() => req.authType = t);
-                      _touch();
-                    }
-                  },
-                ),
-              ),
-            ),
-            const HelpTip(
-              'How this request proves who you are. The matching header or '
-              'query parameter is added for you when you send.',
-              title: 'Auth type',
-              example: 'Authorization: Bearer eyJhbGci…',
-            ),
-          ],
-        ),
-        const SizedBox(height: 16),
-        ...switch (req.authType) {
-          AuthType.none => [
-            Text(
-              'No authentication will be applied.',
-              style: TextStyle(color: Palette.textDim),
-            ),
-          ],
-          AuthType.bearer => [
-            _authField(
-              'Token',
-              req.bearerToken,
-              (v) => req.bearerToken = v,
-              obscure: true,
-              help:
-                  'The access token from your login or API dashboard. It is '
-                  'sent in the Authorization header.',
-              title: 'Bearer token',
-              example: '{{token}}  →  Authorization: Bearer {{token}}',
-            ),
-          ],
-          AuthType.basic => [
-            _authField(
-              'Username',
-              req.basicUser,
-              (v) => req.basicUser = v,
-              help:
-                  'Combined with the password into an Authorization: Basic '
-                  'header.',
-              title: 'Username',
-              example: 'ada',
-            ),
-            const SizedBox(height: 12),
-            _authField(
-              'Password',
-              req.basicPassword,
-              (v) => req.basicPassword = v,
-              obscure: true,
-              help:
-                  'Basic Auth only encodes the password, it does not encrypt '
-                  'it, so use https:// addresses.',
-              title: 'Password',
-              example: '{{password}}',
-            ),
-          ],
-          AuthType.apiKey => [
-            _authField(
-              'Key name',
-              req.apiKeyName,
-              (v) => req.apiKeyName = v,
-              help:
-                  'The header or query parameter name the API expects. Check '
-                  'the API\'s docs.',
-              title: 'Key name',
-              example: 'X-API-Key',
-            ),
-            const SizedBox(height: 12),
-            _authField(
-              'Value',
-              req.apiKeyValue,
-              (v) => req.apiKeyValue = v,
-              obscure: true,
-              help:
-                  'Your API key. A variable lets you change it in one place '
-                  'for every request.',
-              title: 'Key value',
-              example: '{{apiKey}}',
-            ),
-            const SizedBox(height: 12),
-            HelpHover(
-              'Header sends the key as a request header. Query param adds it '
-              'to the URL instead, where it may end up in server logs.',
-              title: 'Where to send the key',
-              example: 'X-API-Key: abc123  or  ?api_key=abc123',
-              child: SegmentedButton<bool>(
-                segments: const [
-                  ButtonSegment(value: true, label: Text('Header')),
-                  ButtonSegment(value: false, label: Text('Query param')),
-                ],
-                selected: {req.apiKeyInHeader},
-                onSelectionChanged: (s) {
-                  setState(() => req.apiKeyInHeader = s.first);
-                  _touch();
-                },
-              ),
-            ),
-          ],
-        },
-      ],
-    );
+  /// What an inherited auth resolves to, for the Auth tab's note.
+  String? _inheritedAuth(AppState state) {
+    final col = state.collectionById(widget.tab.sourceCollectionId);
+    if (col == null) return null;
+    for (final path in CollectionModel.folderChain(req.folder).reversed) {
+      final f = col.folders[path];
+      if (f != null && f.auth.type != AuthType.inherit) {
+        return '${f.auth.type.label} from the folder ${path.split('/').last}';
+      }
+    }
+    return col.auth.type == AuthType.none || col.auth.type == AuthType.inherit
+        ? 'no auth (the collection ${col.name} has none)'
+        : '${col.auth.type.label} from the collection ${col.name}';
   }
-
-  static ({String message, String? example}) _authTypeHelp(AuthType t) =>
-      switch (t) {
-        AuthType.none => (
-          message: 'Send no credentials. Use it for public endpoints.',
-          example: null,
-        ),
-        AuthType.bearer => (
-          message:
-              'Sends a token in the Authorization header. Most modern APIs '
-              'and OAuth logins use this.',
-          example: 'Authorization: Bearer eyJhbGci…',
-        ),
-        AuthType.basic => (
-          message:
-              'Sends a username and password, base64-encoded, in the '
-              'Authorization header.',
-          example: 'Authorization: Basic YWRhOnNlY3JldA==',
-        ),
-        AuthType.apiKey => (
-          message:
-              'Sends a key under a name you choose, as a header or a query '
-              'parameter.',
-          example: 'X-API-Key: abc123',
-        ),
-      };
 
   // ---------------- Tests tab ----------------
 
@@ -1763,37 +1620,6 @@ class _RequestEditorState extends State<RequestEditor> {
       example: '1500  (1.5 seconds)',
     ),
   };
-
-  Widget _authField(
-    String label,
-    String value,
-    ValueChanged<String> onChanged, {
-    bool obscure = false,
-    required String help,
-    required String title,
-    String? example,
-  }) {
-    return SizedBox(
-      width: 420,
-      child: TextFormField(
-        initialValue: value,
-        obscureText: obscure,
-        style: const TextStyle(fontSize: 13),
-        decoration: InputDecoration(
-          labelText: label,
-          suffixIcon: HelpTip(help, title: title, example: example),
-          suffixIconConstraints: const BoxConstraints(
-            minWidth: 32,
-            minHeight: 32,
-          ),
-        ),
-        onChanged: (v) {
-          onChanged(v);
-          _touch();
-        },
-      ),
-    );
-  }
 }
 
 String? _tryFormat(String raw) {

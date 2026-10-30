@@ -32,12 +32,13 @@ class CurlH3Engine {
   Future<ResponseData> send({
     required Uri uri,
     required String method,
-    required Map<String, String> headers,
-    String? body,
+    required List<MapEntry<String, String>> headers,
+    List<int>? body,
     required bool verifySsl,
     required int connectTimeoutS,
     required int receiveTimeoutS,
     required String tabId,
+    List<String> extraArgs = const [],
   }) async {
     if (!await supported()) {
       return ResponseData(
@@ -51,11 +52,12 @@ class CurlH3Engine {
     final tmp = await Directory.systemTemp.createTemp('apiworkbench_h3');
     final bodyFile = File('${tmp.path}/body');
     final headerFile = File('${tmp.path}/headers');
+    final requestFile = File('${tmp.path}/request');
     try {
+      // Redirects are followed by HttpService, hop by hop.
       final args = <String>[
         '-sS',
         '--http3', // negotiate h3, fall back to h2/1.1 when unavailable
-        '-L', '--max-redirs', '10',
         '-o', bodyFile.path,
         '-D', headerFile.path,
         '-w', r'%{response_code}|%{http_version}',
@@ -66,13 +68,20 @@ class CurlH3Engine {
       final m = method.toUpperCase();
       if (m == 'HEAD') {
         args.add('--head');
-      } else if (m != 'GET') {
+      } else if (m != 'GET' || (body != null && body.isNotEmpty)) {
+        // --data-binary alone would turn a GET into a POST.
         args.addAll(['-X', m]);
       }
-      headers.forEach((k, v) => args.addAll(['-H', '$k: $v']));
-      if (body != null && body.isNotEmpty) {
-        args.addAll(['--data-binary', body]);
+      for (final h in headers) {
+        // `Name;` sends an empty header; `Name:` would remove it.
+        args.addAll(
+            ['-H', h.value.isEmpty ? '${h.key};' : '${h.key}: ${h.value}']);
       }
+      if (body != null && body.isNotEmpty) {
+        await requestFile.writeAsBytes(body, flush: true);
+        args.addAll(['--data-binary', '@${requestFile.path}']);
+      }
+      args.addAll(extraArgs);
       args.add(uri.toString());
 
       // Process.start with an argument list: nothing is shell-interpreted.

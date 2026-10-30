@@ -8,6 +8,7 @@ import 'package:provider/provider.dart';
 import '../models/models.dart';
 import '../services/load_report.dart';
 import '../services/load_test.dart';
+import '../services/auth/auth.dart';
 import '../state/app_state.dart';
 import '../theme.dart';
 import 'adaptive.dart';
@@ -48,7 +49,15 @@ class _LoadTestScreenState extends State<LoadTestScreen> {
     super.initState();
     _svc = LoadTestService(context.read<AppState>().settings);
     _plan = [
-      for (final r in widget.requests) LoadStep(r, extract: Map.of(r.captures)),
+      for (final r in widget.requests.where((r) => r.kind == RequestKind.http))
+        LoadStep(
+          r,
+          extract: Map.of(r.captures),
+          auth: resolveAuth(
+            r,
+            context.read<AppState>().collectionById(widget.collectionId),
+          ),
+        ),
     ];
   }
 

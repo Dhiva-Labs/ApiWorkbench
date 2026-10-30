@@ -12,8 +12,12 @@ import '../state/app_state.dart';
 import '../theme.dart';
 import 'adaptive.dart';
 import 'chaos_mode.dart';
+import 'console_panel.dart';
+import 'cookies_dialog.dart';
+import 'export_dialog.dart';
 import 'help_tip.dart';
 import 'import_dialog.dart';
+import 'settings/network_section.dart';
 
 /// Shared app menu (workspace import/export + settings), used by both the
 /// desktop brand header and the mobile app bar.
@@ -26,9 +30,11 @@ class AppMenuButton extends StatelessWidget {
       tooltip: 'Workspace menu',
       icon: Icon(Icons.more_vert, size: 20, color: Palette.textDim),
       onSelected: (v) => switch (v) {
-        'export' => exportWorkspace(context),
+        'export' => showExportDialog(context),
         'import' => showImportDialog(context),
         'settings' => showSettingsDialog(context),
+        'console' => showConsolePage(context),
+        'cookies' => showCookieManager(context),
         _ => null,
       },
       itemBuilder: (_) => const [
@@ -61,6 +67,24 @@ class AppMenuButton extends StatelessWidget {
               leading: Icon(Icons.file_upload_outlined, size: 18),
               title: Text('Export workspace…'),
             ),
+          ),
+        ),
+        PopupMenuItem(
+          value: 'console',
+          child: ListTile(
+            dense: true,
+            contentPadding: EdgeInsets.zero,
+            leading: Icon(Icons.terminal, size: 18),
+            title: Text('Console'),
+          ),
+        ),
+        PopupMenuItem(
+          value: 'cookies',
+          child: ListTile(
+            dense: true,
+            contentPadding: EdgeInsets.zero,
+            leading: Icon(Icons.cookie_outlined, size: 18),
+            title: Text('Cookies…'),
           ),
         ),
         PopupMenuItem(
@@ -177,8 +201,16 @@ Future<void> showSettingsDialog(BuildContext context) async {
   var theme = s.theme;
   var themeMode = s.themeMode;
   var hoverHelp = s.hoverHelp;
+  var followRedirects = s.followRedirects;
+  var cookiesEnabled = s.cookiesEnabled;
+  var scriptsEnabled = s.scriptsEnabled;
+  final network = NetworkSettings.fromJson(s.network.toJson());
   final connectCtrl = TextEditingController(text: '${s.connectTimeoutS}');
   final receiveCtrl = TextEditingController(text: '${s.receiveTimeoutS}');
+  final redirectsCtrl = TextEditingController(text: '${s.maxRedirects}');
+  final scriptTimeoutCtrl = TextEditingController(
+    text: '${s.scriptTimeoutMs}',
+  );
 
   AppSettings snapshot() => AppSettings(
     verifySsl: verifySsl,
@@ -190,12 +222,21 @@ Future<void> showSettingsDialog(BuildContext context) async {
     hoverHelp: hoverHelp,
     connectTimeoutS: (int.tryParse(connectCtrl.text) ?? 30).clamp(1, 600),
     receiveTimeoutS: (int.tryParse(receiveCtrl.text) ?? 60).clamp(1, 600),
+    followRedirects: followRedirects,
+    maxRedirects: (int.tryParse(redirectsCtrl.text) ?? 10).clamp(0, 100),
+    cookiesEnabled: cookiesEnabled,
+    scriptsEnabled: scriptsEnabled,
+    scriptTimeoutMs: (int.tryParse(scriptTimeoutCtrl.text) ?? 10000).clamp(
+      100,
+      600000,
+    ),
+    network: network,
   );
 
   final ok = await showDialog<bool>(
     context: context,
     builder: (ctx) => ControllerScope(
-      controllers: [connectCtrl, receiveCtrl],
+      controllers: [connectCtrl, receiveCtrl, redirectsCtrl, scriptTimeoutCtrl],
       child: StatefulBuilder(
         builder: (ctx, setLocal) => AdaptiveDialog(
           contentPadding: const EdgeInsets.fromLTRB(20, 14, 20, 0),
@@ -427,6 +468,79 @@ Future<void> showSettingsDialog(BuildContext context) async {
                           ),
                         ),
                       ],
+                    ),
+                  ],
+                ),
+                _section(
+                  Icons.alt_route,
+                  'Requests',
+                  help:
+                      'Defaults for every request. A request\'s own Settings '
+                      'tab can override redirects, certificates and cookies.',
+                  [
+                    _switchRow(
+                      'Follow redirects',
+                      'Follow 3xx responses to their new address.',
+                      followRedirects,
+                      (v) => setLocal(() => followRedirects = v),
+                    ),
+                    const SizedBox(height: 8),
+                    TextField(
+                      controller: redirectsCtrl,
+                      keyboardType: TextInputType.number,
+                      style: const TextStyle(fontSize: 13),
+                      decoration: const InputDecoration(
+                        labelText: 'Maximum redirects',
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    _switchRow(
+                      'Cookie jar',
+                      'Keep cookies servers set and send them back on later '
+                          'requests to the same site.',
+                      cookiesEnabled,
+                      (v) => setLocal(() => cookiesEnabled = v),
+                    ),
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: TextButton.icon(
+                        onPressed: () => showCookieManager(ctx),
+                        icon: const Icon(Icons.cookie_outlined, size: 16),
+                        label: const Text('Manage cookies…'),
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    _switchRow(
+                      'Run scripts',
+                      state.scripts == null
+                          ? 'Pre-request and test scripts are kept, but this '
+                                'build has no script engine.'
+                          : 'Run pre-request and test scripts (Postman\'s pm '
+                                'API) on every send.',
+                      scriptsEnabled,
+                      (v) => setLocal(() => scriptsEnabled = v),
+                    ),
+                    const SizedBox(height: 8),
+                    TextField(
+                      controller: scriptTimeoutCtrl,
+                      keyboardType: TextInputType.number,
+                      style: const TextStyle(fontSize: 13),
+                      decoration: const InputDecoration(
+                        labelText: 'Script timeout (ms)',
+                      ),
+                    ),
+                  ],
+                ),
+                _section(
+                  Icons.vpn_lock_outlined,
+                  'Proxy and certificates',
+                  help:
+                      'Send requests through a proxy, trust an extra CA, or '
+                      'present client certificates (mutual TLS).',
+                  [
+                    NetworkSettingsSection(
+                      network: network,
+                      onChanged: () => setLocal(() {}),
                     ),
                   ],
                 ),
