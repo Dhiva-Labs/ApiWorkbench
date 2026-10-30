@@ -473,7 +473,11 @@ class ResponseView extends StatelessWidget {
   }
 
   Future<void> _saveDoc(BuildContext context, ResponseData res) async {
-    final md = buildMarkdownDoc(tab.request, res);
+    final md = buildMarkdownDoc(
+      tab.request,
+      res,
+      secrets: context.read<AppState>().secretValues,
+    );
     final name = tab.request.name == 'Untitled request'
         ? 'request-doc'
         : tab.request.name.replaceAll(RegExp(r'[^\w\- ]'), '').trim();
