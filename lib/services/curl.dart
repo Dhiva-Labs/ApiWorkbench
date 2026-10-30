@@ -1,9 +1,12 @@
 import 'dart:convert';
 
 import '../models/models.dart';
+import 'codegen/codegen.dart' show SnippetField, shQuote;
+import 'codegen/shell.dart' show curlFormOptions;
 
 /// Builds a cURL command from a request (after variable substitution is NOT
-/// applied — the export keeps {{vars}} so it stays portable).
+/// applied — the export keeps {{vars}} so it stays portable). The Code dialog
+/// builds the resolved version, with every auth scheme applied.
 String toCurl(RequestModel r) {
   final b = StringBuffer('curl');
   final method = r.method.toUpperCase();
@@ -12,25 +15,27 @@ String toCurl(RequestModel r) {
   var url = r.url.trim();
   final query = r.params
       .where((p) => p.enabled && p.key.isNotEmpty)
-      .map((p) =>
-          '${Uri.encodeQueryComponent(p.key)}=${Uri.encodeQueryComponent(p.value)}')
+      .map(
+        (p) =>
+            '${Uri.encodeQueryComponent(p.key)}=${Uri.encodeQueryComponent(p.value)}',
+      )
       .join('&');
   if (query.isNotEmpty) {
     url = url.contains('?') ? '$url&$query' : '$url?$query';
   }
-  b.write(" '${url.replaceAll("'", r"'\''")}'");
+  b.write(' ${shQuote(url)}');
 
   for (final h in r.headers.where((h) => h.enabled && h.key.isNotEmpty)) {
-    b.write(" \\\n  -H '${h.key}: ${h.value}'".replaceAll('\n', '\n'));
+    b.write(" \\\n  -H ${shQuote('${h.key}: ${h.value}')}");
   }
   switch (r.authType) {
     case AuthType.bearer:
-      b.write(" \\\n  -H 'Authorization: Bearer ${r.bearerToken}'");
+      b.write(" \\\n  -H ${shQuote('Authorization: Bearer ${r.bearerToken}')}");
     case AuthType.basic:
-      b.write(" \\\n  -u '${r.basicUser}:${r.basicPassword}'");
+      b.write(" \\\n  -u ${shQuote('${r.basicUser}:${r.basicPassword}')}");
     case AuthType.apiKey:
       if (r.apiKeyInHeader && r.apiKeyName.isNotEmpty) {
-        b.write(" \\\n  -H '${r.apiKeyName}: ${r.apiKeyValue}'");
+        b.write(" \\\n  -H ${shQuote('${r.apiKeyName}: ${r.apiKeyValue}')}");
       }
     default:
       // Other schemes sign the final request; the Code dialog's cURL
@@ -38,10 +43,21 @@ String toCurl(RequestModel r) {
       break;
   }
 
+  final fields = [
+    for (final f in r.formFields.where((f) => f.enabled && f.key.isNotEmpty))
+      if (!(f.isFile && f.value.isEmpty))
+        SnippetField(f.key, f.value, isFile: f.isFile),
+  ];
   if (r.bodyType == BodyType.formUrlEncoded) {
-    for (final f in r.formFields.where((f) => f.enabled && f.key.isNotEmpty)) {
-      b.write(" \\\n  --data-urlencode '${f.key}=${f.value}'");
+    for (final o in curlFormOptions(fields, multipart: false)) {
+      b.write(" \\\n  $o");
     }
+  } else if (r.bodyType == BodyType.formData) {
+    for (final o in curlFormOptions(fields, multipart: true)) {
+      b.write(" \\\n  $o");
+    }
+  } else if (r.bodyType == BodyType.binary && r.body.trim().isNotEmpty) {
+    b.write(" \\\n  --data-binary ${shQuote('@${r.body.trim()}')}");
   } else if (r.bodyType == BodyType.graphql && r.body.isNotEmpty) {
     Object? gqlVars;
     try {
@@ -49,11 +65,10 @@ String toCurl(RequestModel r) {
         gqlVars = jsonDecode(r.graphqlVariables);
       }
     } catch (_) {}
-    final payload =
-        jsonEncode({'query': r.body, 'variables': ?gqlVars});
-    b.write(" \\\n  -d '${payload.replaceAll("'", r"'\''")}'");
+    final payload = jsonEncode({'query': r.body, 'variables': ?gqlVars});
+    b.write(" \\\n  -d ${shQuote(payload)}");
   } else if (r.bodyType != BodyType.none && r.body.isNotEmpty) {
-    b.write(" \\\n  -d '${r.body.replaceAll("'", r"'\''")}'");
+    b.write(" \\\n  -d ${shQuote(r.body)}");
   }
   return b.toString();
 }
@@ -81,9 +96,12 @@ RequestModel? fromCurl(String input) {
         if (h != null) {
           final idx = h.indexOf(':');
           if (idx > 0) {
-            r.headers.add(KV(
+            r.headers.add(
+              KV(
                 key: h.substring(0, idx).trim(),
-                value: h.substring(idx + 1).trim()));
+                value: h.substring(idx + 1).trim(),
+              ),
+            );
           }
         }
       case '-d' || '--data' || '--data-raw' || '--data-binary':
@@ -99,8 +117,9 @@ RequestModel? fromCurl(String input) {
           final idx = d.indexOf('=');
           if (idx > 0) {
             r.bodyType = BodyType.formUrlEncoded;
-            r.formFields
-                .add(KV(key: d.substring(0, idx), value: d.substring(idx + 1)));
+            r.formFields.add(
+              KV(key: d.substring(0, idx), value: d.substring(idx + 1)),
+            );
           }
         }
       case '-u' || '--user':
@@ -115,7 +134,13 @@ RequestModel? fromCurl(String input) {
         next(); // multipart not supported yet; skip the value
       case '--url':
         r.url = next() ?? '';
-      case '-L' || '--location' || '-s' || '--silent' || '-k' || '--insecure' || '--compressed':
+      case '-L' ||
+          '--location' ||
+          '-s' ||
+          '--silent' ||
+          '-k' ||
+          '--insecure' ||
+          '--compressed':
         break; // flags without values we can ignore
       default:
         if (!t.startsWith('-') && r.url.isEmpty) r.url = t;
@@ -125,29 +150,32 @@ RequestModel? fromCurl(String input) {
   if (r.url.isEmpty) return null;
   r.method = explicitMethod ?? (hasData ? 'POST' : 'GET');
   if (hasData && r.bodyType == BodyType.none) {
-    final ct = r.headers.where(
-        (h) => h.key.toLowerCase() == 'content-type');
+    final ct = r.headers.where((h) => h.key.toLowerCase() == 'content-type');
     final ctv = ct.isEmpty ? '' : ct.first.value.toLowerCase();
     r.bodyType = ctv.contains('json')
         ? BodyType.json
         : ctv.contains('x-www-form-urlencoded')
-            ? BodyType.formUrlEncoded
-            : BodyType.text;
+        ? BodyType.formUrlEncoded
+        : BodyType.text;
     if (r.bodyType == BodyType.formUrlEncoded && r.formFields.isEmpty) {
       for (final pair in r.body.split('&')) {
         final idx = pair.indexOf('=');
         if (idx > 0) {
-          r.formFields.add(KV(
+          r.formFields.add(
+            KV(
               key: Uri.decodeQueryComponent(pair.substring(0, idx)),
-              value: Uri.decodeQueryComponent(pair.substring(idx + 1))));
+              value: Uri.decodeQueryComponent(pair.substring(idx + 1)),
+            ),
+          );
         }
       }
       r.body = '';
     }
   }
-  r.name = Uri.tryParse(r.url)?.path.split('/').lastWhere(
-          (s) => s.isNotEmpty,
-          orElse: () => r.url) ??
+  r.name =
+      Uri.tryParse(
+        r.url,
+      )?.path.split('/').lastWhere((s) => s.isNotEmpty, orElse: () => r.url) ??
       r.url;
   return r;
 }
