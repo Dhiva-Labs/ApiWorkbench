@@ -1,0 +1,100 @@
+openapi: 3.0.0
+info:
+  title: Circular
+  version: '1'
+servers:
+  - url: https://tree.test
+paths:
+  /nodes:
+    post:
+      summary: Create a node
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Node'
+      responses:
+        '200':
+          description: ok
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Node'
+  /people:
+    post:
+      summary: Create a person
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Person'
+      responses:
+        '200':
+          description: ok
+  /trees:
+    post:
+      summary: Create a tree
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Tree'
+      responses:
+        '200':
+          description: ok
+  /loop:
+    post:
+      summary: A ref that points at itself
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Loop'
+      responses:
+        '200':
+          description: ok
+components:
+  schemas:
+    Node:
+      type: object
+      properties:
+        id:
+          type: integer
+        parent:
+          $ref: '#/components/schemas/Node'
+        children:
+          type: array
+          items:
+            $ref: '#/components/schemas/Node'
+    Person:
+      type: object
+      properties:
+        name:
+          type: string
+        employer:
+          $ref: '#/components/schemas/Company'
+    Company:
+      type: object
+      properties:
+        title:
+          type: string
+        staff:
+          type: array
+          items:
+            $ref: '#/components/schemas/Person'
+    Base:
+      type: object
+      properties:
+        label:
+          type: string
+    Tree:
+      allOf:
+        - $ref: '#/components/schemas/Base'
+        - type: object
+          properties:
+            left:
+              $ref: '#/components/schemas/Tree'
+            right:
+              $ref: '#/components/schemas/Tree'
+    Loop:
+      $ref: '#/components/schemas/Loop'

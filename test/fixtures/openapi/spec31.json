@@ -1,0 +1,273 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Shop API",
+    "summary": "Orders and payments",
+    "description": "The shop backend.",
+    "version": "2.4.0"
+  },
+  "servers": [{ "url": "https://api.shop.test/v1/" }],
+  "tags": [
+    { "name": "Orders", "description": "Place and track orders" },
+    { "name": "Admin" }
+  ],
+  "security": [{ "bearerAuth": [] }],
+  "paths": {
+    "/orders": {
+      "get": {
+        "tags": ["Orders"],
+        "operationId": "listOrders",
+        "parameters": [
+          { "$ref": "#/components/parameters/PageSize" },
+          {
+            "name": "X-Request-Id",
+            "in": "header",
+            "required": true,
+            "schema": { "type": "string", "format": "uuid" }
+          },
+          {
+            "name": "tag",
+            "in": "query",
+            "schema": { "type": "array", "items": { "type": "string" }, "examples": ["new"] },
+            "example": ["new", "vip"]
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A page of orders",
+            "content": {
+              "application/json": {
+                "schema": { "type": "array", "items": { "$ref": "#/components/schemas/Order" } },
+                "examples": {
+                  "one": {
+                    "summary": "One order",
+                    "value": [{ "id": "ord_1", "total": 12.5 }]
+                  },
+                  "empty": { "value": [] }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      },
+      "post": {
+        "tags": ["Orders"],
+        "summary": "Place an order",
+        "description": "Creates an order from a cart.",
+        "requestBody": { "$ref": "#/components/requestBodies/OrderBody" },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Order" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/orders/{orderId}": {
+      "parameters": [
+        {
+          "name": "orderId",
+          "in": "path",
+          "required": true,
+          "description": "The order's id",
+          "schema": { "type": "string", "pattern": "^ord_", "examples": ["ord_42"] }
+        }
+      ],
+      "get": {
+        "tags": ["Orders"],
+        "summary": "Get an order",
+        "responses": {
+          "200": {
+            "description": "The order",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Order" } }
+            }
+          },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      },
+      "delete": {
+        "tags": ["Orders"],
+        "summary": "Cancel an order",
+        "responses": { "204": { "description": "Cancelled" } }
+      }
+    },
+    "/files/{name}.{ext}": {
+      "get": {
+        "summary": "Download a file",
+        "parameters": [
+          { "name": "name", "in": "path", "required": true, "schema": { "type": "string" }, "example": "invoice" },
+          { "name": "ext", "in": "path", "required": true, "schema": { "type": "string", "enum": ["pdf", "csv"] } }
+        ],
+        "responses": { "200": { "description": "The file" } }
+      }
+    },
+    "/health": {
+      "get": {
+        "summary": "Health check",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": { "text/plain": { "example": "ok" } }
+          }
+        }
+      }
+    },
+    "/admin/reports": {
+      "get": {
+        "tags": ["Admin"],
+        "summary": "Download a report",
+        "security": [{ "basicAuth": [] }],
+        "servers": [{ "url": "https://admin.shop.test" }],
+        "responses": { "200": { "description": "CSV" } }
+      }
+    },
+    "/legacy": {
+      "post": {
+        "summary": "Legacy import",
+        "requestBody": {
+          "content": {
+            "application/xml": {
+              "schema": { "$ref": "#/components/schemas/Order" }
+            },
+            "text/plain": { "example": "plain" }
+          }
+        },
+        "responses": { "202": { "description": "Accepted" } }
+      }
+    },
+    "/external": {
+      "post": {
+        "summary": "Uses a schema from another file",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "other.yaml#/components/schemas/Remote" }
+            }
+          }
+        },
+        "responses": { "200": { "description": "OK" } }
+      }
+    }
+  },
+  "webhooks": {
+    "orderShipped": {
+      "post": { "responses": { "200": { "description": "ok" } } }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": { "type": "http", "scheme": "bearer", "bearerFormat": "JWT" },
+      "basicAuth": { "type": "http", "scheme": "basic" }
+    },
+    "parameters": {
+      "PageSize": {
+        "name": "pageSize",
+        "in": "query",
+        "description": "Orders per page",
+        "required": false,
+        "schema": { "type": "integer", "minimum": 5, "maximum": 50, "default": 20 }
+      }
+    },
+    "requestBodies": {
+      "OrderBody": {
+        "required": true,
+        "content": {
+          "application/json": { "schema": { "$ref": "#/components/schemas/OrderInput" } }
+        }
+      }
+    },
+    "responses": {
+      "NotFound": {
+        "description": "No such order",
+        "content": {
+          "application/json": {
+            "example": { "error": "not_found", "message": "No such order" }
+          }
+        }
+      },
+      "Unauthorized": {
+        "description": "Missing or bad token",
+        "content": {
+          "application/json": { "example": { "error": "unauthorized" } }
+        }
+      }
+    },
+    "schemas": {
+      "Money": {
+        "type": "number",
+        "minimum": 0,
+        "exclusiveMinimum": 0.5,
+        "multipleOf": 0.5
+      },
+      "Address": {
+        "type": "object",
+        "required": ["line1"],
+        "properties": {
+          "line1": { "type": "string", "minLength": 8 },
+          "line2": { "type": ["string", "null"] },
+          "country": { "const": "NL" }
+        }
+      },
+      "CardPayment": {
+        "type": "object",
+        "properties": {
+          "kind": { "const": "card" },
+          "last4": { "type": "string", "maxLength": 4 }
+        }
+      },
+      "BankPayment": {
+        "type": "object",
+        "properties": { "kind": { "const": "bank" }, "iban": { "type": "string" } }
+      },
+      "OrderInput": {
+        "type": "object",
+        "required": ["items"],
+        "properties": {
+          "items": {
+            "type": "array",
+            "minItems": 2,
+            "items": { "$ref": "#/components/schemas/OrderItem" }
+          },
+          "payment": {
+            "oneOf": [
+              { "$ref": "#/components/schemas/CardPayment" },
+              { "$ref": "#/components/schemas/BankPayment" }
+            ]
+          },
+          "shipTo": {
+            "$ref": "#/components/schemas/Address",
+            "description": "Where to send it"
+          },
+          "notes": { "type": ["string", "null"], "examples": ["Leave at the door"] },
+          "total": { "$ref": "#/components/schemas/Money" }
+        }
+      },
+      "OrderItem": {
+        "type": "object",
+        "properties": {
+          "sku": { "type": "string", "format": "uuid" },
+          "qty": { "type": "integer", "minimum": 1, "default": 1 }
+        }
+      },
+      "Order": {
+        "allOf": [
+          { "$ref": "#/components/schemas/OrderInput" },
+          {
+            "type": "object",
+            "properties": {
+              "id": { "type": "string", "example": "ord_1", "readOnly": true },
+              "createdAt": { "type": "string", "format": "date-time" }
+            }
+          }
+        ]
+      }
+    }
+  }
+}
