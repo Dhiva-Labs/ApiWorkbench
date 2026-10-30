@@ -1,8 +1,14 @@
+import 'dart:io';
+
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../models/models.dart';
+import '../services/data_files.dart';
 import '../services/runner.dart';
+import '../services/scripting/script_engine.dart';
+import '../services/var_scopes.dart';
 import '../state/app_state.dart';
 import '../theme.dart';
 import 'help_tip.dart';
@@ -15,6 +21,7 @@ class RunnerScreen extends StatefulWidget {
     required this.title,
     required this.requests,
     this.collectionId,
+    this.engine,
   });
 
   final String title;
@@ -22,6 +29,9 @@ class RunnerScreen extends StatefulWidget {
 
   /// Collection the requests come from, for its variables.
   final String? collectionId;
+
+  /// Runs the scripts; the app's engine when null.
+  final ScriptEngine? engine;
 
   @override
   State<RunnerScreen> createState() => _RunnerScreenState();
@@ -36,12 +46,29 @@ class _RunnerScreenState extends State<RunnerScreen> {
   bool _recurring = false;
   bool _showData = false;
 
-  List<Map<String, String>>? get _dataRows => parseDataRows(_dataCtrl.text);
+  /// Keep what scripts and captures change (Postman's "Keep variable
+  /// values"); off, the run works on copies that are thrown away.
+  bool _keepValues = true;
+
+  /// A data file chosen from disk; it replaces the pasted text.
+  DataFile? _file;
+  String? _fileName;
+  String? _fileError;
+
+  /// The rows the run will use, from the file or the pasted text.
+  DataFile? _data;
+  String? _dataError;
+
+  /// Largest data file read, to keep the preview and the run responsive.
+  static const _maxFileBytes = 25 * 1024 * 1024;
+
+  List<Map<String, String>>? get _dataRows => _data?.rows;
 
   @override
   void initState() {
     super.initState();
-    _runner = RunnerService(context.read<AppState>().http);
+    final state = context.read<AppState>();
+    _runner = RunnerService(state.http, engine: widget.engine ?? state.scripts);
   }
 
   @override
@@ -54,20 +81,114 @@ class _RunnerScreenState extends State<RunnerScreen> {
     super.dispose();
   }
 
+  /// Re-reads the rows after the pasted text or the chosen file changed.
+  void _readData() {
+    if (_file != null) {
+      _data = _file;
+      _dataError = null;
+      return;
+    }
+    final text = _dataCtrl.text;
+    if (text.trim().isEmpty) {
+      _data = null;
+      _dataError = null;
+      return;
+    }
+    try {
+      _data = readDataFile(text);
+      _dataError = null;
+    } on FormatException catch (e) {
+      _data = null;
+      _dataError = e.message;
+    }
+  }
+
+  Future<void> _loadFile() async {
+    final picked = await FilePicker.platform.pickFiles(
+      dialogTitle: 'Choose a CSV or JSON data file',
+      type: FileType.custom,
+      allowedExtensions: ['csv', 'tsv', 'json', 'txt'],
+      withData: true,
+    );
+    final f = picked?.files.firstOrNull;
+    if (f == null || !mounted) return;
+    String? error;
+    DataFile? file;
+    try {
+      if (f.size > _maxFileBytes) {
+        throw FormatException(
+          'The file is ${(f.size / (1024 * 1024)).toStringAsFixed(1)} MB; '
+          'data files can be up to ${_maxFileBytes ~/ (1024 * 1024)} MB.',
+        );
+      }
+      final bytes =
+          f.bytes ??
+          (f.path != null ? await File(f.path!).readAsBytes() : null);
+      if (bytes == null) {
+        throw const FormatException('The file could not be read.');
+      }
+      file = readDataFile(decodeDataBytes(bytes), fileName: f.name);
+    } on FormatException catch (e) {
+      error = '${f.name}: ${e.message}';
+    } on FileSystemException catch (e) {
+      error = '${f.name}: ${e.message}';
+    }
+    if (!mounted) return;
+    setState(() {
+      _fileError = error;
+      if (file != null) {
+        _file = file;
+        _fileName = f.name;
+        _readData();
+      }
+    });
+  }
+
+  void _clearFile() => setState(() {
+    _file = null;
+    _fileName = null;
+    _fileError = null;
+    _readData();
+  });
+
+  /// Scopes over copies of the variable lists, so the run's changes are
+  /// dropped when it ends.
+  VarScopes _isolatedScopes(AppState state) {
+    final live = state.scopesFor(widget.collectionId);
+    List<KV>? copy(List<KV>? l) =>
+        l == null ? null : [for (final v in l) v.clone()];
+    return VarScopes(
+      globals: copy(live.globals),
+      collection: copy(live.collection),
+      environment: copy(live.environment),
+      session: {...live.session},
+    );
+  }
+
   void _start() {
+    final state = context.read<AppState>();
     final iterations = (int.tryParse(_iterCtrl.text) ?? 1).clamp(1, 100);
     final delayMs = (int.tryParse(_delayCtrl.text) ?? 0).clamp(0, 60000);
     final intervalS = (int.tryParse(_intervalCtrl.text) ?? 30).clamp(5, 3600);
     _iterCtrl.text = '$iterations';
     _delayCtrl.text = '$delayMs';
     _intervalCtrl.text = '$intervalS';
+    final keep = _keepValues;
     _runner.start(
       requests: widget.requests,
-      vars: context.read<AppState>().varsFor(widget.collectionId),
+      scopes: keep
+          ? state.scopesFor(widget.collectionId)
+          : _isolatedScopes(state),
+      collection: state.collectionById(widget.collectionId),
       iterations: iterations,
       delayBetween: Duration(milliseconds: delayMs),
       repeatEvery: _recurring ? Duration(seconds: intervalS) : null,
       dataRows: _dataRows,
+      // Saves variable changes and puts script output in the console; a run
+      // on copies only logs.
+      onResult: keep
+          ? (result, scopes) => state.absorb(scopes, result)
+          : (result, _) => state.console.addLines(result.logs),
     );
   }
 
@@ -166,10 +287,11 @@ class _RunnerScreenState extends State<RunnerScreen> {
               example: '300  (five minutes)',
             ),
           HelpHover(
-            'Run once per row of test data. Each row\'s values become '
-            '{{variables}} for that pass.',
+            'Run once per row of test data, from a CSV or JSON file or '
+            'pasted text. Each row\'s values become {{variables}} for that '
+            'pass.',
             title: 'Test data',
-            example: '[{"userId": "1"}, {"userId": "2"}]',
+            example: 'users.csv with the columns userId,name',
             child: TextButton.icon(
               onPressed: () => setState(() => _showData = !_showData),
               icon: Icon(
@@ -178,6 +300,41 @@ class _RunnerScreenState extends State<RunnerScreen> {
               ),
               label: Text(
                 _dataRows == null ? 'Data' : 'Data (${_dataRows!.length} rows)',
+              ),
+            ),
+          ),
+          HelpHover(
+            'On: variables that scripts and captures set during the run are '
+            'saved to the environment, collection and globals, like '
+            'Postman. Off: the run works on copies and every change is '
+            'thrown away when it ends.',
+            title: 'Keep variable values',
+            example: 'Run a login request, then use its token afterwards',
+            child: InkWell(
+              onTap: running
+                  ? null
+                  : () => setState(() => _keepValues = !_keepValues),
+              borderRadius: BorderRadius.circular(6),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Checkbox(
+                    value: _keepValues,
+                    onChanged: running
+                        ? null
+                        : (v) => setState(() => _keepValues = v ?? true),
+                  ),
+                  const Flexible(
+                    child: Padding(
+                      padding: EdgeInsets.only(right: 6),
+                      child: Text(
+                        'Keep variable values',
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(fontSize: 13),
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
           ),
@@ -222,54 +379,92 @@ class _RunnerScreenState extends State<RunnerScreen> {
     );
   }
 
-  /// Data-driven runs: one JSON object per iteration, merged over the
-  /// active environment's variables.
+  /// Data-driven runs: one row per iteration, merged over the active
+  /// environment's variables. The rows come from a CSV or JSON file, or from
+  /// text pasted in either format.
   Widget _dataPanel() {
-    final rows = _dataRows;
-    final hasText = _dataCtrl.text.trim().isNotEmpty;
+    final data = _data;
+    final hasFile = _file != null;
+    final problem = _fileError ?? (hasFile ? null : _dataError);
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          Wrap(
+            spacing: 10,
+            runSpacing: 6,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              HelpHover(
+                'Pick a CSV file (a header row, then one row per iteration; '
+                'quote values that contain commas) or a JSON file with an '
+                'array of objects. It replaces the pasted text.',
+                title: 'Load data file',
+                example: 'users.csv:  userId,name  /  1,Ada  /  2,Linus',
+                child: OutlinedButton.icon(
+                  onPressed: _runner.running ? null : _loadFile,
+                  icon: const Icon(Icons.upload_file, size: 16),
+                  label: const Text('Load data file'),
+                ),
+              ),
+              if (hasFile)
+                HelpHover(
+                  'Stop using this file. The pasted text below (if any) is '
+                  'used again.',
+                  title: 'Remove the data file',
+                  child: InputChip(
+                    avatar: const Icon(Icons.description_outlined, size: 16),
+                    label: Text(
+                      _fileName ?? 'data file',
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    onDeleted: _runner.running ? null : _clearFile,
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 8),
           TextField(
             controller: _dataCtrl,
-            enabled: !_runner.running,
+            enabled: !_runner.running && !hasFile,
             maxLines: 5,
             style: const TextStyle(fontFamily: 'monospace', fontSize: 12.5),
-            decoration: const InputDecoration(
-              hintText:
-                  'JSON array — one variable set per iteration:\n'
-                  '[{"userId": "1"}, {"userId": "2"}, {"userId": "3"}]\n'
-                  'Use them in requests as {{userId}}.',
-              suffixIcon: HelpTip(
-                'A JSON list of objects. Each object is one pass, and its keys '
-                'override same-named variables; without Recurring, the run '
-                'does one pass per row.',
+            decoration: InputDecoration(
+              hintText: hasFile
+                  ? 'Using $_fileName. Remove the file to paste data instead.'
+                  : 'Or paste JSON or CSV — one variable set per iteration:\n'
+                        '[{"userId": "1"}, {"userId": "2"}]\n'
+                        'userId,name\n1,Ada\n2,Linus\n'
+                        'Use the columns in requests as {{userId}}.',
+              suffixIcon: const HelpTip(
+                'A JSON list of objects, or CSV with a header row. Each row is '
+                'one pass, and its columns override same-named variables; '
+                'without Recurring, the run does one pass per row.',
                 title: 'Data rows',
                 example: '[{"userId": "1"}, {"userId": "2"}]',
               ),
-              suffixIconConstraints: BoxConstraints(
+              suffixIconConstraints: const BoxConstraints(
                 minWidth: 32,
                 minHeight: 32,
               ),
             ),
-            onChanged: (_) => setState(() {}),
+            onChanged: (_) => setState(_readData),
           ),
           const SizedBox(height: 4),
           Text(
-            !hasText
-                ? 'Leave empty to run without per-iteration data.'
-                : rows == null
-                ? 'Not valid yet — expected a JSON array of objects.'
-                : _recurring
-                ? '${rows.length} rows — cycled across recurring passes.'
-                : '${rows.length} rows — the run will do ${rows.length} iterations.',
+            problem ??
+                (data != null
+                    ? '${data.format.label}: ${data.rows.length} rows, '
+                          '${data.columns.length} columns — '
+                          '${_recurring ? 'cycled across recurring passes' : 'the run will do ${data.rows.length} iterations'}.'
+                    : 'Leave empty to run without per-iteration data.'),
             style: TextStyle(
               fontSize: 11.5,
-              color: hasText && rows == null ? Palette.delete : Palette.textDim,
+              color: problem != null ? Palette.delete : Palette.textDim,
             ),
           ),
+          if (data != null) ...[const SizedBox(height: 8), _DataPreview(data)],
         ],
       ),
     );
@@ -428,24 +623,42 @@ class _RunnerScreenState extends State<RunnerScreen> {
         // Newest first.
         final r = results[results.length - 1 - i];
         final res = r.response;
-        final failedAsserts = r.assertions.where((a) => !a.pass).toList();
+        final failedChecks =
+            r.assertions.where((a) => !a.pass).length +
+            r.scriptTests.where((t) => !t.pass).length;
+        final checks = r.assertions.length + r.scriptTests.length;
         final method = httpMethodHelp(r.request.method);
         final status = httpStatusHelp(res.error != null ? 0 : res.statusCode);
+        final scriptError = r.scriptError;
         return ExpansionTile(
           key: ObjectKey(r),
           dense: true,
           shape: const Border(),
           leading: HelpHover(
-            r.pass
+            r.skipped
+                ? 'A pre-request script skipped this request.'
+                : r.pass
                 ? 'Every test passed, or with no tests, the status was below '
                       '400.'
-                : 'A test failed, the status was 4xx or 5xx, or no response '
-                      'came back. Expand the row for details.',
-            title: r.pass ? 'Passed' : 'Failed',
+                : 'A test or script failed, the status was 4xx or 5xx, or no '
+                      'response came back. Expand the row for details.',
+            title: r.skipped
+                ? 'Skipped'
+                : r.pass
+                ? 'Passed'
+                : 'Failed',
             child: Icon(
-              r.pass ? Icons.check_circle : Icons.cancel,
+              r.skipped
+                  ? Icons.skip_next
+                  : r.pass
+                  ? Icons.check_circle
+                  : Icons.cancel,
               size: 17,
-              color: r.pass ? Palette.get_ : Palette.delete,
+              color: r.skipped
+                  ? Palette.textDim
+                  : r.pass
+                  ? Palette.get_
+                  : Palette.delete,
             ),
           ),
           title: Row(
@@ -481,9 +694,13 @@ class _RunnerScreenState extends State<RunnerScreen> {
               example: 'pass 2 • 200 • 85 ms • 3/3 tests',
               child: Text(
                 'pass ${r.iteration} • '
-                '${res.error != null ? 'error' : res.statusCode} • '
+                '${r.skipped
+                    ? 'skipped'
+                    : res.error != null
+                    ? 'error'
+                    : res.statusCode} • '
                 '${res.durationMs} ms'
-                '${r.assertions.isNotEmpty ? ' • ${r.assertions.length - failedAsserts.length}/${r.assertions.length} tests' : ''}',
+                '${checks > 0 ? ' • ${checks - failedChecks}/$checks tests' : ''}',
                 style: TextStyle(
                   fontSize: 11.5,
                   color: r.pass ? Palette.textDim : Palette.delete,
@@ -492,9 +709,14 @@ class _RunnerScreenState extends State<RunnerScreen> {
             ),
           ),
           children: [
-            if (res.error != null)
-              _detailLine(res.error!, Palette.delete)
-            else ...[
+            if (r.skipped)
+              _detailLine('Skipped by a pre-request script.', Palette.textDim)
+            else if (res.error != null)
+              _detailLine(res.error!, Palette.delete),
+            // A failed pre-request script already shows as the error above.
+            if (scriptError != null && !(res.error ?? '').contains(scriptError))
+              _detailLine('Script error: $scriptError', Palette.delete),
+            if (res.error == null)
               for (final a in r.assertions)
                 _detailLine(
                   '${a.pass ? '✓' : '✗'} ${a.assertion.kind.label}'
@@ -502,12 +724,17 @@ class _RunnerScreenState extends State<RunnerScreen> {
                   ' — ${a.message}',
                   a.pass ? Palette.get_ : Palette.delete,
                 ),
-              if (r.assertions.isEmpty)
-                _detailLine(
-                  'No tests on this request — judged by status code.',
-                  Palette.textDim,
-                ),
-            ],
+            for (final t in r.scriptTests)
+              _detailLine(
+                '${t.pass ? '✓' : '✗'} ${t.name}'
+                '${t.error != null ? ' — ${t.error}' : ''}',
+                t.pass ? Palette.get_ : Palette.delete,
+              ),
+            if (checks == 0 && res.error == null && !r.skipped)
+              _detailLine(
+                'No tests on this request — judged by status code.',
+                Palette.textDim,
+              ),
           ],
         );
       },
@@ -524,4 +751,102 @@ class _RunnerScreenState extends State<RunnerScreen> {
       ),
     ),
   );
+}
+
+/// The first rows of a data file, as a table that scrolls sideways on narrow
+/// screens, with the row and column counts.
+class _DataPreview extends StatelessWidget {
+  const _DataPreview(this.data);
+
+  final DataFile data;
+
+  /// Rows shown; the run itself uses all of them.
+  static const previewRows = 20;
+
+  @override
+  Widget build(BuildContext context) {
+    final shown = data.rows.take(previewRows).toList();
+    final more = data.rows.length - shown.length;
+    final head = TextStyle(
+      fontSize: 11.5,
+      fontWeight: FontWeight.w700,
+      color: Palette.text,
+    );
+    final cell = TextStyle(
+      fontSize: 11.5,
+      color: Palette.text,
+      fontFamily: 'monospace',
+    );
+    Widget pad(String text, TextStyle style) => ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: 200),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+        child: Text(
+          text,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: style,
+        ),
+      ),
+    );
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        HelpHover(
+          'The first $previewRows rows of the data, to check the columns '
+          'before you run. The run uses every row.',
+          title: 'Data preview',
+          child: Text(
+            more > 0
+                ? 'Preview: first ${shown.length} of ${data.rows.length} rows'
+                : 'Preview: ${data.rows.length} '
+                      '${data.rows.length == 1 ? 'row' : 'rows'}',
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: Palette.textDim,
+            ),
+          ),
+        ),
+        const SizedBox(height: 4),
+        DecoratedBox(
+          decoration: BoxDecoration(
+            border: Border.all(color: Palette.border),
+            borderRadius: BorderRadius.circular(6),
+          ),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxHeight: 240),
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: SingleChildScrollView(
+                child: Table(
+                  defaultColumnWidth: const IntrinsicColumnWidth(),
+                  border: TableBorder(
+                    horizontalInside: BorderSide(color: Palette.border),
+                  ),
+                  children: [
+                    TableRow(
+                      decoration: BoxDecoration(color: Palette.surface),
+                      children: [
+                        pad('#', head),
+                        for (final c in data.columns) pad(c, head),
+                      ],
+                    ),
+                    for (var i = 0; i < shown.length; i++)
+                      TableRow(
+                        children: [
+                          pad('${i + 1}', cell),
+                          for (final c in data.columns)
+                            pad(shown[i][c] ?? '', cell),
+                        ],
+                      ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
 }

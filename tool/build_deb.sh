@@ -4,6 +4,8 @@
 #
 # The architecture (amd64 or arm64) is the one of the machine running the
 # script, because it packages the bundle that `flutter build linux` made there.
+# The command-line runner (tool/build_cli.sh, built here when missing) goes in
+# as /usr/lib/apiworkbench/apiworkbench-cli, linked from /usr/bin.
 set -euo pipefail
 
 PROJ="$(cd "$(dirname "$0")/.." && pwd)"
@@ -20,10 +22,14 @@ esac
 PKG="apiworkbench_${VERSION}_${DEB_ARCH}"
 ROOT="$PROJ/dist/deb/$PKG"
 BUNDLE="$PROJ/build/linux/$FLUTTER_ARCH/release/bundle"
+CLI="$PROJ/build/cli/$FLUTTER_ARCH"
 ICONS="$PROJ/linux/packaging/icons"
 
 [ -f "$BUNDLE/lib/libflutter_linux_gtk.so" ] ||
   { echo "Release bundle missing - run: flutter build linux --release"; exit 1; }
+[ -x "$CLI/bin/apiworkbench-cli" ] || "$PROJ/tool/build_cli.sh" "$CLI"
+# shellcheck source=tool/cli_bundle.sh
+. "$PROJ/tool/cli_bundle.sh"
 
 rm -rf "$ROOT"
 mkdir -p "$ROOT/DEBIAN" "$ROOT/usr/lib/apiworkbench" "$ROOT/usr/bin" \
@@ -32,7 +38,9 @@ mkdir -p "$ROOT/DEBIAN" "$ROOT/usr/lib/apiworkbench" "$ROOT/usr/bin" \
          "$ROOT/usr/share/icons/hicolor/512x512/apps"
 
 cp -r "$BUNDLE/." "$ROOT/usr/lib/apiworkbench/"
+install_cli "$CLI" "$ROOT/usr/lib/apiworkbench"
 ln -s ../lib/apiworkbench/apiworkbench "$ROOT/usr/bin/apiworkbench"
+ln -s ../lib/apiworkbench/apiworkbench-cli "$ROOT/usr/bin/apiworkbench-cli"
 cp "$PROJ/linux/packaging/apiworkbench.desktop" "$ROOT/usr/share/applications/"
 cp "$ICONS/apiworkbench-256.png" "$ROOT/usr/share/icons/hicolor/256x256/apps/apiworkbench.png"
 cp "$ICONS/apiworkbench-512.png" "$ROOT/usr/share/icons/hicolor/512x512/apps/apiworkbench.png"
@@ -50,7 +58,8 @@ Description: Cross-platform API client for building and testing HTTP requests
  Postman-style workbench with request collections and folders,
  environments and collection variables, Postman import, response
  assertions and captures, a collection runner, and load testing with
- call logs and HTML/CSV/JSON reports.
+ call logs and HTML/CSV/JSON reports. Includes apiworkbench-cli, which
+ runs a collection from the command line for CI.
 CONTROL
 
 dpkg-deb --build --root-owner-group "$ROOT" "$PROJ/dist/$PKG.deb"
