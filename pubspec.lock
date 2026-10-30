@@ -671,6 +671,13 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "2.2.0"
+  quickjs_ffi:
+    dependency: "direct main"
+    description:
+      path: "packages/quickjs_ffi"
+      relative: true
+    source: path
+    version: "0.1.0"
   record_use:
     dependency: transitive
     description:

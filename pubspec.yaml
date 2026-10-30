@@ -53,6 +53,10 @@ dependencies:
   pointycastle: ^4.0.0
   path: ^1.9.1
   args: ^2.7.0
+  # QuickJS-ng built from source by its build hook (pre-request and test
+  # scripts, issue #10).
+  quickjs_ffi:
+    path: packages/quickjs_ffi
 
 dev_dependencies:
   integration_test:
