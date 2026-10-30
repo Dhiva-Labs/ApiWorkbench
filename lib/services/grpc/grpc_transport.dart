@@ -256,9 +256,12 @@ class GrpcInvocation {
     this._raw,
     this._onEvent,
     this.emitDefaults,
-  );
+    Stopwatch? clock,
+  ) : _clock = clock ?? (Stopwatch()..start());
 
   /// Starts [method] on [connection]. Nothing is sent until [send].
+  /// Event times are read from [clock] when given, so they line up with
+  /// events the caller logged before the call started.
   factory GrpcInvocation.start({
     required GrpcConnection connection,
     required MethodDescriptor method,
@@ -267,13 +270,14 @@ class GrpcInvocation {
     Map<String, String> metadata = const {},
     Duration? deadline,
     bool emitDefaults = true,
+    Stopwatch? clock,
   }) {
     final raw = connection.call(
       method.path,
       metadata: metadata,
       timeout: deadline,
     );
-    return GrpcInvocation._(method, codec, raw, onEvent, emitDefaults)
+    return GrpcInvocation._(method, codec, raw, onEvent, emitDefaults, clock)
       .._listen();
   }
 
@@ -284,7 +288,7 @@ class GrpcInvocation {
 
   /// Include default-valued fields in decoded responses.
   final bool emitDefaults;
-  final Stopwatch _clock = Stopwatch()..start();
+  final Stopwatch _clock;
   final Completer<GrpcStatus> _done = Completer<GrpcStatus>();
   int _sent = 0;
   int _received = 0;
@@ -397,7 +401,6 @@ class GrpcInvocation {
       body: status.message.isEmpty ? null : status.message,
       status: status,
     );
-    _clock.stop();
     _done.complete(status);
   }
 
