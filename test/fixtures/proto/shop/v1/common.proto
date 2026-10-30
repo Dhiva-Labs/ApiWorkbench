@@ -1,0 +1,18 @@
+// Shared types, imported by shop.proto.
+syntax = "proto3";
+
+package shop.common;
+
+option go_package = "example.com/shop/common";
+
+message Money {
+  string currency_code = 1;
+  int64 units = 2;
+  sint32 nanos = 3;
+}
+
+enum Currency {
+  CURRENCY_UNSPECIFIED = 0;
+  EUR = 1;
+  USD = 2;
+}

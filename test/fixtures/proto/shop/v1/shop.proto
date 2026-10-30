@@ -1,0 +1,76 @@
+/* The shop service: every proto3 feature the parser handles. */
+syntax = "proto3";
+
+package shop.v1;
+
+import "shop/v1/common.proto";
+import public "google/protobuf/timestamp.proto";
+import "google/protobuf/empty.proto";
+import "google/protobuf/struct.proto";
+import "google/protobuf/wrappers.proto";
+
+option java_package = "com.example.shop";
+option (custom.file_opt) = { name: "x" list: [1, 2] };
+
+message Product {
+  option deprecated = true;
+
+  enum Status {
+    option allow_alias = true;
+    STATUS_UNSPECIFIED = 0;
+    ACTIVE = 1;
+    LIVE = 1;
+    RETIRED = 2 [(custom.value_opt) = "old"];
+  }
+
+  message Variant {
+    string sku = 1;
+    repeated int32 sizes = 2;
+    repeated string tags = 3 [deprecated = true];
+  }
+
+  string id = 1;
+  string display_name = 2 [json_name = "title"];
+  shop.common.Money price = 3;
+  Status status = 4;
+  repeated Variant variants = 5;
+  map<string, int32> stock_by_store = 6;
+  map<int64, Variant> variant_by_id = 7;
+  oneof discount {
+    double percent_off = 8;
+    .shop.common.Money amount_off = 9;
+  }
+  optional string note = 10;
+  google.protobuf.Timestamp created_at = 11;
+  google.protobuf.Struct attributes = 12;
+  google.protobuf.Int32Value rating = 13;
+  repeated double weights = 14 [packed = false];
+  bytes thumbnail = 15;
+  reserved 20 to 25, 30;
+  reserved "legacy_code";
+}
+
+message GetProductRequest {
+  string id = 1;
+}
+
+message ListProductsRequest {
+  int32 page_size = 1;
+  shop.common.Currency currency = 2;
+}
+
+message Ack {
+  int32 count = 1;
+}
+
+service ProductService {
+  option (custom.service_opt) = "x";
+
+  rpc GetProduct(GetProductRequest) returns (Product) {
+    option (google.api.http) = { get: "/v1/products/{id}" };
+  }
+  rpc ListProducts(ListProductsRequest) returns (stream Product);
+  rpc UploadProducts(stream Product) returns (Ack);
+  rpc Chat(stream GetProductRequest) returns (stream Product) {}
+  rpc Ping(google.protobuf.Empty) returns (google.protobuf.Empty);
+}
