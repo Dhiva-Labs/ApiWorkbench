@@ -121,4 +121,26 @@ void main() {
     expect(reloaded.collections.single.requests.length, 4);
     expect(reloaded.collections.single.variables.length, 2);
   });
+
+  test(
+    'saving keeps the request in its place and moves it between collections',
+    () async {
+      final state = await loadedState(tmp);
+      final c = state.addCollection('C');
+      for (final n in ['A', 'B', 'C']) {
+        c.requests.add(RequestModel(name: n));
+      }
+      state.openRequest(c.requests[1], collectionId: c.id);
+      state.activeTab!.request.url = 'https://changed.test';
+      state.saveActiveTo(c);
+      expect(c.requests.map((r) => r.name), ['A', 'B', 'C']);
+      expect(c.requests[1].url, 'https://changed.test');
+
+      final other = state.addCollection('Other');
+      state.saveActiveTo(other);
+      expect(c.requests.map((r) => r.name), ['A', 'C']);
+      expect(other.requests.single.name, 'B');
+      await state.flushPending();
+    },
+  );
 }

@@ -1,3 +1,5 @@
+import 'dart:ui' show AppExitResponse;
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -55,6 +57,23 @@ class _ThemedAppState extends State<_ThemedApp> with WidgetsBindingObserver {
 
   @override
   void didChangePlatformBrightness() => setState(() {});
+
+  // Cookies and history are written lazily; save them before the app may
+  // be killed.
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.hidden ||
+        state == AppLifecycleState.paused ||
+        state == AppLifecycleState.detached) {
+      context.read<AppState>().flushPending();
+    }
+  }
+
+  @override
+  Future<AppExitResponse> didRequestAppExit() async {
+    await context.read<AppState>().flushPending();
+    return AppExitResponse.exit;
+  }
 
   @override
   Widget build(BuildContext context) {
