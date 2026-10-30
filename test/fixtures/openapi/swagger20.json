@@ -1,0 +1,170 @@
+{
+  "swagger": "2.0",
+  "info": {
+    "title": "Legacy Inventory",
+    "description": "An old Swagger 2.0 API.",
+    "version": "0.9"
+  },
+  "host": "inventory.test:8443",
+  "basePath": "/api",
+  "schemes": ["http", "https"],
+  "consumes": ["application/json"],
+  "produces": ["application/json"],
+  "tags": [{ "name": "items", "description": "Stock items" }],
+  "securityDefinitions": {
+    "basic": { "type": "basic" },
+    "key": { "type": "apiKey", "name": "api_key", "in": "query" },
+    "oauth": {
+      "type": "oauth2",
+      "flow": "accessCode",
+      "authorizationUrl": "https://inventory.test/oauth/authorize",
+      "tokenUrl": "https://inventory.test/oauth/token",
+      "scopes": { "read": "Read stock", "write": "Change stock" }
+    },
+    "cookieKey": { "type": "apiKey", "name": "sid", "in": "cookie" }
+  },
+  "security": [{ "key": [] }],
+  "parameters": {
+    "limitParam": {
+      "name": "limit",
+      "in": "query",
+      "type": "integer",
+      "default": 25,
+      "description": "Maximum number of items"
+    }
+  },
+  "responses": {
+    "Gone": {
+      "description": "Item was removed",
+      "schema": { "$ref": "#/definitions/Error" },
+      "examples": { "application/json": { "code": 410, "message": "gone" } }
+    }
+  },
+  "paths": {
+    "/items": {
+      "get": {
+        "tags": ["items"],
+        "summary": "List items",
+        "parameters": [
+          { "$ref": "#/parameters/limitParam" },
+          {
+            "name": "color",
+            "in": "query",
+            "type": "array",
+            "items": { "type": "string", "enum": ["red", "blue"] },
+            "collectionFormat": "multi",
+            "required": true
+          },
+          { "name": "X-Trace", "in": "header", "type": "string", "required": false, "x-example": "t-1" }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": { "type": "array", "items": { "$ref": "#/definitions/Item" } },
+            "examples": {
+              "application/json": [{ "id": 1, "name": "bolt", "price": 0.25 }]
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": ["items"],
+        "summary": "Create an item",
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": { "$ref": "#/definitions/Item" }
+          }
+        ],
+        "security": [{ "basic": [] }],
+        "responses": { "201": { "description": "Created" } }
+      }
+    },
+    "/items/{id}": {
+      "parameters": [
+        { "name": "id", "in": "path", "required": true, "type": "integer", "format": "int64", "x-example": 77 }
+      ],
+      "get": {
+        "tags": ["items"],
+        "summary": "Get an item",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": { "$ref": "#/definitions/Item" }
+          },
+          "410": { "$ref": "#/responses/Gone" }
+        }
+      },
+      "put": {
+        "tags": ["items"],
+        "operationId": "replaceItem",
+        "consumes": ["application/xml"],
+        "parameters": [
+          { "name": "body", "in": "body", "schema": { "$ref": "#/definitions/Item" } }
+        ],
+        "security": [{ "oauth": ["write", "read"] }],
+        "responses": { "200": { "description": "OK" } }
+      }
+    },
+    "/items/{id}/photo": {
+      "post": {
+        "tags": ["items"],
+        "summary": "Upload a photo",
+        "consumes": ["multipart/form-data"],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "type": "integer" },
+          { "name": "caption", "in": "formData", "type": "string", "x-example": "front view" },
+          { "name": "photo", "in": "formData", "type": "file", "required": true }
+        ],
+        "responses": { "200": { "description": "OK" } }
+      }
+    },
+    "/login": {
+      "post": {
+        "summary": "Log in with a form",
+        "consumes": ["application/x-www-form-urlencoded"],
+        "security": [],
+        "parameters": [
+          { "name": "user", "in": "formData", "type": "string", "required": true },
+          { "name": "pass", "in": "formData", "type": "string", "required": true }
+        ],
+        "responses": { "200": { "description": "OK" } }
+      }
+    },
+    "/session": {
+      "get": {
+        "summary": "Needs a cookie key",
+        "security": [{ "cookieKey": [] }],
+        "responses": { "200": { "description": "OK" } }
+      }
+    }
+  },
+  "definitions": {
+    "Item": {
+      "type": "object",
+      "required": ["name"],
+      "properties": {
+        "id": { "type": "integer", "format": "int64" },
+        "name": { "type": "string", "example": "bolt" },
+        "price": { "type": "number", "format": "double", "minimum": 0 },
+        "tags": { "type": "array", "items": { "type": "string" } },
+        "dimensions": {
+          "type": "object",
+          "properties": {
+            "w": { "type": "integer" },
+            "h": { "type": "integer" }
+          }
+        }
+      }
+    },
+    "Error": {
+      "type": "object",
+      "properties": {
+        "code": { "type": "integer" },
+        "message": { "type": "string" }
+      }
+    }
+  }
+}
