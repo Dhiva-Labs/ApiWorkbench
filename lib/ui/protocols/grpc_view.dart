@@ -16,6 +16,7 @@ import '../../theme.dart';
 import '../help_tip.dart';
 import '../kv_editor.dart';
 import '../tab_memory.dart';
+import '../adaptive.dart';
 
 /// Which editor tab (Message, Metadata, ...) each gRPC tab shows.
 final _selectedTab = Expando<int>('grpc editor tab');
@@ -449,6 +450,18 @@ class _GrpcEditorState extends State<GrpcEditor> {
     final enabledMetadata = _cfg.metadata
         .where((m) => m.enabled && m.key.isNotEmpty)
         .length;
+    // Short panes (phones, the keyboard up) scroll the whole editor at a
+    // usable height instead of squeezing its tabs.
+    return LayoutBuilder(
+      builder: (context, box) => box.maxHeight >= 520
+          ? _editor(enabledMetadata)
+          : SingleChildScrollView(
+              child: SizedBox(height: 520, child: _editor(enabledMetadata)),
+            ),
+    );
+  }
+
+  Widget _editor(int enabledMetadata) {
     return Column(
       children: [
         Padding(
@@ -710,7 +723,11 @@ class _GrpcEditorState extends State<GrpcEditor> {
 
   Widget _sourcePicker() => SegmentedButton<GrpcSchemaSource>(
     showSelectedIcon: false,
-    style: const ButtonStyle(visualDensity: VisualDensity.compact),
+    style: isTouch(context)
+        ? const ButtonStyle(
+            minimumSize: WidgetStatePropertyAll(Size(0, minTouchTarget)),
+          )
+        : const ButtonStyle(visualDensity: VisualDensity.compact),
     segments: const [
       ButtonSegment(
         value: GrpcSchemaSource.reflection,
@@ -1236,7 +1253,10 @@ class _Picker extends StatelessWidget {
       onSelected: onSelected,
       itemBuilder: (_) => items,
       child: Container(
-        constraints: BoxConstraints(maxWidth: maxWidth, minHeight: 36),
+        constraints: BoxConstraints(
+          maxWidth: maxWidth,
+          minHeight: isTouch(context) ? minTouchTarget : 36,
+        ),
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
         decoration: BoxDecoration(
           color: Palette.surfaceAlt,

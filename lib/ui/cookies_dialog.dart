@@ -205,7 +205,9 @@ class CookieTile extends StatelessWidget {
                   essential: true,
                   child: IconButton(
                     key: Key('cookie-edit-${c.name}'),
-                    visualDensity: VisualDensity.compact,
+                    visualDensity: isTouch(context)
+                        ? VisualDensity.standard
+                        : VisualDensity.compact,
                     icon: const Icon(Icons.edit_outlined, size: 18),
                     onPressed: onEdit,
                   ),
@@ -217,7 +219,9 @@ class CookieTile extends StatelessWidget {
                   essential: true,
                   child: IconButton(
                     key: Key('cookie-delete-${c.name}'),
-                    visualDensity: VisualDensity.compact,
+                    visualDensity: isTouch(context)
+                        ? VisualDensity.standard
+                        : VisualDensity.compact,
                     icon: Icon(
                       Icons.delete_outline,
                       size: 18,
@@ -398,6 +402,7 @@ class _CookieManagerState extends State<CookieManager> {
             essential: true,
             child: IconButton(
               key: const Key('cookie-add'),
+              style: _touchStyle(context),
               icon: const Icon(Icons.add),
               onPressed: () => _edit(domain: _shown),
             ),
@@ -408,6 +413,7 @@ class _CookieManagerState extends State<CookieManager> {
             essential: true,
             child: IconButton(
               key: const Key('cookie-clear-all'),
+              style: _touchStyle(context),
               icon: const Icon(Icons.delete_sweep_outlined),
               onPressed: jar.count == 0 ? null : _clearAll,
             ),
@@ -751,3 +757,11 @@ class _CookieEditorState extends State<_CookieEditor> {
     );
   }
 }
+
+/// Full-size tap targets for icon buttons on touch screens.
+ButtonStyle? _touchStyle(BuildContext context) => isTouch(context)
+    ? IconButton.styleFrom(
+        minimumSize: const Size(minTouchTarget, minTouchTarget),
+        tapTargetSize: MaterialTapTargetSize.padded,
+      )
+    : null;

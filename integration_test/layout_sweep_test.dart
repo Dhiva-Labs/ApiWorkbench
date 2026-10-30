@@ -1478,7 +1478,7 @@ class _Sweep {
       await editorTab(4);
       await show(
         'scripts · post-response',
-        () => tap(find.text('Post-response').first),
+        () => tap(find.textContaining('Post-response').first),
       );
       await editorTab(0);
       await show('more menu', () => tap(find.byTooltip('More')));
