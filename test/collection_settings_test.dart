@@ -104,8 +104,9 @@ void main() {
     await tester.tap(find.text('Add variable'));
     await tester.pumpAndSettle();
     expect(col.variables, hasLength(1));
-    await tester.enterText(find.byType(TextField).first, 'baseUrl');
-    await tester.enterText(find.byType(TextField).last, 'https://x.dev');
+    // Columns: name, initial value, current value.
+    await tester.enterText(find.byType(TextField).at(0), 'baseUrl');
+    await tester.enterText(find.byType(TextField).at(1), 'https://x.dev');
     expect(col.variables.single.key, 'baseUrl');
     expect(col.variables.single.value, 'https://x.dev');
 
