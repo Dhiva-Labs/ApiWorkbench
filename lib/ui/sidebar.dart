@@ -962,7 +962,10 @@ class _SidebarState extends State<Sidebar> {
     child: InkWell(
       borderRadius: BorderRadius.circular(6),
       onTap: () => editGlobals(context, state),
-      child: Padding(
+      child: Container(
+        constraints: BoxConstraints(
+          minHeight: isTouch(context) ? minTouchTarget : 0,
+        ),
         padding: const EdgeInsets.fromLTRB(10, 8, 4, 8),
         child: Row(
           children: [

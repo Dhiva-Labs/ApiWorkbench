@@ -13,6 +13,7 @@ import 'package:api_workbench/ui/runner_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
+import 'support/temp_dir.dart';
 
 /// Answers every script run with a fixed outcome.
 class _OutcomeEngine implements ScriptEngine {
@@ -429,7 +430,7 @@ void main() {
 
       await tester.runAsync(() async {
         await server.close(force: true);
-        await dir.delete(recursive: true);
+        await deleteTempDir(dir);
       });
     });
 
@@ -465,7 +466,7 @@ void main() {
       expect(find.text('Preview: first 20 of 30 rows'), findsOneWidget);
       expect(tester.takeException(), isNull);
       await tester.pumpWidget(const SizedBox());
-      await tester.runAsync(() => dir.delete(recursive: true));
+      await tester.runAsync(() => deleteTempDir(dir));
     });
 
     testWidgets('lists script tests and script errors in each result', (
@@ -539,7 +540,7 @@ void main() {
       await tester.pumpWidget(const SizedBox());
       await tester.runAsync(() async {
         await server.close(force: true);
-        await dir.delete(recursive: true);
+        await deleteTempDir(dir);
       });
     });
 
@@ -625,7 +626,7 @@ void main() {
         await tester.pumpWidget(const SizedBox());
         await tester.runAsync(() async {
           await server.close(force: true);
-          await dir.delete(recursive: true);
+          await deleteTempDir(dir);
         });
       },
     );

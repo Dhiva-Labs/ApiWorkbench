@@ -782,6 +782,9 @@ List<String> curlNetworkArgs(
   final ca = net.caCertPath.trim();
   if (ca.isNotEmpty) {
     args.addAll(['--cacert', _curlBundleWith(ca) ?? _expandHome(ca)]);
+    // Schannel cannot check revocation for a private CA and would refuse
+    // every certificate it signed.
+    if (Platform.isWindows) args.add('--ssl-revoke-best-effort');
   }
 
   if (cert != null) {

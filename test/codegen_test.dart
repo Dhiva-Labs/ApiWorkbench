@@ -1123,24 +1123,20 @@ void main() {
         .data!;
 
     Future<void> pick(WidgetTester tester, String query, String label) async {
-      await tester.tap(
-        find.descendant(
-          of: find.byKey(const ValueKey('snippet-language')),
-          matching: find.byType(TextField),
-        ),
-      );
+      await tester.tap(find.byKey(const ValueKey('snippet-language')));
       await tester.pumpAndSettle();
-      await tester.enterText(
-        find.descendant(
-          of: find.byKey(const ValueKey('snippet-language')),
-          matching: find.byType(TextField),
-        ),
-        query,
-      );
-      await tester.pumpAndSettle();
-      await tester.tap(
-        find.widgetWithText(MenuItemButton, label).hitTestable(),
-      );
+      // The menu builds only the items in view, centred on the current
+      // language; scroll it until the wanted one is there.
+      final menu = find.byType(Scrollable).last;
+      for (
+        var i = 0;
+        i < 10 && find.text(label).hitTestable().evaluate().isEmpty;
+        i++
+      ) {
+        await tester.drag(menu, Offset(0, i < 5 ? 200 : -200));
+        await tester.pumpAndSettle();
+      }
+      await tester.tap(find.text(label).hitTestable().last);
       await tester.pumpAndSettle();
     }
 

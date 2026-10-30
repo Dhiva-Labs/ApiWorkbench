@@ -10,6 +10,7 @@ import '../services/doc_export.dart';
 import '../services/scripting/script_engine.dart';
 import '../state/app_state.dart';
 import '../theme.dart';
+import 'adaptive.dart';
 import 'app_menu.dart';
 import 'examples/examples_ui.dart';
 import 'help_tip.dart';
@@ -531,7 +532,10 @@ class _ResponseViewState extends State<ResponseView> {
   }
 
   ButtonStyle get _noteButtonStyle => TextButton.styleFrom(
-    visualDensity: VisualDensity.compact,
+    visualDensity: isTouch(context)
+        ? VisualDensity.standard
+        : VisualDensity.compact,
+    minimumSize: isTouch(context) ? const Size(64, minTouchTarget) : null,
     textStyle: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
   );
 
