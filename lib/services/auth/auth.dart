@@ -87,11 +87,24 @@ AuthConfig resolveAuth(RequestModel r, CollectionModel? c) {
 
 /// Adds [auth] to [p] before it is sent. Signers see the final method,
 /// URL, headers and body bytes, so this runs last.
+///
+/// Throws [AuthException] only: a crypto library error (say, a key too
+/// small for RSA-PSS) is reported the same way instead of failing the send.
 Future<void> applyAuth(
   PreparedRequest p,
   AuthConfig auth,
   AuthContext ctx,
 ) async {
+  try {
+    await _apply(p, auth, ctx);
+  } on AuthException {
+    rethrow;
+  } catch (e) {
+    throw AuthException('${auth.type.label} could not be applied: $e');
+  }
+}
+
+Future<void> _apply(PreparedRequest p, AuthConfig auth, AuthContext ctx) async {
   switch (auth.type) {
     case AuthType.none || AuthType.inherit:
       break;
@@ -142,11 +155,16 @@ Future<PreparedRequest?> retryAfterChallenge(
   AuthContext ctx,
 ) async {
   if (ctx.offline) return null;
-  return switch (auth.type) {
-    AuthType.digest => DigestAuth.retry(sent, res, auth, ctx),
-    AuthType.ntlm => NtlmAuth.retry(sent, res, auth, ctx),
-    _ => null,
-  };
+  try {
+    return switch (auth.type) {
+      AuthType.digest => DigestAuth.retry(sent, res, auth, ctx),
+      AuthType.ntlm => NtlmAuth.retry(sent, res, auth, ctx),
+      _ => null,
+    };
+  } catch (_) {
+    // A challenge we can't answer: the 401 is the answer.
+    return null;
+  }
 }
 
 /// [url] with `key=value` appended to its query, keeping what is there.
