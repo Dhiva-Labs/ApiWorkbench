@@ -60,11 +60,19 @@ class LatencyHistogram {
 
 /// One request in a load test plus the values to capture from its response.
 class LoadStep {
-  LoadStep(this.request, {this.enabled = true, Map<String, String>? extract})
-    : extract = extract ?? {};
+  LoadStep(
+    this.request, {
+    this.enabled = true,
+    Map<String, String>? extract,
+    this.auth,
+  }) : extract = extract ?? {};
 
   final RequestModel request;
   bool enabled;
+
+  /// The auth to use when the request inherits it (resolved from its
+  /// folder or collection); null = the request's own.
+  final AuthConfig? auth;
 
   /// Variable name → source: `body.<path>` (or a bare JSON path such as
   /// `data.items[0].id`), `header.<name>` or `status`. Captured values are
@@ -349,7 +357,15 @@ class LoadTestService extends ChangeNotifier {
     if (http == null) return false;
     final sentAt = DateTime.now();
     _activeTabs.add(tabId);
-    final res = await http.send(step.request, vars, tabId: tabId);
+    // Not recorded to the console: a load test would flood it.
+    final res = await http.send(
+      step.request,
+      vars,
+      tabId: tabId,
+      auth: step.auth,
+      record: false,
+      source: 'load',
+    );
     _activeTabs.remove(tabId);
     if (_disposed) return false;
     // A stop cancels in-flight requests; don't count those as failures.

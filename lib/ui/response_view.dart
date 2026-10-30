@@ -6,11 +6,17 @@ import 'package:provider/provider.dart';
 
 import '../models/models.dart';
 import '../services/doc_export.dart';
+import '../services/scripting/script_engine.dart';
 import '../state/app_state.dart';
 import '../theme.dart';
 import 'app_menu.dart';
+import 'examples/examples_ui.dart';
 import 'help_tip.dart';
 import 'json_view.dart';
+import 'response/body_tools.dart';
+import 'response/cookies_tab.dart';
+import 'response/preview_tab.dart';
+import 'response/visualize_tab.dart';
 import 'tab_memory.dart';
 
 /// Which response tab (Pretty, Raw, Headers, Tests) each request tab shows,
@@ -24,12 +30,18 @@ class ResponseView extends StatelessWidget {
   ResponseView({super.key, required this.tab})
     : response = tab.response,
       loading = tab.loading,
-      results = tab.assertionResults;
+      results = tab.assertionResults,
+      scriptTests = tab.scriptTests,
+      scriptError = tab.scriptError,
+      visualizer = tab.visualizer;
 
   final RequestTab tab;
   final ResponseData? response;
   final bool loading;
   final List<AssertionResult> results;
+  final List<ScriptTestResult> scriptTests;
+  final String? scriptError;
+  final VisualizerOutput? visualizer;
 
   @override
   Widget build(BuildContext context) {
@@ -95,10 +107,15 @@ class ResponseView extends StatelessWidget {
         ? '${res.bodyPreview}\n\n[Preview limited to 64 KB. Copy or export for the full body.]'
         : res.bodyPreview;
     final tests = results;
-    final testsPassed = tests.where((t) => t.pass).length;
+    final testCount = tests.length + scriptTests.length;
+    final testsPassed =
+        tests.where((t) => t.pass).length +
+        scriptTests.where((t) => t.pass).length;
+    final testsOk = testsPassed == testCount && scriptError == null;
+    final tabCount = visualizer == null ? 6 : 7;
     return DefaultTabController(
-      length: 4,
-      initialIndex: TabMemory.initialIndex(_selectedTab, tab, 4),
+      length: tabCount,
+      initialIndex: TabMemory.initialIndex(_selectedTab, tab, tabCount),
       child: TabMemory(
         owner: tab,
         memory: _selectedTab,
@@ -126,6 +143,12 @@ class ResponseView extends StatelessWidget {
                   title: 'Raw view',
                   child: Tab(text: 'Raw'),
                 ),
+                const HelpHover(
+                  'The body rendered: HTML pages, images, SVG and other '
+                  'formats a browser would display.',
+                  title: 'Preview',
+                  child: Tab(text: 'Preview'),
+                ),
                 HelpHover(
                   'Extra information the server sent with the response, such as '
                   'the body format and caching rules.',
@@ -133,24 +156,36 @@ class ResponseView extends StatelessWidget {
                   example: 'Content-Type: application/json',
                   child: Tab(text: 'Headers (${res.headers.length})'),
                 ),
+                const HelpHover(
+                  'Cookies this response set, and what the cookie jar holds '
+                  'for its address.',
+                  title: 'Cookies',
+                  example: 'session=abc123; HttpOnly',
+                  child: Tab(text: 'Cookies'),
+                ),
                 HelpHover(
-                  'Results of the checks from the request\'s Tests tab, run on '
-                  'this response. Shown as passed out of total.',
+                  'Results of the request\'s Tests tab and of pm.test calls in '
+                  'its scripts, run on this response. Shown as passed out of '
+                  'total.',
                   title: 'Test results',
                   example: 'Tests (3/4)',
                   child: Tab(
-                    child: tests.isEmpty
+                    child: testCount == 0 && scriptError == null
                         ? const Text('Tests')
                         : Text(
-                            'Tests ($testsPassed/${tests.length})',
+                            'Tests ($testsPassed/$testCount)',
                             style: TextStyle(
-                              color: testsPassed == tests.length
-                                  ? Palette.get_
-                                  : Palette.delete,
+                              color: testsOk ? Palette.get_ : Palette.delete,
                             ),
                           ),
                   ),
                 ),
+                if (visualizer != null)
+                  const HelpHover(
+                    'The view the test script built with pm.visualizer.set.',
+                    title: 'Visualize',
+                    child: Tab(text: 'Visualize'),
+                  ),
               ],
             ),
             Expanded(
@@ -168,8 +203,11 @@ class ResponseView extends StatelessWidget {
                       ),
                     ),
                   ),
+                  ResponsePreview(response: res),
                   _headersTable(res),
+                  ResponseCookies(response: res),
                   _testsList(tests),
+                  if (visualizer != null) VisualizeView(output: visualizer!),
                 ],
               ),
             ),
@@ -180,6 +218,64 @@ class ResponseView extends StatelessWidget {
   }
 
   Widget _testsList(List<AssertionResult> tests) {
+    if (scriptTests.isNotEmpty || scriptError != null) {
+      return ListView(
+        padding: const EdgeInsets.all(14),
+        children: [
+          if (scriptError != null)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: SelectableText(
+                'Test script failed: $scriptError',
+                style: TextStyle(color: Palette.delete, fontSize: 12.5),
+              ),
+            ),
+          for (final t in scriptTests)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(
+                    t.pass ? Icons.check_circle : Icons.cancel,
+                    size: 17,
+                    color: t.pass ? Palette.get_ : Palette.delete,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          t.name,
+                          style: const TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        if (t.error != null)
+                          Text(
+                            t.error!,
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Palette.delete,
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          if (tests.isNotEmpty)
+            SizedBox(height: 360, child: _assertionList(tests)),
+        ],
+      );
+    }
+    return _assertionList(tests);
+  }
+
+  Widget _assertionList(List<AssertionResult> tests) {
     if (tests.isEmpty) {
       return Center(
         child: Text(
@@ -329,6 +425,25 @@ class ResponseView extends StatelessWidget {
             child: _metric(Icons.straighten, _fmtSize(res.sizeBytes)),
           ),
 
+          IconButton(
+            tooltip: 'Save response body to a file',
+            icon: Icon(Icons.save_alt, size: 16, color: Palette.textDim),
+            onPressed: () => saveResponseBody(context, res, tab.request),
+          ),
+          IconButton(
+            tooltip: 'Save as example',
+            icon: Icon(
+              Icons.bookmark_add_outlined,
+              size: 16,
+              color: Palette.textDim,
+            ),
+            onPressed: () => saveResponseAsExample(
+              context,
+              context.read<AppState>(),
+              tab,
+              res,
+            ),
+          ),
           IconButton(
             tooltip:
                 'Save request and response as a Markdown doc (secrets '

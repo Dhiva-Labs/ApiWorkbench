@@ -32,7 +32,9 @@ String toCurl(RequestModel r) {
       if (r.apiKeyInHeader && r.apiKeyName.isNotEmpty) {
         b.write(" \\\n  -H '${r.apiKeyName}: ${r.apiKeyValue}'");
       }
-    case AuthType.none:
+    default:
+      // Other schemes sign the final request; the Code dialog's cURL
+      // snippet (built from the resolved request) carries them.
       break;
   }
 

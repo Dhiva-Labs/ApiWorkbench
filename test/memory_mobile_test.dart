@@ -21,6 +21,10 @@ class FakeHttp extends HttpService {
     RequestModel r,
     Map<String, String> vars, {
     required String tabId,
+    AuthConfig? auth,
+    void Function()? onAuthUpdated,
+    bool record = true,
+    String source = 'editor',
   }) async {
     if (pending != null) return pending!.future;
     count++;

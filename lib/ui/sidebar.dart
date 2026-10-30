@@ -7,9 +7,14 @@ import '../theme.dart';
 import 'adaptive.dart';
 import 'help_tip.dart';
 import 'import_dialog.dart';
-import 'kv_editor.dart';
+import 'collection_docs_ui.dart';
+import 'collection_settings_dialog.dart';
+import 'examples/examples_ui.dart';
+import 'export_dialog.dart';
 import 'load_test_screen.dart';
 import 'runner_screen.dart';
+import 'variables_editor.dart';
+import 'version_history_dialog.dart';
 
 enum SidebarSection { collections, environments, history }
 
@@ -323,12 +328,20 @@ class _SidebarState extends State<Sidebar> {
         );
         if (open) _children(state, c, child, depth + 1, activeId, out);
       } else if (child is RequestModel) {
+        final exKey = 'e:${c.id}/${child.id}';
+        final showExamples =
+            child.examples.isNotEmpty && _expanded.contains(exKey);
         out.add(
           _row(
             depth: depth,
-            method: child.method,
+            method: child.kind == RequestKind.http
+                ? child.method
+                : child.kind.badge,
             label: child.name,
             selected: child.id == activeId,
+            meta: child.examples.isEmpty ? null : '${child.examples.length}',
+            metaHelp: 'Saved examples. Click the number to show them.',
+            onMetaTap: () => _toggle(exKey),
             onTap: () {
               state.openRequest(child, collectionId: c.id);
               widget.onRequestOpened?.call();
@@ -336,6 +349,18 @@ class _SidebarState extends State<Sidebar> {
             menu: _requestMenu(state, c, child),
           ),
         );
+        if (showExamples) {
+          for (final e in child.examples) {
+            out.add(
+              _row(
+                depth: depth + 1,
+                icon: Icons.bookmark_outline,
+                label: e.name,
+                onTap: () => openExample(context, state, c, child, e),
+              ),
+            );
+          }
+        }
       }
     }
   }
@@ -358,6 +383,7 @@ class _SidebarState extends State<Sidebar> {
     bool bold = false,
     bool selected = false,
     Widget? menu,
+    VoidCallback? onMetaTap,
   }) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 1),
@@ -413,10 +439,21 @@ class _SidebarState extends State<Sidebar> {
                 if (meta != null)
                   HelpHover(
                     metaHelp ?? 'How many requests are inside.',
-                    title: '$meta requests',
-                    child: Text(
-                      meta,
-                      style: TextStyle(fontSize: 11, color: Palette.textDim),
+                    title: onMetaTap == null
+                        ? '$meta requests'
+                        : '$meta examples',
+                    child: InkWell(
+                      onTap: onMetaTap,
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 4),
+                        child: Text(
+                          meta,
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: Palette.textDim,
+                          ),
+                        ),
+                      ),
                     ),
                   ),
                 ?menu,
@@ -431,12 +468,16 @@ class _SidebarState extends State<Sidebar> {
   /// Method badge for tree and history rows; long-press help keeps the row
   /// tappable on touch screens.
   Widget _methodBadge(String method) => HelpHover(
-    httpMethodHelp(method).message,
-    title: httpMethodHelp(method).title,
+    httpMethods.contains(method)
+        ? httpMethodHelp(method).message
+        : 'A streaming connection rather than a single HTTP request.',
+    title: httpMethods.contains(method) ? httpMethodHelp(method).title : method,
     child: Text(
       method == 'DELETE' ? 'DEL' : method,
       style: TextStyle(
-        color: methodColor(method),
+        color: httpMethods.contains(method)
+            ? methodColor(method)
+            : Palette.query,
         fontWeight: FontWeight.w800,
         fontSize: 10.5,
       ),
@@ -515,6 +556,34 @@ class _SidebarState extends State<Sidebar> {
             'collection instead of creating a new one.',
       ),
       _item(
+        'settings',
+        Icons.tune,
+        'Auth, scripts and docs',
+        help:
+            'Auth inherited by the collection\'s requests, scripts run '
+            'around every request, and its description.',
+        example: 'Bearer {{token}} for every request',
+      ),
+      _item(
+        'export',
+        Icons.upload_outlined,
+        'Export…',
+        help:
+            'Save this collection as a Postman, OpenAPI or ApiWorkbench file.',
+      ),
+      _item(
+        'docs',
+        Icons.menu_book_outlined,
+        'Generate docs…',
+        help: 'One HTML or Markdown page documenting every request.',
+      ),
+      _item(
+        'history',
+        Icons.history_toggle_off,
+        'Version history',
+        help: 'Earlier versions of this collection, to compare or restore.',
+      ),
+      _item(
         'vars',
         Icons.data_object,
         'Variables',
@@ -543,6 +612,10 @@ class _SidebarState extends State<Sidebar> {
       'load' => _openLoadTest(c, c.requests, c.name),
       'import' => showImportDialog(context, collectionId: c.id),
       'vars' => _editCollectionVariables(state, c),
+      'settings' => showCollectionSettings(context, state, c),
+      'export' => showExportDialog(context, collection: c),
+      'docs' => exportCollectionDocs(context, state, c),
+      'history' => showVersionHistory(context, state, c),
       'rename' => _renameCollectionDialog(state, c),
       'delete' => _confirmDeleteCollection(state, c),
       _ => null,
@@ -580,8 +653,22 @@ class _SidebarState extends State<Sidebar> {
           help: 'Add imported requests inside this folder.',
           example: 'Shop API › Orders',
         ),
+        _item(
+          'settings',
+          Icons.tune,
+          'Auth, scripts and docs',
+          help:
+              'Auth inherited by this folder\'s requests, scripts run around '
+              'each of them, and the folder\'s description.',
+        ),
       ],
       (v) => switch (v) {
+        'settings' => showFolderSettings(
+          context,
+          context.read<AppState>(),
+          c,
+          f.path,
+        ),
         'import' => showImportDialog(
           context,
           collectionId: c.id,
@@ -675,19 +762,12 @@ class _SidebarState extends State<Sidebar> {
             ),
             const SizedBox(height: 6),
             Expanded(
-              child: KVEditor(
+              child: VariablesEditor(
                 rows: c.variables,
                 onChanged: state.updateCollections,
-                keyHint: 'Variable',
-                addLabel: 'Add variable',
-                keyHelp:
-                    'The variable name. Requests in this collection use it '
-                    'as {{name}}.',
-                keyExample: 'baseUrl',
                 valueHelp:
                     'The value that replaces {{name}} when you send. The '
                     'active environment\'s value wins on a name clash.',
-                valueExample: 'https://api.example.com',
               ),
             ),
           ],
@@ -772,6 +852,11 @@ class _SidebarState extends State<Sidebar> {
             onPressed: () => showImportDialog(context),
             icon: const Icon(Icons.download_outlined, size: 17),
             label: const Text('Import from Postman'),
+          ),
+          TextButton.icon(
+            onPressed: () => editGlobals(context, state),
+            icon: const Icon(Icons.language, size: 17),
+            label: Text('Globals (${state.globals.length})'),
           ),
         ],
       );
@@ -863,9 +948,44 @@ class _SidebarState extends State<Sidebar> {
 
     return ListView(
       padding: const EdgeInsets.fromLTRB(6, 0, 6, 12),
-      children: [envRow(null), for (final e in state.environments) envRow(e)],
+      children: [
+        envRow(null),
+        for (final e in state.environments) envRow(e),
+        Divider(height: 16, color: Palette.border),
+        _globalsRow(state),
+      ],
     );
   }
+
+  Widget _globalsRow(AppState state) => Material(
+    color: Colors.transparent,
+    child: InkWell(
+      borderRadius: BorderRadius.circular(6),
+      onTap: () => editGlobals(context, state),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(10, 8, 4, 8),
+        child: Row(
+          children: [
+            HelpHover(
+              'Variables every request can use, whatever the environment. '
+              'Collection and environment values win on a name clash.',
+              title: 'Globals',
+              child: Icon(Icons.language, size: 17, color: Palette.textDim),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                'Globals · ${state.globals.length} variables',
+                style: TextStyle(fontSize: 13, color: Palette.text),
+              ),
+            ),
+            Icon(Icons.edit_outlined, size: 17, color: Palette.textDim),
+            const SizedBox(width: 12),
+          ],
+        ),
+      ),
+    ),
+  );
 
   Future<void> _newEnvironment(AppState state) async {
     final name = await _promptText(context, 'New environment', 'Name');
@@ -890,14 +1010,9 @@ class _SidebarState extends State<Sidebar> {
           ),
         ],
         height: 380,
-        content: KVEditor(
+        content: VariablesEditor(
           rows: env.variables,
           onChanged: state.updateEnvironment,
-          keyHint: 'Variable',
-          addLabel: 'Add variable',
-          keyHelp:
-              'The variable name. Use it anywhere in a request as {{name}}.',
-          keyExample: 'baseUrl',
           valueHelp:
               'The value that replaces {{name}} while this environment is '
               'active. It wins over a collection variable of the same name.',
@@ -951,7 +1066,11 @@ class _SidebarState extends State<Sidebar> {
                   width: 46,
                   child: Align(
                     alignment: Alignment.centerLeft,
-                    child: _methodBadge(h.request.method),
+                    child: _methodBadge(
+                      h.request.kind == RequestKind.http
+                          ? h.request.method
+                          : h.request.kind.badge,
+                    ),
                   ),
                 ),
                 Expanded(

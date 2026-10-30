@@ -198,6 +198,15 @@ Color methodColor(String method) => switch (method.toUpperCase()) {
   _ => Palette.other,
 };
 
+/// Short label shown before a request's name: its method, or its
+/// protocol for WebSocket, MQTT, ... requests.
+String requestBadge(RequestModel r) => r.kind == RequestKind.http
+    ? (r.method == 'DELETE' ? 'DEL' : r.method)
+    : r.kind.badge;
+
+Color requestBadgeColor(RequestModel r) =>
+    r.kind == RequestKind.http ? methodColor(r.method) : Palette.query;
+
 Color statusColor(int code) {
   if (code >= 200 && code < 300) return Palette.get_;
   if (code >= 300 && code < 400) return Palette.put;

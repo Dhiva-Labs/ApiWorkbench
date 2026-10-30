@@ -108,6 +108,7 @@ class _ImportDialogState extends State<_ImportDialog> {
     final r = _report;
     if (r == null || r.isEmpty) return;
     final state = context.read<AppState>();
+    final globals = state.mergeGlobals(r.globals);
     final target = state.collectionById(_target);
     if (target != null && r.collections.isNotEmpty) {
       final added = state.addToCollection(
@@ -130,6 +131,7 @@ class _ImportDialogState extends State<_ImportDialog> {
         if (r.environments.isNotEmpty)
           '${r.environments.length} environment'
               '${r.environments.length == 1 ? '' : 's'}',
+        if (globals > 0) '$globals global${globals == 1 ? '' : 's'}',
       ];
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -150,6 +152,7 @@ class _ImportDialogState extends State<_ImportDialog> {
       if (nc > 0)
         '$nc collection${nc == 1 ? '' : 's'} (${r.requests} requests)',
       if (ne > 0) '$ne environment${ne == 1 ? '' : 's'}',
+      if (globals > 0) '$globals global${globals == 1 ? '' : 's'}',
     ];
     ScaffoldMessenger.of(
       context,
