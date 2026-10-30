@@ -5,7 +5,8 @@
 #   <OutDir>\ApiWorkbench[-arm64].msix                   the Microsoft Store package
 #
 # Run `flutter build windows --release` first. The zip packs that build as it
-# is (meme clips included). The Store package comes from
+# is (meme clips included), plus apiworkbench-cli.exe, the command-line runner
+# (tool\build_cli.ps1, built here when missing). The Store package comes from
 # tool\build_store_msix.ps1, which rebuilds without the clips, so the zip is
 # made first.
 #
@@ -34,10 +35,27 @@ New-Item -ItemType Directory -Force -Path $OutDir | Out-Null
 $out = (Resolve-Path $OutDir).Path
 
 $name = "ApiWorkbench-$version-windows-$Arch"
+$cli = "build\cli\$Arch"
+if (-not (Test-Path "$cli\bin\apiworkbench-cli.exe")) {
+    & (Join-Path $PSScriptRoot 'build_cli.ps1') -Arch $Arch -OutDir $cli
+}
 $stage = Join-Path ([IO.Path]::GetTempPath()) "apiworkbench-zip-$([guid]::NewGuid())"
 try {
     New-Item -ItemType Directory -Path $stage | Out-Null
     Copy-Item -Recurse -Path $release -Destination (Join-Path $stage $name)
+    # The exe loads native libraries from ..\lib relative to itself. With
+    # none it sits next to apiworkbench.exe; with some, it goes to bin\ and
+    # the libraries to lib\, and a one-line apiworkbench-cli.cmd at the top
+    # starts it.
+    $app = Join-Path $stage $name
+    if (Test-Path "$cli\lib") {
+        New-Item -ItemType Directory -Force -Path (Join-Path $app 'bin'), (Join-Path $app 'lib') | Out-Null
+        Copy-Item "$cli\bin\apiworkbench-cli.exe" (Join-Path $app 'bin')
+        Copy-Item -Recurse -Force "$cli\lib\*" (Join-Path $app 'lib')
+        Set-Content -Path (Join-Path $app 'apiworkbench-cli.cmd') -Encoding ascii -Value '@"%~dp0bin\apiworkbench-cli.exe" %*'
+    } else {
+        Copy-Item "$cli\bin\apiworkbench-cli.exe" $app
+    }
     $zip = Join-Path $out "$name.zip"
     if (Test-Path $zip) { Remove-Item $zip }
     Add-Type -AssemblyName System.IO.Compression.FileSystem

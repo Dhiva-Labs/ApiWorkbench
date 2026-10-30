@@ -68,6 +68,15 @@ apps:
       # Chaos Mode plays sounds through the bundled gst-play-1.0.
       - audio-playback
 
+  # The command-line runner: `snap run apiworkbench.cli run <file>`. A
+  # confined app reads files under the home folder and removable media only.
+  cli:
+    command: apiworkbench-cli
+    plugs:
+      - home
+      - removable-media
+      - network
+
 parts:
   apiworkbench:
     plugin: flutter
@@ -79,6 +88,13 @@ parts:
       craftctl default
       rm -rf build .dart_tool .flutter .pub-cache dist parts prime stage \
         linux/flutter/ephemeral linux/packaging/snap/bundle test_artifacts
+    # The plugin builds the app and puts the Flutter SDK on PATH; compile
+    # the command-line runner with that SDK's dart and add it to the snap.
+    override-build: |
+      craftctl default
+      tool/build_cli.sh "$CRAFT_PART_BUILD/build/cli/snap"
+      . tool/cli_bundle.sh
+      install_cli "$CRAFT_PART_BUILD/build/cli/snap" "$CRAFT_PART_INSTALL"
     build-packages:
       - clang
       - cmake

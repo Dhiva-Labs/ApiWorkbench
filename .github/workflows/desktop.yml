@@ -1,7 +1,9 @@
 name: Desktop builds
 
 # Builds, tests and packages ApiWorkbench for Linux and Windows on x64 and
-# arm64, plus a snap for both Linux architectures. Releases are made by hand;
+# arm64, plus a snap for both Linux architectures. Every package also holds
+# apiworkbench-cli, the command-line runner, which is smoke-tested against a
+# local server (tool/cli_smoke.dart). Releases are made by hand;
 # when one is published, the arm64 packages are attached to it (the x64 ones
 # stay as they are).
 
@@ -100,6 +102,17 @@ jobs:
           echo "checked $checked ELF files"
           [ "$checked" -ge 3 ] && [ "$bad" -eq 0 ]
 
+      # `dart build cli`, not `dart compile exe`: some of the app's packages
+      # have Dart build hooks, which compile exe refuses to run.
+      - name: Build the command-line runner
+        run: tool/build_cli.sh
+
+      - name: Assert the command-line runner is ${{ matrix.elf_machine }}
+        run: file build/cli/${{ matrix.arch }}/bin/apiworkbench-cli | grep "$ELF_MACHINE"
+
+      - name: Smoke-run the command-line runner against a local server
+        run: dart tool/cli_smoke.dart build/cli/${{ matrix.arch }}/bin/apiworkbench-cli
+
       - name: Package tarball and .deb
         run: |
           tool/build_tarball.sh dist
@@ -115,10 +128,17 @@ jobs:
           (cd dist && sha256sum -c "$(basename "$DEB").sha256")
           tar -xzf "$TARBALL" -C "$RUNNER_TEMP"
           file "$RUNNER_TEMP/ApiWorkbench-${VERSION}-linux-${{ matrix.arch }}/apiworkbench" | grep "$ELF_MACHINE"
+          # -L: the CLI is a link to bin/ when it ships native libraries.
+          file -L "$RUNNER_TEMP/ApiWorkbench-${VERSION}-linux-${{ matrix.arch }}/apiworkbench-cli" | grep "$ELF_MACHINE"
+          dart tool/cli_smoke.dart "$RUNNER_TEMP/ApiWorkbench-${VERSION}-linux-${{ matrix.arch }}/apiworkbench-cli"
           dpkg-deb --info "$DEB"
           [ "$(dpkg-deb --field "$DEB" Architecture)" = "${{ matrix.deb_arch }}" ]
           sudo apt-get install -y "./$DEB"
           file /usr/lib/apiworkbench/apiworkbench | grep "$ELF_MACHINE"
+          file -L /usr/lib/apiworkbench/apiworkbench-cli | grep "$ELF_MACHINE"
+          [ "$(readlink /usr/bin/apiworkbench-cli)" = ../lib/apiworkbench/apiworkbench-cli ]
+          apiworkbench-cli --version
+          dart tool/cli_smoke.dart /usr/bin/apiworkbench-cli
 
       # The native GTK runner titles the window "ApiWorkbench". Dart start-up
       # creates the data folder <data home>/<app id>/apiworkbench through
@@ -249,6 +269,27 @@ jobs:
           "checked $($files.Count) PE files and app.so"
           if ($bad) { exit 1 }
 
+      # `dart build cli`, not `dart compile exe`: some of the app's packages
+      # have Dart build hooks, which compile exe refuses to run.
+      - name: Build the command-line runner
+        run: ./tool/build_cli.ps1
+
+      - name: Assert the command-line runner is ${{ matrix.pe_machine }}
+        run: |
+          $fs = [IO.File]::OpenRead("build\cli\$env:ARCH\bin\apiworkbench-cli.exe")
+          try {
+            $br = New-Object IO.BinaryReader($fs)
+            $fs.Position = 0x3C
+            $fs.Position = $br.ReadInt32()
+            if ($br.ReadUInt32() -ne 0x4550) { throw 'apiworkbench-cli.exe is not a PE file' }
+            $m = $br.ReadUInt16()
+          } finally { $fs.Dispose() }
+          'apiworkbench-cli.exe machine 0x{0:X4}' -f $m
+          if ($m -ne [Convert]::ToUInt16($env:PE_MACHINE, 16)) { throw "apiworkbench-cli.exe is not $env:PE_MACHINE" }
+
+      - name: Smoke-run the command-line runner against a local server
+        run: dart tool/cli_smoke.dart "build\cli\$env:ARCH\bin\apiworkbench-cli.exe"
+
       # Dart start-up creates %APPDATA%\<CompanyName>\<ProductName>\apiworkbench
       # (path_provider, names from windows\runner\Runner.rc), which shows that
       # the AOT snapshot really ran.
@@ -316,6 +357,23 @@ jobs:
             if ($m -ne $expected) { throw 'zip holds the wrong architecture' }
           } finally { $zip.Dispose() }
 
+          # The command-line runner: apiworkbench-cli.exe next to the app, or
+          # (with native libraries) bin\ + lib\ and an apiworkbench-cli.cmd.
+          $extract = Join-Path $env:RUNNER_TEMP 'zip_extract'
+          if (Test-Path $extract) { Remove-Item -Recurse -Force $extract }
+          [IO.Compression.ZipFile]::ExtractToDirectory((Resolve-Path "dist\$zipName.zip").Path, $extract)
+          $app = Join-Path $extract $zipName
+          $cli = Join-Path $app 'apiworkbench-cli.exe'
+          if (-not (Test-Path $cli)) { $cli = Join-Path $app 'apiworkbench-cli.cmd' }
+          if (-not (Test-Path $cli)) { throw 'apiworkbench-cli is not in the zip' }
+          $cliExe = Get-ChildItem $app -Recurse -Filter apiworkbench-cli.exe | Select-Object -First 1
+          if (-not $cliExe) { throw 'apiworkbench-cli.exe is not in the zip' }
+          $m = Get-PeMachine $cliExe.FullName
+          'zip: {0} 0x{1:X4}' -f $cliExe.FullName.Substring($extract.Length), $m
+          if ($m -ne $expected) { throw 'zip holds the wrong architecture of apiworkbench-cli.exe' }
+          dart tool/cli_smoke.dart $cli
+          if ($LASTEXITCODE -ne 0) { throw 'the packaged apiworkbench-cli failed its smoke test' }
+
           $msix = [IO.Compression.ZipFile]::OpenRead((Resolve-Path "dist\$msixName.msix"))
           try {
             $reader = New-Object IO.StreamReader($msix.GetEntry('AppxManifest.xml').Open())
@@ -378,6 +436,10 @@ jobs:
           esac
           command -v unsquashfs > /dev/null || sudo apt-get install -y squashfs-tools
           unsquashfs -q -d "$RUNNER_TEMP/snap" "$SNAP_FILE" meta/snap.yaml apiworkbench lib usr/bin/gst-play-1.0
+          # The command-line runner is a file, or a link to bin/ when it
+          # ships native libraries.
+          unsquashfs -ll "$SNAP_FILE" | grep -E 'squashfs-root/apiworkbench-cli( |$)'
+          grep -q 'command: apiworkbench-cli' "$RUNNER_TEMP/snap/meta/snap.yaml"
           sed -n '/^architectures:/,/^[a-z]/p' "$RUNNER_TEMP/snap/meta/snap.yaml"
           grep -qx -- '- ${{ matrix.arch }}' "$RUNNER_TEMP/snap/meta/snap.yaml"
           checked=0
@@ -407,6 +469,10 @@ jobs:
 
           # Chaos Mode plays sounds with the gst-play-1.0 that ships in the snap.
           snap run --shell apiworkbench -c 'gst-play-1.0 --version'
+
+          # The command-line runner app, confined.
+          snap run apiworkbench.cli --version
+          snap run apiworkbench.cli --help
 
           cat > "$RUNNER_TEMP/snap-smoke.sh" <<'EOF'
           log="$RUNNER_TEMP/snap-smoke.log"
