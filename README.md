@@ -9,14 +9,26 @@ codebase for **Linux, Windows, macOS, Android and iOS**.
 
 ## Features
 
-- **Postman import** — collections (v1, v2.0, v2.1), single requests or
-  folders, environments, globals and full "Export data" dumps, from files or
-  pasted JSON, into a new collection or an existing collection or folder.
-  Folders, auth inheritance, collection variables, path variables, disabled
-  params and headers, descriptions and every body type carry over. Common
-  `pm.test` checks become Tests and `pm.environment.set(...)` calls become
-  Captures; the original scripts are kept under Docs. A preview lists
-  anything that couldn't be carried over before you import.
+- **Postman import and export** — collections (v1, v2.0, v2.1), single
+  requests or folders, environments, globals and full "Export data" dumps,
+  from files or pasted JSON, into a new collection or an existing collection
+  or folder. Folders and their settings, inherited auth (every Postman auth
+  type), scripts, saved examples, collection variables, path variables,
+  secret variables, disabled rows, descriptions, request settings and every
+  body type carry over. Export collections (v2.1), environments and globals
+  back to Postman.
+- **OpenAPI, Swagger and HAR** — import OpenAPI 3.0/3.1 and Swagger 2.0
+  (JSON or YAML) as a collection with folders by tag, parameters, example
+  bodies, auth and response examples; export a collection as OpenAPI 3.0.
+  Import HAR files from browser developer tools, without static assets.
+- **Scripts** — pre-request and post-response JavaScript with Postman's `pm`
+  API on an embedded QuickJS engine, at collection, folder and request level:
+  variables in every scope, `pm.request` changes, `pm.response` and its
+  `to.have.*` checks, `pm.test` and `pm.expect` (chai), `pm.sendRequest`,
+  `pm.cookies`, `pm.visualizer`, `postman.setNextRequest`, `console.*`, and
+  lodash, crypto-js, moment, uuid, tv4 and ajv through `require()`. Scripts
+  have a timeout and no file system access. Scripts in imported collections
+  run when you send, as in Postman, so look at them first.
 - **Folders** — collections show a folder tree; run, load-test or import into
   any collection or folder from its menu.
 - **Collection variables** — `{{variables}}` scoped to a collection; the
@@ -35,15 +47,42 @@ codebase for **Linux, Windows, macOS, Android and iOS**.
   (safe method with body), query params, headers, JSON / text / XML /
   form-urlencoded / multipart form-data (text and file fields) / binary file /
   GraphQL bodies (query + variables) with a JSON beautifier.
-- **Auth helpers** — Bearer token, Basic auth, API key (header or query).
-- **Environments** — define `{{variables}}` once, switch environments from the
-  sidebar; substitution applies to URL, params, headers, body and auth.
+- **Auth** — Bearer token, Basic auth, API key, OAuth 2.0 (authorization
+  code with PKCE, implicit, password and client credentials; sign-in through
+  the system browser, automatic refresh, saved tokens), OAuth 1.0, Digest,
+  NTLM, AWS Signature v4, Hawk, Akamai EdgeGrid and JWT Bearer. Requests can
+  inherit auth from their folder or collection, which also carry scripts and
+  a description.
+- **Cookies** — a cookie jar that keeps what servers set (redirect hops
+  included) and sends it back, a cookie manager to edit it, and a Cookies
+  response tab. Turn it off in Settings or per request.
+- **Console** — every request on the wire, redirects included, with headers
+  and bodies, and script output; filter, search and copy. Secret values are
+  masked.
+- **Request settings** — per request: follow redirects and their limit, keep
+  the method or Authorization on redirects, certificate checks, URL
+  encoding, cookies and a timeout.
+- **Proxy and certificates** — no proxy, the system proxy (environment
+  variables) or a custom one with login and bypass list; an extra trusted CA;
+  client certificates (mutual TLS) per host, as PEM or PFX.
+- **Environments and Globals** — define `{{variables}}` once, switch
+  environments from the sidebar; Globals apply everywhere. Variables have an
+  initial value (shared and exported) and a current value (written by scripts
+  and captures), and can be secret. Substitution applies to URL, path
+  variables, params, headers, body and auth.
+- **Path variables** — `:id` segments in the URL get their own table under
+  Params, with values and descriptions.
+- **Bulk edit** — edit params, headers and form fields as `key: value` lines.
 - **Collections** — save, rename, duplicate and organise requests; persisted
   as JSON in the platform app-support directory.
 - **History** — the last 100 sends with status, latency and age; reopen any
   of them in a new tab.
 - **Response viewer** — status/latency/size bar, syntax-highlighted pretty
-  JSON, raw view, sortable header table, copy-to-clipboard.
+  JSON, raw view, a Preview tab for HTML, images, SVG and PDF (and a hex
+  view for other binary), header table, find in body (Ctrl+F), the full body
+  beyond the 64 KB preview, save the body to a file, copy-to-clipboard.
+- **Examples** — save a response as an example of its request; examples are
+  listed under the request in the collection tree and can be edited.
 - **Tests (assertions)** — per-request checks that run after every send:
   status equals, body contains, JSON field equals (dot/bracket path like
   `data.items[0].id`), header contains, response time below N ms. Results
@@ -53,12 +92,18 @@ codebase for **Linux, Windows, macOS, Android and iOS**.
   list, and latency stats (avg / min / max).
 - **Recurring runs** — monitor mode: re-run the set every N seconds until
   stopped, e.g. to watch an endpoint while you develop against it.
-- **Data-driven runs** — paste a JSON array of variable sets in the runner;
-  each iteration substitutes one row ({{var}}) over the environment.
+- **Data-driven runs** — load a CSV or JSON data file in the runner, or paste
+  one; each iteration substitutes one row ({{var}}) over the environment.
+  Scripts see it as `pm.iterationData`.
+- **Command-line runner** — `apiworkbench-cli`, a Newman-style runner for CI
+  (see below).
 - **Workspace sharing** — export collections + environments to a JSON file
   and import them on another machine; same-id items are updated in place.
 - **Docs export** — save any request + response as a Markdown document
-  (headers, bodies, cURL); auth tokens are masked automatically.
+  (headers, bodies, cURL), or a whole collection as one HTML page or
+  Markdown file; auth tokens and secrets are masked automatically.
+- **Version history** — earlier versions of each collection are kept
+  locally, with a diff against the current one and restore.
 - **SSL & timeouts** — optionally accept self-signed certificates for local
   dev servers; connect/response timeouts configurable in Settings.
 - **HTTP/2 & HTTP/3** — pick the protocol in Settings. HTTP/2 negotiates
@@ -66,10 +111,23 @@ codebase for **Linux, Windows, macOS, Android and iOS**.
   platform network stack on Android/iOS/macOS (Cronet / NSURLSession) and
   the system curl on Linux/Windows (needs a curl built with HTTP3); the
   response bar shows the negotiated version.
+- **Code snippets** — the request as code in 19 languages: cURL, HTTPie,
+  wget, PowerShell, Python (requests, http.client), JavaScript (fetch, axios,
+  Node), Java (java.net.http, OkHttp), Kotlin, C#, Go, PHP, Ruby, Swift, Dart
+  and Rust, with variables and auth filled in or kept as `{{variables}}`.
 - **cURL interop** — copy any request as a cURL command, or import one.
+- **WebSocket, Socket.IO, MQTT, Server-Sent Events and gRPC** — new request
+  types from the tab bar's ▾ menu, with a live message log. gRPC loads
+  services through server reflection or from `.proto` files and supports all
+  four call types.
+- **GraphQL schema** — fetch the schema by introspection, browse it, click to
+  insert fields with their variables, get field suggestions while typing, and
+  prettify the query.
 - **Robust networking** — every status code is shown (no exceptions on 4xx/5xx),
-  30 s connect / 60 s receive timeouts, redirect following, cancellable
-  in-flight requests, readable messages for DNS/TLS/timeout failures.
+  30 s connect / 60 s receive timeouts, redirects followed hop by hop (the
+  Authorization header is dropped when one leaves the host), cancellable
+  in-flight requests, readable messages for DNS/TLS/timeout failures. GET
+  requests send their body when one is set.
 - **Chaos Mode** 🎲 — optional (Settings): plays a sound per status class
   (success fanfare, sad trombone on 4xx, dramatic strings on 5xx, siren on
   network errors — original clips), confetti on 2xx, screen-shake on errors,
@@ -84,7 +142,8 @@ codebase for **Linux, Windows, macOS, Android and iOS**.
   import, export, settings) with a resizable side panel, request tabs,
   breadcrumbs and a draggable editor/response splitter; drawer + bottom
   request/response navigation on phones. Shortcuts: Ctrl+Enter send,
-  Ctrl+S save, Ctrl+O import, Ctrl+T new tab, Ctrl+W close tab.
+  Ctrl+S save, Ctrl+O import, Ctrl+T new tab, Ctrl+W close tab, Ctrl+F find
+  in the response.
 
 ## Install
 
@@ -114,6 +173,31 @@ Windows on x64 and arm64 (the **Desktop builds** workflow). Its run page has
 the Microsoft Store packages (`.msix`) and the snaps for both architectures as
 artifacts. The Linux and Windows packages above are attached to a release when
 it is published; a file that was attached by hand is left as it is.
+
+## Command-line runner
+
+`apiworkbench-cli` runs a collection without the app, for CI. It reads an
+ApiWorkbench workspace export or a Postman collection, runs scripts, tests
+and captures like the app's runner, and exits with 1 when anything fails.
+
+```sh
+apiworkbench-cli run shop.postman_collection.json \
+  -e staging.postman_environment.json -d users.csv -n 2 \
+  -r cli,junit --reporter-junit-export results.xml
+```
+
+Options follow Newman:
+- Variables: `-e` (environment), `-g` (globals), `--env-var k=v` and
+  `--global-var k=v`.
+- Run control: `-d` (data file), `-n` (iterations), `--folder`,
+  `--delay-request`, `--timeout-request`, `--bail` and `--insecure`.
+- Reports: `-r` takes cli, json, junit and html. Each reporter has an
+  `--reporter-<name>-export` path.
+
+Run `apiworkbench-cli run --help` for the full list. It ships in the .deb
+(`/usr/bin/apiworkbench-cli`), the tarball, the Windows zip and the snap
+(`apiworkbench.cli`; a confined snap reads files under your home folder and
+removable media only).
 
 ## Run
 

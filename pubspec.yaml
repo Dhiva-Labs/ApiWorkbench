@@ -16,7 +16,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
 # In Windows, build-name is used as the major, minor, and patch parts
 # of the product and file versions while build-number is used as the build suffix.
-version: 1.3.1+6
+version: 1.4.0+7
 
 environment:
   sdk: ^3.12.2
@@ -127,12 +127,13 @@ msix_config:
   publisher_display_name: Dhiva-Labs
   identity_name: Dhiva-Labs.ApiWorkbench
   publisher: CN=0F69015A-AA5B-431D-970A-165099309E53
-  msix_version: 1.3.1.0
+  msix_version: 1.4.0.0
   logo_path: assets/icon/apiworkbench_512.png
   output_name: ApiWorkbench
   languages: en-us
   # Sends the HTTP requests the user builds, to the internet and to local or
-  # LAN dev servers. It never listens. runFullTrust is always added.
+  # LAN dev servers. It listens only on 127.0.0.1, briefly, to receive an
+  # OAuth 2.0 sign-in redirect. runFullTrust is always added.
   capabilities: internetClient,privateNetworkClientServer
   # Build the Store package with tool/build_store_msix.ps1: it also leaves
   # the meme clips out of the bundle. This define covers a plain msix:create.
