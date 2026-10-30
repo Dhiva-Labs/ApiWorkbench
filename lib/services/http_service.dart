@@ -83,11 +83,12 @@ class HttpService {
         final h2 = Http2Adapter(
           ConnectionManager(
             idleTimeout: const Duration(seconds: 15),
-            onClientCreate: (_, config) => configureH2Client(
+            onClientCreate: (uri, config) => configureH2Client(
               config,
               net,
               verifySsl: key.verifySsl,
               cert: cert,
+              url: uri,
             ),
           ),
           fallbackAdapter: h1(),
@@ -387,7 +388,7 @@ class HttpService {
       final timeoutS = receive.inMilliseconds % 1000 == 0
           ? '${receive.inSeconds}'
           : (receive.inMilliseconds / 1000).toStringAsFixed(1);
-      final msg = switch (e.type) {
+      final msg = describeNetworkError(e.error) ?? switch (e.type) {
         DioExceptionType.connectionTimeout =>
           'Connection timed out (${_settings.connectTimeoutS} s). Check the host and your network.',
         DioExceptionType.receiveTimeout =>
