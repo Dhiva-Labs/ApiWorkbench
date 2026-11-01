@@ -28,8 +28,10 @@ case "$MODE" in
   rpm-suse) zypper -n install --allow-unsigned-rpm "$FILE"; files() { rpm -ql "$NAME"; } ;;
   pacman)   pacman -U --noconfirm "$FILE"; files() { pacman -Qlq "$NAME"; } ;;
   appimage)
-    # The libraries an AppImage expects from the host: GTK 3 and friends.
-    dnf -y -q install gtk3
+    # The libraries an AppImage expects from the host: GTK 3 and friends,
+    # plus any host tools the app runs (APPIMAGE_HOST_PKGS, Fedora names).
+    read -r -a host_pkgs <<< "${APPIMAGE_HOST_PKGS:-}"
+    dnf -y -q install gtk3 "${host_pkgs[@]}"
     cp "$FILE" /tmp/app.AppImage
     chmod +x /tmp/app.AppImage
     (cd /tmp && /tmp/app.AppImage --appimage-extract > /dev/null)
@@ -80,8 +82,9 @@ fi
 if [ -n "${GUI_CMD:-}" ]; then
   if [ -n "$cmd_prefix" ]; then gui=("$cmd_prefix"); else read -r -a gui <<< "$GUI_CMD"; fi
   # Optional, from distro.conf: SMOKE_WINDOW, a window title (xdotool
-  # --name regex) the app must show; SMOKE_DATA_PATH, a glob under
-  # $XDG_DATA_HOME that Dart start-up creates, proof the AOT code ran.
+  # --name regex) the app must show; SMOKE_DATA_PATH, a `find -path`
+  # pattern under $HOME for what Dart start-up creates, proof the AOT code
+  # ran.
   cat > /tmp/smoke.sh <<'EOS'
 log=/tmp/smoke.log
 "$@" > "$log" 2>&1 &
@@ -92,17 +95,17 @@ for i in $(seq 1 90); do
   kill -0 "$pid" 2> /dev/null || break
   seen=1
   if [ -n "${SMOKE_WINDOW:-}" ] && ! xdotool search --name "$SMOKE_WINDOW" > /dev/null 2>&1; then seen=0; fi
-  if [ -n "${SMOKE_DATA_PATH:-}" ] && ! compgen -G "$XDG_DATA_HOME/$SMOKE_DATA_PATH" > /dev/null; then seen=0; fi
+  if [ -n "${SMOKE_DATA_PATH:-}" ] && [ -z "$(find "$HOME" -path "$HOME/$SMOKE_DATA_PATH" -print -quit)" ]; then seen=0; fi
   if [ "$seen" = 1 ] && [ "$i" -ge "$secs" ]; then ok=1; break; fi
   sleep 1
 done
 if [ "$ok" = 1 ] && kill -0 "$pid" 2> /dev/null; then
   echo "still running after ${i}s${SMOKE_WINDOW:+, window $SMOKE_WINDOW is up}${SMOKE_DATA_PATH:+, data folder:}"
-  if [ -n "${SMOKE_DATA_PATH:-}" ]; then compgen -G "$XDG_DATA_HOME/$SMOKE_DATA_PATH"; fi
+  if [ -n "${SMOKE_DATA_PATH:-}" ]; then find "$HOME" -path "$HOME/$SMOKE_DATA_PATH"; fi
   kill "$pid"
 elif kill -0 "$pid" 2> /dev/null; then
   echo "no ${SMOKE_WINDOW:+window $SMOKE_WINDOW }${SMOKE_DATA_PATH:+or data folder $SMOKE_DATA_PATH }after 90s"
-  find "$XDG_DATA_HOME" -maxdepth 3
+  find "$HOME" -maxdepth 4
   kill "$pid"
   ok=0
 else
@@ -114,9 +117,9 @@ cat "$log"
 if grep -E 'error while loading shared libraries|cannot open shared object|undefined symbol' "$log"; then ok=0; fi
 [ "$ok" = 1 ]
 EOS
-  export HOME=/tmp/smoke-home XDG_DATA_HOME=/tmp/smoke-home/.local/share
+  export HOME=/tmp/smoke-home
   export SMOKE_SECONDS SMOKE_WINDOW SMOKE_DATA_PATH
-  mkdir -p "$XDG_DATA_HOME"
+  mkdir -p "$HOME"
   xvfb-run -a -s '-screen 0 1280x800x24' dbus-run-session -- bash /tmp/smoke.sh "${gui[@]}"
 fi
 echo "$MODE: OK"

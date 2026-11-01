@@ -55,10 +55,13 @@ tree="$work/root"
 mkdir -p "$tree"
 cp -a "$src_root/." "$tree/"
 rm -rf "$tree/DEBIAN" "$tree/usr/share/lintian"
-# Files the .deb has that these formats must not ship (see distro.conf).
+# Files the .deb may have that these formats must not ship (see
+# distro.conf). Whether they are there depends on the build machine.
 for f in "${EXCLUDE[@]}"; do
-  [ -e "$tree/$f" ] || { echo "EXCLUDE: $f is not in the tree" >&2; exit 1; }
-  rm -rf "${tree:?}/$f"
+  if [ -e "$tree/$f" ]; then
+    rm -rf "${tree:?}/$f"
+    echo "left out $f"
+  fi
 done
 if [ -d "$tree/usr/share/doc" ]; then
   find "$tree/usr/share/doc" -name 'changelog.Debian.gz' -delete

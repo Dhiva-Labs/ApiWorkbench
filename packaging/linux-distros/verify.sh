@@ -40,13 +40,19 @@ shopt -u nullglob
 [ "${#rpms[@]}" -eq 1 ] || { echo "expected one .rpm in $out, found ${#rpms[@]}" >&2; exit 1; }
 [ "${#pkgs[@]}" -eq 1 ] || { echo "expected one .pkg.tar.zst in $out, found ${#pkgs[@]}" >&2; exit 1; }
 
+# Every check runs even when an earlier one failed, so one CI run shows all
+# of them; the script still fails if any did.
+failed=()
 run_in() {
   local image="$1" mode="$2" file="$3"
   echo "::group::$mode on $image: $(basename "$file")"
-  docker run --rm \
+  if ! docker run --rm \
     -v "$out:/pkgs:ro" -v "$here:/linux-distros:ro" \
     -e MODE="$mode" -e FILE="/pkgs/$(basename "$file")" \
-    "$image" bash /linux-distros/in-container.sh
+    "$image" bash /linux-distros/in-container.sh; then
+    failed+=("$mode on $image")
+    echo "::error::$mode on $image failed"
+  fi
   echo "::endgroup::"
 }
 
@@ -82,5 +88,9 @@ if [ "${APPIMAGE:-0}" = 1 ]; then
   [ "${#appimages[@]}" -eq 1 ] || { echo "expected one AppImage, found ${#appimages[@]}" >&2; exit 1; }
   file -b "${appimages[0]}" | grep -F "$elf_machine" > /dev/null
   run_in fedora:latest appimage "${appimages[0]}"
+fi
+if [ "${#failed[@]}" -gt 0 ]; then
+  printf 'failed: %s\n' "${failed[@]}" >&2
+  exit 1
 fi
 echo "all distribution checks passed for $arch"

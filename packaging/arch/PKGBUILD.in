@@ -31,8 +31,8 @@ package() {
   if [ -d "$pkgdir/usr/share/doc" ]; then
     find "$pkgdir/usr/share/doc" -name changelog.Debian.gz -delete
   fi
-  # Built only because the release machine had a JDK; it links that
-  # machine's libjvm.so and nothing loads it on desktop Linux.
-  rm "$pkgdir/usr/lib/@NAME@/lib/libdartjni.so"
+  # Built only when the release machine has a JDK; it links that machine's
+  # libjvm.so and nothing loads it on desktop Linux.
+  rm -f "$pkgdir/usr/lib/@NAME@/lib/libdartjni.so"
   install -Dm644 "LICENSE-$pkgver" "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
 }
