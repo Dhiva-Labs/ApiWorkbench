@@ -5,6 +5,7 @@
 set -euo pipefail
 # shellcheck source=/dev/null
 . /linux-distros/distro.conf
+RPM_RECOMMENDS=("${RPM_RECOMMENDS[@]}")   # optional in distro.conf
 
 # Display and GL stack for the GUI smoke test, per distribution.
 case "$MODE" in
@@ -14,8 +15,10 @@ case "$MODE" in
     ;;
   rpm-suse)
     zypper -n -q --gpg-auto-import-keys refresh
-    zypper -n -q install file findutils which procps \
-      xvfb-run Mesa-dri dbus-1 xdotool
+    # gawk: xvfb-run needs awk. dbus-run-session is not in dbus-1 (now
+    # dbus-broker) but in dbus-1-daemon.
+    zypper -n -q install file findutils which procps gawk \
+      xvfb-run Mesa-dri dbus-1-daemon xdotool
     ;;
   pacman)
     pacman -Syu --noconfirm --needed -q file findutils which procps-ng \
@@ -121,5 +124,21 @@ EOS
   export SMOKE_SECONDS SMOKE_WINDOW SMOKE_DATA_PATH
   mkdir -p "$HOME"
   xvfb-run -a -s '-screen 0 1280x800x24' dbus-run-session -- bash /tmp/smoke.sh "${gui[@]}"
+fi
+
+# Weak dependencies (RPM_RECOMMENDS): the container images leave them out,
+# so everything above ran without them. The .rpm must declare them; then
+# they are installed, as dnf and zypper do on a desktop.
+if [ "${#RPM_RECOMMENDS[@]}" -gt 0 ] && { [ "$MODE" = rpm ] || [ "$MODE" = rpm-suse ]; }; then
+  declared="$(rpm -q --recommends "$NAME")"
+  echo "$declared"
+  for d in "${RPM_RECOMMENDS[@]}"; do
+    grep -qxF "$d" <<< "$declared" || { echo "the rpm does not recommend $d" >&2; exit 1; }
+  done
+  if [ "$MODE" = rpm ]; then dnf -y install "${RPM_RECOMMENDS[@]}"; else zypper -n install "${RPM_RECOMMENDS[@]}"; fi
+fi
+# EXTRA_CHECK (distro.conf): the packages only, after the weak dependencies.
+if [ -n "${EXTRA_CHECK:-}" ] && [ "$MODE" != appimage ]; then
+  bash -c "$EXTRA_CHECK"
 fi
 echo "$MODE: OK"

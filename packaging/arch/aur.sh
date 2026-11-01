@@ -18,7 +18,8 @@ mkdir -p "$3"; out="$(cd "$3" && pwd)"
 . "$here/../linux-distros/distro.conf"
 : "${VERSION:?set VERSION}"
 : "${GITHUB_REPO:?distro.conf must set GITHUB_REPO, e.g. Dhiva-Labs/BranchPilot}"
-tag="${TAG_PREFIX-v}$VERSION"
+# A release run passes its tag; otherwise it is the version with TAG_PREFIX.
+tag="${RELEASE_TAG:-${TAG_PREFIX-v}$VERSION}"
 
 work="$(mktemp -d)"; trap 'rm -rf "$work"' EXIT
 deps=""; for d in "${ARCH_DEPENDS[@]}"; do deps+="'$d' "; done
@@ -40,8 +41,10 @@ cp "$LICENSE_FILE" "$work/LICENSE-$VERSION"
 if grep -n '@[A-Z0-9_]*@' "$work/PKGBUILD"; then echo "unfilled placeholder" >&2; exit 1; fi
 
 # The build runs as an unprivileged user (makepkg refuses root); the files
-# are handed back to the caller afterwards so the cleanup trap can delete them.
+# are handed back to the caller on the way out, so the cleanup trap here can
+# delete them whether makepkg succeeded or not.
 docker run --rm -v "$work:/build" -e HOST_IDS="$(id -u):$(id -g)" archlinux:latest bash -euo pipefail -c '
+  trap "chown -R \"\$HOST_IDS\" /build" EXIT
   pacman -Syu --noconfirm --needed -q base-devel namcap
   useradd -m builder
   chown -R builder /build
@@ -51,7 +54,6 @@ docker run --rm -v "$work:/build" -e HOST_IDS="$(id -u):$(id -g)" archlinux:late
   namcap PKGBUILD
   pacman -U --noconfirm ./*-x86_64.pkg.tar.zst
   cat .SRCINFO
-  chown -R "$HOST_IDS" /build
 '
 tar -C "$work" -czf "$out/$NAME-bin-$VERSION-aur.tar.gz" PKGBUILD .SRCINFO
 ls -l "$out/$NAME-bin-$VERSION-aur.tar.gz"

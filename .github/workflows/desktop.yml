@@ -614,9 +614,8 @@ jobs:
 
   # Builds the Flatpak from the same tree, installs the bundle and runs it in
   # the sandbox: ldd of every ELF file against the GNOME runtime,
-  # apiworkbench-cli, and the app under Xvfb until Dart has created its data
-  # folder. (The image has no xdotool, so no window-title check here; the
-  # data folder only appears once the engine runs inside a GTK window.)
+  # apiworkbench-cli, and the app under Xvfb until its window is up and Dart
+  # has created its data folder.
   flatpak:
     name: Flatpak ${{ matrix.arch }}
     needs: [distros]
@@ -709,7 +708,8 @@ jobs:
           pid=$!
           for i in $(seq 1 90); do
             kill -0 "$pid" 2> /dev/null || { echo "the app exited early"; cat "$log"; exit 1; }
-            if compgen -G "$data/*/apiworkbench" > /dev/null && [ "$i" -ge 20 ]; then
+            if python3 packaging/flatpak/x11_window.py '^ApiWorkbench$' &&
+               compgen -G "$data/*/apiworkbench" > /dev/null && [ "$i" -ge 20 ]; then
               echo "still running after ${i}s; data folder:"
               compgen -G "$data/*/apiworkbench"
               kill "$pid"
@@ -719,7 +719,7 @@ jobs:
             fi
             sleep 1
           done
-          echo "no data folder under $data after 90s"
+          echo "no ApiWorkbench window and data folder under $data after 90s"
           find "$HOME/.var/app" -maxdepth 4
           cat "$log"
           exit 1

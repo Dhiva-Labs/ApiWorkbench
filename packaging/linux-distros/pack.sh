@@ -19,7 +19,8 @@
 # APPIMAGETOOL. Also objdump (binutils) and file.
 #
 # With TREE_TARBALL=<file.tar.xz> it also writes the cleaned tree (what the
-# packages hold) there, for the Flatpak build.
+# packages hold, plus BUNDLE_LIBS/BUNDLE_BINS under usr/lib/<name>/bundled)
+# there, for the Flatpak build.
 set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -123,6 +124,7 @@ mapfile -t rpm_requires < <(printf '%s\n' "${rpm_requires[@]}" | sed '/^$/d' | s
 # archlinux:latest and fails on any "not found" from ldd, which is what keeps
 # that list honest.
 arch_depends=("${ARCH_DEPENDS[@]}")
+rpm_recommends=("${RPM_RECOMMENDS[@]}")
 
 # --- 3. nfpm config ---------------------------------------------------------
 q() { printf "'%s'" "${1//\'/\'\'}"; }   # YAML single-quoted scalar
@@ -176,6 +178,11 @@ write_config() {
   echo "  rpm:"
   echo "    depends:"
   for d in "${rpm_requires[@]}"; do echo "      - $(q "$d")"; done
+  # Weak dependencies (RPM_RECOMMENDS), as the .deb's Recommends.
+  if [ "${#rpm_recommends[@]}" -gt 0 ]; then
+    echo "    recommends:"
+    for d in "${rpm_recommends[@]}"; do echo "      - $(q "$d")"; done
+  fi
   echo "  archlinux:"
   if [ "${#arch_depends[@]}" -gt 0 ]; then
     echo "    depends:"
@@ -203,11 +210,30 @@ if [ "${PACK_DEBUG:-0}" = 1 ]; then cat "$work/nfpm-rpm.yaml"; fi
 "$NFPM" pkg --config "$work/nfpm-rpm.yaml" --packager rpm --target "$out/"
 "$NFPM" pkg --config "$work/nfpm-arch.yaml" --packager archlinux --target "$out/"
 
-# --- 4. AppImage ------------------------------------------------------------
+# --- 4. What the AppImage and the Flatpak carry ------------------------------
+# Libraries (BUNDLE_LIBS, sonames) and programs (BUNDLE_BINS) that the .rpm
+# and Arch package take from the distribution, but that desktops (or the
+# Flatpak runtime) do not all have. They are copied from this build machine,
+# which has the versions the .deb is tested with.
+bundled="$work/bundled"
+mkdir -p "$bundled/lib" "$bundled/bin"
+for lib in "${BUNDLE_LIBS[@]}"; do
+  src="/usr/lib/$uname_arch-linux-gnu/$lib"
+  [ -e "$src" ] || { echo "BUNDLE_LIBS: $src is not installed on this machine" >&2; exit 1; }
+  install -m644 "$(readlink -f "$src")" "$bundled/lib/$lib"
+done
+for bin in "${BUNDLE_BINS[@]}"; do
+  src="$(command -v "$bin")" || { echo "BUNDLE_BINS: $bin is not installed on this machine" >&2; exit 1; }
+  install -m755 "$(readlink -f "$src")" "$bundled/bin/$bin"
+done
+has_bundled=0
+if [ -n "$(find "$bundled" -type f -print -quit)" ]; then has_bundled=1; fi
+
+# --- 5. AppImage ------------------------------------------------------------
 # The AppImage carries the same tree. Libraries every desktop already has
 # (GTK 3, glib, glibc, Mesa) stay on the host, as with every other GTK
-# AppImage; anything rarer must already be inside the tree (bundled by the
-# app's own build), or the AppImage fails on hosts without it.
+# AppImage; anything rarer must be inside the tree or in BUNDLE_LIBS, or
+# the AppImage fails on hosts without it.
 if [ "${APPIMAGE:-0}" = 1 ]; then
   : "${APP_NAME:?distro.conf must set APP_NAME for the AppImage}"
   : "${EXEC:?distro.conf must set EXEC (main executable, relative to the root)}"
@@ -217,6 +243,10 @@ if [ "${APPIMAGE:-0}" = 1 ]; then
   mkdir -p "$appdir"
   cp -a "$tree/." "$appdir/"
   [ -x "$appdir/$EXEC" ] || { echo "EXEC $EXEC is not an executable in the tree" >&2; exit 1; }
+
+  # AppRun puts the bundled libraries on LD_LIBRARY_PATH (plugin libraries
+  # do not search their executable's RUNPATH) and the programs on PATH.
+  if [ "$has_bundled" = 1 ]; then cp -a "$bundled" "$appdir/usr/lib/$NAME/bundled"; fi
 
   desktop="$appdir/$(basename "$DESKTOP")"
   cp "$tree/$DESKTOP" "$desktop"
@@ -232,6 +262,10 @@ if [ "${APPIMAGE:-0}" = 1 ]; then
     echo '#!/bin/sh'
     echo 'here="$(dirname "$(readlink -f "$0")")"'
     echo 'export XDG_DATA_DIRS="$here/usr/share:${XDG_DATA_DIRS:-/usr/local/share:/usr/share}"'
+    if [ "$has_bundled" = 1 ]; then
+      echo "export LD_LIBRARY_PATH=\"\$here/usr/lib/$NAME/bundled/lib\${LD_LIBRARY_PATH:+:\$LD_LIBRARY_PATH}\""
+      echo "export PATH=\"\$here/usr/lib/$NAME/bundled/bin:\$PATH\""
+    fi
     # Extra environment the .deb's /usr/bin launcher sets, if any.
     if [ -n "${APPRUN_ENV:-}" ]; then printf '%s\n' "$APPRUN_ENV"; fi
     echo "exec \"\$here/$EXEC\" \"\$@\""
@@ -245,6 +279,7 @@ if [ "${APPIMAGE:-0}" = 1 ]; then
 fi
 
 if [ -n "${TREE_TARBALL:-}" ]; then
+  if [ "$has_bundled" = 1 ]; then cp -a "$bundled" "$tree/usr/lib/$NAME/bundled"; fi
   tar -C "$tree" -cJf "$TREE_TARBALL" .
 fi
 

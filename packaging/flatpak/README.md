@@ -12,7 +12,8 @@ unpacks it into `packaging/flatpak/tree/` and runs flatpak-builder in the
 `ghcr.io/flathub-infra/flatpak-github-actions:gnome-51` image, on x86_64 and
 aarch64. It then installs the bundle, checks every ELF file with ldd against
 the GNOME 51 runtime, runs `apiworkbench-cli`, and starts the app under Xvfb
-until Dart has created its data folder.
+until its window is up (`x11_window.py`; the image has no xdotool) and Dart
+has created its data folder.
 
 The bundle, `apiworkbench-<version>-<arch>.flatpak`, refers to Flathub for
 its runtime:
