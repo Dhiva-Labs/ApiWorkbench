@@ -25,7 +25,7 @@ description: |
     OAuth 1.0, Digest, NTLM, AWS Signature v4, Hawk, Akamai EdgeGrid and
     JWT, inherited from folders and collections
   - Pre-request and test scripts with Postman's pm API (chai, lodash,
-    crypto-js, moment, pm.sendRequest, visualizer)
+    moment, hashing and HMAC helpers, pm.sendRequest, visualizer)
   - Environments, Globals, collection variables, initial and current
     values, secret variables
   - Cookie jar and manager, a Console of every request on the wire, proxy
