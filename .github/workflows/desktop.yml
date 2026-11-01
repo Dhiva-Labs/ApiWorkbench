@@ -10,7 +10,7 @@ name: Desktop builds
 
 on:
   push:
-    branches: [main, linux-distros]
+    branches: [main]
   pull_request:
   workflow_dispatch:
   release:
@@ -565,6 +565,15 @@ jobs:
           VERSION="$VERSION" TREE_TARBALL="$RUNNER_TEMP/tree.tar.xz" \
             packaging/linux-distros/pack.sh "$RUNNER_TEMP/root" ${{ matrix.deb_arch }} dist
 
+      # Uploaded before the distribution checks, so the Flatpak job runs
+      # (and shows its own result) even when one of them fails.
+      - uses: actions/upload-artifact@v7
+        with:
+          name: tree-${{ matrix.arch }}
+          path: ${{ runner.temp }}/tree.tar.xz
+          if-no-files-found: error
+          retention-days: 3
+
       - name: Install and run on Fedora, openSUSE and Arch
         run: packaging/linux-distros/verify.sh dist ${{ matrix.deb_arch }}
 
@@ -576,13 +585,6 @@ jobs:
             dist/*.pkg.tar.zst
             dist/*.AppImage
           if-no-files-found: error
-
-      - uses: actions/upload-artifact@v7
-        with:
-          name: tree-${{ matrix.arch }}
-          path: ${{ runner.temp }}/tree.tar.xz
-          if-no-files-found: error
-          retention-days: 3
 
   # AUR recipe: PKGBUILD + .SRCINFO for apiworkbench-bin, rendered with this
   # build's checksums and proven with makepkg on archlinux:latest.
@@ -619,6 +621,7 @@ jobs:
   flatpak:
     name: Flatpak ${{ matrix.arch }}
     needs: [distros]
+    if: ${{ !cancelled() && needs.distros.result != 'skipped' }}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 40
     container:
