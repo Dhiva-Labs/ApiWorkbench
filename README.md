@@ -3,6 +3,7 @@
 [![ARM64 builds](https://github.com/Dhiva-Labs/ApiWorkbench/actions/workflows/desktop.yml/badge.svg?branch=main)](https://github.com/Dhiva-Labs/ApiWorkbench/actions/workflows/desktop.yml)
 ![Linux x64 | arm64](https://img.shields.io/badge/Linux-x64%20%7C%20arm64-informational?logo=linux&logoColor=white)
 ![Windows x64 | arm64](https://img.shields.io/badge/Windows-x64%20%7C%20arm64-informational?logo=windows&logoColor=white)
+![Linux: deb | rpm | Arch | AppImage | Flatpak | Snap](https://img.shields.io/badge/Linux-deb%20%7C%20rpm%20%7C%20Arch%20%7C%20AppImage%20%7C%20Flatpak%20%7C%20Snap-informational?logo=linux&logoColor=white)
 
 A fast, keyboard-friendly API client in the spirit of Postman — one Flutter
 codebase for **Linux, Windows, macOS, Android and iOS**.
@@ -153,6 +154,10 @@ Download from the [releases page](https://github.com/Dhiva-Labs/ApiWorkbench/rel
 |---|---|
 | Linux x64 (Debian, Ubuntu) | `apiworkbench_<version>_amd64.deb` |
 | Linux arm64 (Debian, Ubuntu) | `apiworkbench_<version>_arm64.deb` |
+| Linux (Fedora, RHEL, openSUSE) | `apiworkbench-<version>-1.x86_64.rpm`, `apiworkbench-<version>-1.aarch64.rpm` |
+| Linux (Arch, Manjaro, EndeavourOS) | `apiworkbench-<version>-1-x86_64.pkg.tar.zst`, `apiworkbench-<version>-1-aarch64.pkg.tar.zst` |
+| Linux (any distribution) | `ApiWorkbench-<version>-x86_64.AppImage`, `ApiWorkbench-<version>-aarch64.AppImage` |
+| Linux (Flatpak) | `apiworkbench-<version>-x86_64.flatpak`, `apiworkbench-<version>-aarch64.flatpak` |
 | Linux x64 (other distributions) | `ApiWorkbench-<version>-linux-x64.tar.gz` |
 | Linux arm64 (other distributions) | `ApiWorkbench-<version>-linux-arm64.tar.gz` |
 | Windows x64 | `ApiWorkbench-<version>-windows-x64.zip` |
@@ -167,6 +172,36 @@ tar -xzf ApiWorkbench-<version>-linux-arm64.tar.gz && ./ApiWorkbench-<version>-l
 
 The tarball needs GTK 3 (`libgtk-3-0`). On Windows, unzip and run
 `apiworkbench.exe`. Snap: `sudo snap install apiworkbench` (amd64 and arm64).
+
+### Fedora, RHEL, openSUSE, Arch, AppImage and Flatpak
+
+These are attached to releases from the release after 1.4.0 on, for x86_64
+and aarch64. They hold the same build as the .deb (the CI repackages it and
+then installs and starts every package on Fedora, openSUSE Tumbleweed and
+Arch Linux). The build machine is Ubuntu 24.04, so the .rpm, Arch package and
+AppImage need glibc 2.38 or newer: Fedora 40+, RHEL/Rocky/Alma 10, openSUSE
+Tumbleweed and Leap 16, current Arch. RHEL 9 and openSUSE Leap 15 are too old.
+
+```sh
+sudo dnf install ./apiworkbench-<version>-1.x86_64.rpm                          # Fedora, RHEL
+sudo zypper install --allow-unsigned-rpm ./apiworkbench-<version>-1.x86_64.rpm  # openSUSE
+sudo pacman -U ./apiworkbench-<version>-1-x86_64.pkg.tar.zst                    # Arch
+chmod +x ApiWorkbench-<version>-x86_64.AppImage && ./ApiWorkbench-<version>-x86_64.AppImage
+flatpak install --user ./apiworkbench-<version>-x86_64.flatpak                 # then: flatpak run com.dhivalabs.api_workbench
+```
+
+- The .rpm and Arch packages are not signed, hence zypper's
+  `--allow-unsigned-rpm`. They install `apiworkbench` and `apiworkbench-cli`
+  in `/usr/bin`, like the .deb.
+- Arch: an AUR recipe for `apiworkbench-bin` (PKGBUILD and .SRCINFO) is
+  attached to each release as `apiworkbench-bin-<version>-aur.tar.gz`.
+- The AppImage uses the system's GTK 3, as the tarball does. It starts the
+  app only; the command-line runner is in the other packages.
+- The Flatpak needs the Flathub remote for the GNOME runtime it uses
+  (`flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo`).
+  In its sandbox the app has the network, reads files under your home folder
+  (certificate and .proto paths) and saves through the system file dialog.
+  See [packaging/flatpak/README.md](packaging/flatpak/README.md).
 
 Every push to `main` builds, tests and packages ApiWorkbench for Linux and
 Windows on x64 and arm64 (the **Desktop builds** workflow). Its run page has
@@ -194,10 +229,13 @@ Options follow Newman:
 - Reports: `-r` takes cli, json, junit and html. Each reporter has an
   `--reporter-<name>-export` path.
 
-Run `apiworkbench-cli run --help` for the full list. It ships in the .deb
-(`/usr/bin/apiworkbench-cli`), the tarball, the Windows zip and the snap
-(`apiworkbench.cli`; a confined snap reads files under your home folder and
-removable media only).
+Run `apiworkbench-cli run --help` for the full list. It ships in the .deb,
+.rpm and Arch package (`/usr/bin/apiworkbench-cli`), the tarball, the Windows
+zip, the snap (`apiworkbench.cli`; a confined snap reads files under your home
+folder and removable media only) and the Flatpak
+(`flatpak run --command=apiworkbench-cli com.dhivalabs.api_workbench`; it can
+read your home folder but not write to it, so export reports to a path under
+`~/.var/app/com.dhivalabs.api_workbench/`).
 
 ## Run
 

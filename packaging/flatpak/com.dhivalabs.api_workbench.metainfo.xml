@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>com.dhivalabs.api_workbench</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT</project_license>
+  <name>ApiWorkbench</name>
+  <summary>Cross-platform API client for building and testing HTTP requests</summary>
+  <description>
+    <p>Postman-style workbench with request collections and folders, environments and collection variables, Postman import, response assertions and captures, a collection runner, and load testing with call logs and HTML/CSV/JSON reports.</p>
+    <p>Includes apiworkbench-cli, which runs a collection from the command line for CI.</p>
+  </description>
+  <launchable type="desktop-id">com.dhivalabs.api_workbench.desktop</launchable>
+  <provides>
+    <binary>apiworkbench</binary>
+    <binary>apiworkbench-cli</binary>
+  </provides>
+  <url type="homepage">https://github.com/Dhiva-Labs/ApiWorkbench</url>
+  <url type="bugtracker">https://github.com/Dhiva-Labs/ApiWorkbench/issues</url>
+  <developer id="com.dhivalabs">
+    <name>Dhiva Labs</name>
+  </developer>
+  <content_rating type="oars-1.1"/>
+  <releases>
+    <release version="1.4.0" date="2026-10-31"/>
+  </releases>
+</component>

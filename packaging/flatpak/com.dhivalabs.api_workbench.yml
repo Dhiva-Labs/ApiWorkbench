@@ -1,0 +1,51 @@
+# Flatpak manifest for ApiWorkbench.
+#
+# Like the .rpm, Arch package and AppImage, this repackages the installed
+# tree of the .deb that CI builds (unpacked into packaging/flatpak/tree/ by
+# the workflow), so the Flatpak ships the same binary as every other format
+# instead of a second build inside the sandbox. A Flathub submission needs
+# `tree` swapped for an archive source (release URL + sha256); see README.md
+# in this directory.
+id: com.dhivalabs.api_workbench
+runtime: org.gnome.Platform
+runtime-version: '51'
+sdk: org.gnome.Sdk
+command: apiworkbench
+finish-args:
+  # GTK needs a display socket; fallback-x11 covers X11-only desktops.
+  - --socket=wayland
+  - --socket=fallback-x11
+  - --share=ipc
+  # GPU acceleration for Flutter's renderer.
+  - --device=dri
+  # An API client: every request, socket and stream goes over the network.
+  - --share=network
+  # Chaos Mode plays its sound effects through the runtime's GStreamer.
+  - --socket=pulseaudio
+  # CA certificate, client certificate and .proto paths can be typed in
+  # Settings > Network and the gRPC view, and are read again on every start.
+  # Saving and opening files goes through the file chooser portal, so read
+  # access is all the app needs.
+  - --filesystem=home:ro
+modules:
+  - name: apiworkbench
+    buildsystem: simple
+    sources:
+      - type: dir
+        path: tree
+        dest: tree
+      - type: file
+        path: com.dhivalabs.api_workbench.metainfo.xml
+    build-commands:
+      # Flutter finds lib/ and data/ next to its executable; the
+      # command-line runner loads its native libraries from the same lib/.
+      - install -d /app/lib /app/bin
+      - cp -a tree/usr/lib/apiworkbench /app/lib/apiworkbench
+      - ln -s ../lib/apiworkbench/apiworkbench /app/bin/apiworkbench
+      - ln -s ../lib/apiworkbench/apiworkbench-cli /app/bin/apiworkbench-cli
+      - install -Dm644 tree/usr/share/applications/apiworkbench.desktop /app/share/applications/com.dhivalabs.api_workbench.desktop
+      - desktop-file-edit --set-icon=com.dhivalabs.api_workbench /app/share/applications/com.dhivalabs.api_workbench.desktop
+      - install -Dm644 tree/usr/share/icons/hicolor/256x256/apps/apiworkbench.png /app/share/icons/hicolor/256x256/apps/com.dhivalabs.api_workbench.png
+      - install -Dm644 tree/usr/share/icons/hicolor/512x512/apps/apiworkbench.png /app/share/icons/hicolor/512x512/apps/com.dhivalabs.api_workbench.png
+      - install -Dm644 tree/usr/share/licenses/apiworkbench/LICENSE /app/share/licenses/com.dhivalabs.api_workbench/LICENSE
+      - install -Dm644 com.dhivalabs.api_workbench.metainfo.xml /app/share/metainfo/com.dhivalabs.api_workbench.metainfo.xml

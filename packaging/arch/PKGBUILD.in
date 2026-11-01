@@ -1,0 +1,38 @@
+# Maintainer: Dhivakar R <dhivakar1010@gmail.com>
+#
+# AUR package. It repackages the .deb from the GitHub release, so Arch users
+# run the same build as every other distribution. packaging/arch/aur.sh
+# renders this file for each release (version and checksums) and checks it
+# with makepkg; the rendered PKGBUILD and .SRCINFO are what gets pushed to
+# the AUR.
+pkgname=@NAME@-bin
+pkgver=@VERSION@
+pkgrel=1
+pkgdesc='@SUMMARY@'
+arch=('x86_64' 'aarch64')
+url='@HOMEPAGE@'
+license=('@LICENSE@')
+depends=(@ARCH_DEPENDS@)
+provides=('@NAME@')
+conflicts=('@NAME@')
+options=('!strip' '!debug')
+# The repository has no LICENSE file; its Debian copyright file holds the
+# copyright line and the MIT text.
+source=("LICENSE-@VERSION@::https://raw.githubusercontent.com/@GITHUB_REPO@/@TAG@/@LICENSE_FILE@")
+sha256sums=('@SHA_LICENSE@')
+source_x86_64=("@RELEASE_URL@/@DEB_AMD64@")
+source_aarch64=("@RELEASE_URL@/@DEB_ARM64@")
+sha256sums_x86_64=('@SHA_AMD64@')
+sha256sums_aarch64=('@SHA_ARM64@')
+
+package() {
+  bsdtar -xf data.tar.* -C "$pkgdir"
+  rm -rf "$pkgdir/usr/share/lintian"
+  if [ -d "$pkgdir/usr/share/doc" ]; then
+    find "$pkgdir/usr/share/doc" -name changelog.Debian.gz -delete
+  fi
+  # Built only because the release machine had a JDK; it links that
+  # machine's libjvm.so and nothing loads it on desktop Linux.
+  rm "$pkgdir/usr/lib/@NAME@/lib/libdartjni.so"
+  install -Dm644 "LICENSE-$pkgver" "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+}

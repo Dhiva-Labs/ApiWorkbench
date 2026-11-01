@@ -55,3 +55,6 @@ android/.kotlin/
 
 # snapcraft output
 *.snap
+
+# Flatpak build input, unpacked by the CI from the .deb
+packaging/flatpak/tree/
