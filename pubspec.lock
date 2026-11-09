@@ -141,10 +141,10 @@ packages:
     dependency: "direct main"
     description:
       name: dio_http2_adapter
-      sha256: c56522c50bb3bab7e3ca77c153b0f03ae672a87d8c32e46be8f2868693ec9f0a
+      sha256: "92c9dd3c3a80bf50f8ac3cde5751a02b63b9149eb9084dd5c0aede286ad10269"
       url: "https://pub.dev"
     source: hosted
-    version: "2.7.1"
+    version: "2.9.0"
   dio_web_adapter:
     dependency: transitive
     description:
