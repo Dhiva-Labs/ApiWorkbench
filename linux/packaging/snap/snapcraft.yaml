@@ -12,7 +12,9 @@ description: |
 
   Published by Dhiva-Labs.
 license: MIT
-website: https://github.com/Dhiva-Labs/ApiWorkbench
+website:
+  - https://github.com/Dhiva-Labs/ApiWorkbench
+  - https://learn.dhivalabs.com/apiworkbench/
 contact: dhivakar1010@gmail.com
 source-code: https://github.com/Dhiva-Labs/ApiWorkbench
 issues: https://github.com/Dhiva-Labs/ApiWorkbench/issues

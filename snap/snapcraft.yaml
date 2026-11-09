@@ -54,7 +54,9 @@ grade: stable
 confinement: strict
 icon: snap/gui/apiworkbench.png
 license: MIT
-website: https://github.com/Dhiva-Labs/ApiWorkbench
+website:
+  - https://github.com/Dhiva-Labs/ApiWorkbench
+  - https://learn.dhivalabs.com/apiworkbench/
 source-code: https://github.com/Dhiva-Labs/ApiWorkbench
 issues: https://github.com/Dhiva-Labs/ApiWorkbench/issues
 contact: dhivakar1010@gmail.com
