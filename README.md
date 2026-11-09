@@ -8,6 +8,8 @@
 A fast, keyboard-friendly API client in the spirit of Postman — one Flutter
 codebase for **Linux, Windows, macOS, Android and iOS**.
 
+**Documentation:** step-by-step guides at [learn.dhivalabs.com](https://learn.dhivalabs.com/apiworkbench/): [install](https://learn.dhivalabs.com/apiworkbench/install) · [beginner guide](https://learn.dhivalabs.com/apiworkbench/first-request) · [troubleshooting](https://learn.dhivalabs.com/apiworkbench/troubleshooting). New to the topic? Try the [APIs and testing](https://learn.dhivalabs.com/tracks/apis/) learning track.
+
 ## Features
 
 - **Postman import and export** — collections (v1, v2.0, v2.1), single
