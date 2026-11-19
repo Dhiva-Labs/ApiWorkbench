@@ -24,6 +24,8 @@ class RunOptions {
     this.timeoutRequestMs,
     this.bail = false,
     this.insecure = false,
+    this.workingDir,
+    this.insecureFileRead = false,
     this.reporters = const ['cli'],
     this.exports = const {},
     this.color = true,
@@ -50,6 +52,13 @@ class RunOptions {
   final int? timeoutRequestMs;
   final bool bail;
   final bool insecure;
+
+  /// Folder that request body files are read from (null: the current
+  /// directory). Relative file paths in the collection start here.
+  final String? workingDir;
+
+  /// Let request bodies read files outside [workingDir].
+  final bool insecureFileRead;
   final List<String> reporters;
 
   /// Reporter name → file path, for the reporters given one.
@@ -154,6 +163,20 @@ ArgParser _runParser() => ArgParser(usageLineLength: 88)
     'insecure',
     negatable: false,
     help: 'Accept self-signed or invalid TLS certificates.',
+  )
+  ..addSeparator('Files:')
+  ..addOption(
+    'working-dir',
+    valueHelp: 'path',
+    help:
+        'Folder that file bodies and form-data files are read from; relative '
+        'paths in the collection start here (default: the current folder).',
+  )
+  ..addFlag(
+    'insecure-file-read',
+    help:
+        'Also let requests read files outside the working directory. Off by '
+        'default: a collection can only upload files from inside it.',
   )
   ..addSeparator('Output:')
   ..addMultiOption(
@@ -308,12 +331,20 @@ Command parseCommandLine(List<String> args) {
       timeoutRequestMs: number('timeout-request', min: 1),
       bail: cmd['bail'] == true,
       insecure: cmd['insecure'] == true,
+      workingDir: _workingDir(cmd['working-dir'] as String?),
+      insecureFileRead: cmd['insecure-file-read'] == true,
       reporters: reporters,
       exports: exports,
       color: cmd['color'] == true,
       verbose: cmd['verbose'] == true,
     ),
   );
+}
+
+String? _workingDir(String? path) {
+  if (path == null) return null;
+  if (path.trim().isEmpty) throw UsageError('--working-dir needs a folder.');
+  return path;
 }
 
 Map<String, String> _pairs(String option, List<String> values) {

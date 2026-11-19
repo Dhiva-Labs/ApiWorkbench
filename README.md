@@ -231,6 +231,9 @@ Options follow Newman:
   `--delay-request`, `--timeout-request`, `--bail` and `--insecure`.
 - Reports: `-r` takes cli, json, junit and html. Each reporter has an
   `--reporter-<name>-export` path.
+- Files: file bodies and form-data files are read from `--working-dir`
+  (default: the current folder), where relative paths start. Files outside
+  it are refused unless you pass `--insecure-file-read`.
 
 Run `apiworkbench-cli run --help` for the full list. It ships in the .deb,
 .rpm and Arch package (`/usr/bin/apiworkbench-cli`), the tarball, the Windows
