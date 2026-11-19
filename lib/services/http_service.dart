@@ -116,13 +116,14 @@ class HttpService {
           ),
           fallbackAdapter: h1(),
         );
-        dio.httpClientAdapter = _SchemeRoutingAdapter(h2: h2, h1: h1());
+        dio.httpClientAdapter = SchemeRoutingAdapter(secure: h2, plain: h1());
       case HttpVersionPref.v3:
         // Cronet (Android) / NSURLSession (iOS, macOS) negotiate HTTP/3
         // themselves and fall back to h2/h1 per server support. Desktop
         // requests go to the curl engine; this adapter covers the rest.
         // The platform stacks ignore our proxy, CA, client certificates and
-        // "don't verify", so those settings fall back to HTTP/1.1.
+        // "don't verify", so those settings fall back to HTTP/1.1, and so
+        // does plain http (see nativeH3Adapter).
         final custom =
             !key.verifySsl ||
             key.clientCertId != null ||
@@ -131,7 +132,7 @@ class HttpService {
         final native = nativeAdapter ?? defaultNativeAdapter;
         dio.httpClientAdapter =
             _platformHasNativeH3 && !custom && native != null
-            ? native(h1)
+            ? nativeH3Adapter(native, h1)
             : h1();
     }
     return dio;
@@ -505,13 +506,23 @@ ResponseData _withDuration(ResponseData r, int ms) => ResponseData(
   protocol: r.protocol,
 );
 
-/// Routes https to the HTTP/2 adapter (which itself falls back to HTTP/1.1
-/// when the server doesn't negotiate h2) and plain http to HTTP/1.1.
-class _SchemeRoutingAdapter implements HttpClientAdapter {
-  _SchemeRoutingAdapter({required this.h2, required this.h1});
+/// The adapter for the HTTP/3 preference where the platform has its own
+/// stack: https goes to [native], plain http to HTTP/1.1. HTTP/3 needs TLS
+/// anyway, and Android's Cronet refuses cleartext requests under the
+/// platform's default network security policy.
+HttpClientAdapter nativeH3Adapter(
+  NativeAdapterFactory native,
+  HttpClientAdapter Function() h1,
+) => SchemeRoutingAdapter(secure: native(h1), plain: h1());
 
-  final HttpClientAdapter h2;
-  final HttpClientAdapter h1;
+/// Routes https to [secure] and everything else to [plain]. Used for HTTP/2
+/// (whose adapter itself falls back to HTTP/1.1 when the server doesn't
+/// negotiate h2) and for the native HTTP/3 stacks.
+class SchemeRoutingAdapter implements HttpClientAdapter {
+  SchemeRoutingAdapter({required this.secure, required this.plain});
+
+  final HttpClientAdapter secure;
+  final HttpClientAdapter plain;
 
   @override
   Future<ResponseBody> fetch(
@@ -519,13 +530,15 @@ class _SchemeRoutingAdapter implements HttpClientAdapter {
     Stream<Uint8List>? requestStream,
     Future<void>? cancelFuture,
   ) {
-    final adapter = options.uri.scheme == 'https' ? h2 : h1;
+    final adapter = options.uri.scheme.toLowerCase() == 'https'
+        ? secure
+        : plain;
     return adapter.fetch(options, requestStream, cancelFuture);
   }
 
   @override
   void close({bool force = false}) {
-    h2.close(force: force);
-    h1.close(force: force);
+    secure.close(force: force);
+    plain.close(force: force);
   }
 }
