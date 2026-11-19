@@ -13,6 +13,7 @@ import 'console_events.dart';
 import 'cookie_jar.dart';
 import 'curl_engine.dart';
 import 'net_config.dart';
+import 'redirect_policy.dart';
 import 'request_builder.dart';
 
 export 'request_builder.dart' show substituteVars;
@@ -188,6 +189,16 @@ class HttpService {
 
   /// Sends a built request: adds cookies, follows redirects, and lets
   /// [auth] answer one 401 challenge.
+  ///
+  /// Credentials stay with the origin the request was built for. When a
+  /// redirect leaves the origin of the previous hop (an https to http
+  /// downgrade included), the credentials are dropped for the rest of the
+  /// chain, as [RedirectCredentialPolicy] describes: Authorization, Cookie,
+  /// Proxy-Authorization, every header the auth helper set
+  /// ([AuthContext.authHeaders]) and other credential-looking headers. The
+  /// Cookie header typed on the request goes to its own origin only; jar
+  /// cookies are picked per hop. A `Location` that is not http(s) or has
+  /// no host is not followed: the 3xx is returned.
   Future<ResponseData> sendPrepared(
     PreparedRequest p, {
     required String tabId,
@@ -200,24 +211,23 @@ class HttpService {
     final sw = stopwatch ?? (Stopwatch()..start());
     final token = CancelToken();
     _inflight[tabId] = token;
-    final userCookie = p.headers.value('cookie');
-    final origin = p.url.origin;
+    final userCookies = p.headers.values('cookie');
     var hop = p.copy();
     var hopIndex = 0;
     var redirects = 0;
     var challenged = false;
     try {
       while (true) {
+        final ownOrigin = sameOrigin(hop.url, p.url);
         final jar = hop.settings.useCookies ? cookieJar : null;
-        if (jar != null) {
-          final fromJar = jar.cookieHeaderFor(hop.url);
-          final own = hop.url.origin == origin ? userCookie : null;
-          final cookie = [?own, ?fromJar].join('; ');
-          if (cookie.isEmpty) {
-            hop.headers.remove('cookie');
-          } else {
-            hop.headers.set('Cookie', cookie);
-          }
+        final cookie = [
+          if (ownOrigin) ...userCookies,
+          ?jar?.cookieHeaderFor(hop.url),
+        ].join('; ');
+        if (cookie.isEmpty) {
+          hop.headers.remove('cookie');
+        } else if (cookie != hop.headers.values('cookie').join('; ')) {
+          hop.headers.set('Cookie', cookie);
         }
 
         final res = await _sendOnce(
@@ -249,10 +259,13 @@ class HttpService {
         }
 
         final location = _headerValues(res.headers, 'location').firstOrNull;
-        const redirectCodes = {301, 302, 303, 307, 308};
         if (!hop.settings.followRedirects ||
-            !redirectCodes.contains(res.statusCode) ||
+            !redirectStatusCodes.contains(res.statusCode) ||
             location == null) {
+          return _withDuration(res, sw.elapsedMilliseconds);
+        }
+        final target = redirectTarget(hop.url, location);
+        if (target == null) {
           return _withDuration(res, sw.elapsedMilliseconds);
         }
         if (++redirects > hop.settings.maxRedirects) {
@@ -264,35 +277,53 @@ class HttpService {
             durationMs: sw.elapsedMilliseconds,
           );
         }
-        hop = _redirect(hop, res.statusCode, location);
+        hop = _redirect(
+          hop,
+          res.statusCode,
+          target,
+          authHeaders: authContext?.authHeaders ?? const {},
+        );
       }
     } finally {
       if (identical(_inflight[tabId], token)) _inflight.remove(tabId);
     }
   }
 
-  /// The next hop of a redirect, following browsers and Postman: 303 (and
-  /// 301/302 for non-GET unless told otherwise) become a bodiless GET;
-  /// Authorization is dropped when the origin changes.
-  PreparedRequest _redirect(PreparedRequest from, int status, String location) {
-    final next = from.copy()..url = from.url.resolve(location);
-    final toGet =
-        status == 303 ||
-        ((status == 301 || status == 302) &&
-            !from.settings.followOriginalMethod &&
-            from.method != 'GET' &&
-            from.method != 'HEAD');
-    if (toGet) {
+  /// The next hop of a redirect to [to], following browsers and Postman:
+  /// 303 (and 301/302 for non-GET unless told otherwise) become a bodiless
+  /// GET. Leaving the origin drops credentials (see [sendPrepared]); the
+  /// "Keep Authorization on redirects to other hosts" setting keeps the
+  /// Authorization header alone, except on a downgrade to plain http.
+  PreparedRequest _redirect(
+    PreparedRequest from,
+    int status,
+    Uri to, {
+    required Set<String> authHeaders,
+  }) {
+    final next = from.copy()..url = to;
+    final m = redirectMethod(
+      from.method,
+      status,
+      keepMethod: from.settings.followOriginalMethod,
+    );
+    if (!m.keepBody) {
       next
-        ..method = from.method == 'HEAD' ? 'HEAD' : 'GET'
+        ..method = m.method
         ..body = null;
       next.headers
         ..remove('content-type')
         ..remove('content-length');
     }
-    if (next.url.origin != from.url.origin &&
-        !from.settings.followAuthorizationHeader) {
-      next.headers.remove('authorization');
+    final policy = RedirectCredentialPolicy(
+      authHeaders: authHeaders,
+      keepAuthorization: from.settings.followAuthorizationHeader,
+    );
+    for (final name in policy.namesToDrop(
+      next.headers,
+      from: from.url,
+      to: to,
+    )) {
+      next.headers.remove(name);
     }
     next.headers.remove('host');
     if (from.settings.removeRefererOnRedirect) {
