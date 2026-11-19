@@ -1553,6 +1553,14 @@ void main() {
       if (hasSystemBundle) {
         expect(text.length, greaterThan(ca.length + 1000));
         expect(args[3], isNot(fx('ca.pem')));
+        // Written into a directory of this process's own, not straight
+        // into the shared temp directory where anyone could plant one.
+        final dir = bundle.parent;
+        expect(dir.path, isNot(Directory.systemTemp.path));
+        expect(dir.parent.path, Directory.systemTemp.path);
+        if (!Platform.isWindows) {
+          expect(dir.statSync().mode & 0x1FF, 0x1C0, reason: 'mode 0700');
+        }
       }
       // Asking again reuses the file.
       expect(curlNetworkArgs(net(ca: fx('ca.pem')), url)[3], args[3]);

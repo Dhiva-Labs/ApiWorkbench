@@ -5,6 +5,7 @@ import 'package:crypto/crypto.dart';
 import 'package:dio_http2_adapter/dio_http2_adapter.dart';
 
 import '../models/models.dart';
+import 'private_temp.dart';
 
 /// What a transport is built for. Requests with the same key share
 /// connections.
@@ -687,6 +688,10 @@ void configureH2Client(
 /// *in addition to* the system roots means handing it both. Null when no
 /// system bundle can be found (Windows, mostly), in which case the CA file
 /// alone is used.
+///
+/// Bundles are written to a directory this process created for itself
+/// ([_privateBundleDir]) and only reused from there, so a file another user
+/// placed in the shared temp directory is never handed to curl.
 String? _curlBundleWith(String caPath) {
   final candidates = [
     Platform.environment['CURL_CA_BUNDLE'],
@@ -703,42 +708,60 @@ String? _curlBundleWith(String caPath) {
     for (final c in candidates) {
       if (c == null || c.isEmpty || !File(c).existsSync()) continue;
       final stamp = '${_fileStamp(c)}|${_fileStamp(caPath)}';
+      final written = _curlBundles[stamp];
+      if (written != null && File(written).existsSync()) return written;
+      final dir = _privateBundleDir();
       final name = sha1.convert(utf8.encode(stamp)).toString().substring(0, 16);
-      final tmp = Directory.systemTemp;
-      final out = File('${tmp.path}/apiworkbench-ca-$name.pem');
-      if (!out.existsSync()) {
-        final extra = _certAsPem(_readFile(caPath, 'CA certificate file'));
-        // Write beside it and rename, so a second instance never reads half
-        // a file.
-        final partial = File('${out.path}.$pid');
-        partial.writeAsBytesSync([
-          ...File(c).readAsBytesSync(),
-          0x0A,
-          ...extra,
-          0x0A,
-        ]);
-        partial.renameSync(out.path);
-        _dropOldBundles(tmp);
-      }
+      final out = File('${dir.path}${Platform.pathSeparator}ca-$name.pem');
+      final extra = _certAsPem(_readFile(caPath, 'CA certificate file'));
+      // Write beside it and rename, so a curl still reading an older copy
+      // never sees half a file.
+      final partial = File('${out.path}.partial');
+      partial.writeAsBytesSync([
+        ...File(c).readAsBytesSync(),
+        0x0A,
+        ...extra,
+        0x0A,
+      ], flush: true);
+      partial.renameSync(out.path);
+      _curlBundles[stamp] = out.path;
       return out.path;
     }
   } catch (_) {}
   return null;
 }
 
-/// Removes bundles written for versions of the CA or system store that were
-/// replaced; day-old ones only, since a running curl may still read one.
-void _dropOldBundles(Directory dir) {
+/// Bundle paths written by this process, by the stamp of their inputs.
+final _curlBundles = <String, String>{};
+
+Directory? _bundleDir;
+
+/// A temp directory created by this process for its curl CA bundles, with
+/// a fresh random name and readable only by this user (see
+/// [createPrivateTempDir]). Leftovers of earlier runs are removed when they
+/// are a day old.
+Directory _privateBundleDir() {
+  final existing = _bundleDir;
+  if (existing != null && existing.existsSync()) return existing;
+  _dropOldBundleDirs(Directory.systemTemp);
+  return _bundleDir = createPrivateTempDir('apiworkbench-ca-');
+}
+
+/// Removes this user's bundle directories from runs at least a day old
+/// (a running curl may still read a newer one). Links are never followed,
+/// and directories of other users cannot be removed anyway.
+void _dropOldBundleDirs(Directory tmp) {
   final cutoff = DateTime.now().subtract(const Duration(days: 1));
   try {
-    for (final f in dir.listSync()) {
-      final name = f.uri.pathSegments.last;
-      if (f is File &&
-          name.startsWith('apiworkbench-ca-') &&
-          name.endsWith('.pem') &&
-          f.statSync().modified.isBefore(cutoff)) {
-        f.deleteSync();
-      }
+    for (final d in tmp.listSync(followLinks: false)) {
+      if (d is! Directory) continue;
+      final name = d.uri.pathSegments.where((s) => s.isNotEmpty).last;
+      if (!name.startsWith('apiworkbench-ca-')) continue;
+      try {
+        if (d.statSync().modified.isBefore(cutoff)) {
+          d.deleteSync(recursive: true);
+        }
+      } catch (_) {}
     }
   } catch (_) {}
 }

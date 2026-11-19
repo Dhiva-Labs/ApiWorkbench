@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import '../models/models.dart';
+import 'private_temp.dart';
 
 /// HTTP/3 transport for desktop platforms, backed by the system `curl`.
 /// Dart has no cross-platform QUIC client yet; curl built with HTTP3
@@ -49,7 +50,14 @@ class CurlH3Engine {
       );
     }
 
-    final tmp = await Directory.systemTemp.createTemp('apiworkbench_h3');
+    // A private directory per request for the body and the response,
+    // removed afterwards.
+    final Directory tmp;
+    try {
+      tmp = createPrivateTempDir('apiworkbench_h3');
+    } on FileSystemException catch (e) {
+      return ResponseData(error: 'curl transport failed: ${e.message}');
+    }
     final bodyFile = File('${tmp.path}/body');
     final headerFile = File('${tmp.path}/headers');
     final requestFile = File('${tmp.path}/request');
