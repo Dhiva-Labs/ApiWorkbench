@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -6,7 +7,7 @@ import 'package:dio_http2_adapter/dio_http2_adapter.dart';
 
 import '../models/models.dart';
 import 'curl_engine.dart' show CurlOption;
-import 'private_temp.dart';
+import 'private_dir.dart';
 
 /// What a transport is built for. Requests with the same key share
 /// connections.
@@ -739,33 +740,17 @@ Directory? _bundleDir;
 
 /// A temp directory created by this process for its curl CA bundles, with
 /// a fresh random name and readable only by this user (see
-/// [createPrivateTempDir]). Leftovers of earlier runs are removed when they
-/// are a day old.
+/// [createPrivateDirSync]). Bundle folders of earlier runs are removed in
+/// the background once nothing has touched them for a day (a running curl
+/// may still read a newer one).
 Directory _privateBundleDir() {
   final existing = _bundleDir;
   if (existing != null && existing.existsSync()) return existing;
-  _dropOldBundleDirs(Directory.systemTemp);
-  return _bundleDir = createPrivateTempDir('apiworkbench-ca-');
+  unawaited(removeStalePrivateDirs(_bundlePrefix));
+  return _bundleDir = createPrivateDirSync(_bundlePrefix);
 }
 
-/// Removes this user's bundle directories from runs at least a day old
-/// (a running curl may still read a newer one). Links are never followed,
-/// and directories of other users cannot be removed anyway.
-void _dropOldBundleDirs(Directory tmp) {
-  final cutoff = DateTime.now().subtract(const Duration(days: 1));
-  try {
-    for (final d in tmp.listSync(followLinks: false)) {
-      if (d is! Directory) continue;
-      final name = d.uri.pathSegments.where((s) => s.isNotEmpty).last;
-      if (!name.startsWith('apiworkbench-ca-')) continue;
-      try {
-        if (d.statSync().modified.isBefore(cutoff)) {
-          d.deleteSync(recursive: true);
-        }
-      } catch (_) {}
-    }
-  } catch (_) {}
-}
+const _bundlePrefix = 'apiworkbench-ca-';
 
 /// [path] as curl's `--cert` expects it: a colon separates the password, so
 /// colons in the path are escaped, except a Windows drive letter's.

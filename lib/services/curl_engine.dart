@@ -2,7 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import '../models/models.dart';
-import 'private_temp.dart';
+import 'private_dir.dart';
 import 'redirect_policy.dart';
 
 /// HTTP/3 transport for desktop platforms, backed by the system `curl`.
@@ -59,7 +59,7 @@ class CurlH3Engine {
     // removed afterwards.
     final Directory tmp;
     try {
-      tmp = createPrivateTempDir('apiworkbench_h3');
+      tmp = createPrivateDirSync('apiworkbench_h3');
     } on FileSystemException catch (e) {
       return ResponseData(error: 'curl transport failed: ${e.message}');
     }
