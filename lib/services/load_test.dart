@@ -9,6 +9,7 @@ import 'assertions.dart';
 import 'captures.dart';
 import 'http_service.dart';
 import 'load_log.dart';
+import 'private_dir.dart';
 import 'redact.dart';
 
 export 'load_log.dart';
@@ -158,9 +159,12 @@ class StepStats {
 class LoadTestService extends ChangeNotifier {
   LoadTestService(this._settings, {this.logDir});
 
+  static const _logDirPrefix = 'apiworkbench-load-';
+
   final AppSettings _settings;
 
-  /// Where call logs are written; defaults to the system temp directory.
+  /// Where call logs are written. By default each run gets its own private
+  /// folder in the system temp directory, removed with the log.
   final Directory? logDir;
   HttpService? _http;
   final String _runId = newId();
@@ -246,13 +250,19 @@ class LoadTestService extends ChangeNotifier {
     ];
     if (config.recordLog) {
       try {
+        final dir = logDir;
+        if (dir == null) {
+          // Logs hold URLs and response bodies: keep them in a folder
+          // nobody else can open, and clear out what earlier runs left.
+          await removeStalePrivateDirs(
+            _logDirPrefix,
+            legacyNames: const ['apiworkbench-load'],
+          );
+        }
         log = await LoadLog.create(
-          logDir ??
-              Directory(
-                '${Directory.systemTemp.path}${Platform.pathSeparator}'
-                'apiworkbench-load',
-              ),
+          dir ?? await createPrivateDir(_logDirPrefix),
           config.bodies,
+          removeDir: dir == null,
         );
       } catch (e) {
         logError = 'Request log is off: could not create it ($e).';
