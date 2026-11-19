@@ -53,6 +53,14 @@ dependencies:
   pointycastle: ^4.0.0
   path: ^1.9.1
   args: ^2.7.0
+  # Credentials live in the platform keychain (issue #61): Secret Service
+  # through libsecret on Linux, DPAPI on Windows, Keystore on Android, the
+  # Keychain on macOS and iOS. See lib/services/keychain_backend.dart.
+  # 10.x: 11.x needs win32 6, which file_picker 10 does not allow.
+  flutter_secure_storage: ^10.3.4
+  # Checks (and unlocks) the Linux keyring without blocking the app before
+  # libsecret is asked. See lib/services/secret_service_probe.dart.
+  dbus: ^0.7.14
   # QuickJS-ng built from source by its build hook (pre-request and test
   # scripts, issue #10).
   quickjs_ffi:
