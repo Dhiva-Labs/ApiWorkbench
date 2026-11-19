@@ -3,6 +3,7 @@ import 'dart:io';
 import '../models/models.dart';
 import '../services/cookie_store.dart';
 import '../services/http_service.dart';
+import '../services/request_builder.dart' show FileReadPolicy;
 import '../services/scripting/engine_factory.dart';
 import '../services/scripting/script_engine.dart';
 import 'errors.dart';
@@ -50,19 +51,22 @@ Future<int> runCli(
         final terminal =
             isTerminal ??
             (out == null && stdout.hasTerminal && stdout.supportsAnsiEscapes);
-        return await _run(
-          options,
-          out: stdoutSink,
-          err: stderrSink,
-          engineFactory: engineFactory ?? createScriptEngine,
-          color:
-              options.color &&
-              terminal &&
-              (environment['NO_COLOR'] ?? '').isEmpty,
-          unicode:
-              !Platform.isWindows ||
-              environment.containsKey('WT_SESSION') ||
-              environment.containsKey('TERM_PROGRAM'),
+        // Request bodies read files only inside the working directory.
+        return await _filePolicy(options).run(
+          () => _run(
+            options,
+            out: stdoutSink,
+            err: stderrSink,
+            engineFactory: engineFactory ?? createScriptEngine,
+            color:
+                options.color &&
+                terminal &&
+                (environment['NO_COLOR'] ?? '').isEmpty,
+            unicode:
+                !Platform.isWindows ||
+                environment.containsKey('WT_SESSION') ||
+                environment.containsKey('TERM_PROGRAM'),
+          ),
         );
     }
   } on UsageError catch (e) {
@@ -175,6 +179,16 @@ Future<int> _run(
   }
   if (writeError != null) return 2;
   return report.exitCode;
+}
+
+/// Where request bodies may read files from: `--working-dir` (default:
+/// the current directory), or anywhere with `--insecure-file-read`.
+FileReadPolicy _filePolicy(RunOptions o) {
+  final dir = o.workingDir ?? Directory.current.path;
+  if (!Directory(dir).existsSync()) {
+    throw InputError('The working directory $dir does not exist.');
+  }
+  return FileReadPolicy(dir, allowOutside: o.insecureFileRead);
 }
 
 String _defaultPath(String reporter, DateTime at) {

@@ -27,12 +27,20 @@ class FakeEngine implements ScriptEngine {
 }
 
 class Seen {
-  Seen(this.method, this.path, this.query, this.headers, this.cookies);
+  Seen(
+    this.method,
+    this.path,
+    this.query,
+    this.headers,
+    this.cookies, [
+    this.body = '',
+  ]);
   final String method;
   final String path;
   final String query;
   final HttpHeaders headers;
   final List<Cookie> cookies;
+  final String body;
 }
 
 void main() {
@@ -47,8 +55,16 @@ void main() {
     server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
     base = 'http://127.0.0.1:${server.port}';
     server.listen((req) async {
+      final body = await utf8.decodeStream(req);
       seen.add(
-        Seen(req.method, req.uri.path, req.uri.query, req.headers, req.cookies),
+        Seen(
+          req.method,
+          req.uri.path,
+          req.uri.query,
+          req.headers,
+          req.cookies,
+          body,
+        ),
       );
       final res = req.response..headers.contentType = ContentType.json;
       final path = req.uri.path;
@@ -643,6 +659,170 @@ void main() {
     );
   });
 
+  group('working directory', () {
+    late Directory work;
+    late String outside;
+
+    setUp(() {
+      work = Directory('${dir.path}/work')..createSync();
+      File('${work.path}/upload.txt').writeAsStringSync('inside-file');
+      Directory('${work.path}/sub').createSync();
+      File('${work.path}/sub/body.bin').writeAsStringSync('inside-body');
+      outside = file('outside.txt', 'outside-secret');
+    });
+
+    /// A Postman collection uploading [formFile] and sending [bodyFile].
+    String postman(String formFile, String bodyFile) => file(
+      'files.postman_collection.json',
+      jsonEncode({
+        'info': {'name': 'Files', 'schema': 'collection/v2.1.0'},
+        'item': [
+          {
+            'name': 'Form',
+            'request': {
+              'method': 'POST',
+              'url': '$base/form',
+              'body': {
+                'mode': 'formdata',
+                'formdata': [
+                  {'key': 'f', 'type': 'file', 'src': formFile},
+                ],
+              },
+            },
+          },
+          {
+            'name': 'Binary',
+            'request': {
+              'method': 'POST',
+              'url': '$base/binary',
+              'body': {
+                'mode': 'file',
+                'file': {'src': bodyFile},
+              },
+            },
+          },
+        ],
+      }),
+    );
+
+    test('reads files inside it, relative or absolute', () async {
+      final r = await cli([
+        'run',
+        postman('upload.txt', '${work.path}/sub/body.bin'),
+        '--working-dir',
+        work.path,
+      ]);
+      expect(r.code, 0, reason: r.out + r.err);
+      expect(seen.map((s) => s.path), ['/form', '/binary']);
+      expect(seen[0].body, contains('inside-file'));
+      expect(seen[1].body, 'inside-body');
+    });
+
+    test('refuses files outside it', () async {
+      final r = await cli([
+        'run',
+        postman('../outside.txt', outside),
+        '--working-dir',
+        work.path,
+        '-r',
+        'json',
+        '--reporter-json-export',
+        '${dir.path}/files.json',
+      ]);
+      expect(r.code, 1);
+      expect(seen, isEmpty, reason: 'neither request was sent');
+      final report =
+          jsonDecode(File('${dir.path}/files.json').readAsStringSync()) as Map;
+      final messages = [
+        for (final f in report['failures'] as List) (f as Map)['message'],
+      ];
+      expect(messages, hasLength(2));
+      for (final m in messages) {
+        expect(m, contains('outside the working directory'));
+        expect(m, contains('--insecure-file-read'));
+      }
+    });
+
+    test('the current directory is the default', () async {
+      // The test runs in the project folder; the temp folder is outside.
+      final r = await cli(['run', postman(outside, outside)]);
+      expect(r.code, 1);
+      expect(seen, isEmpty);
+      expect(r.out, contains('outside the working directory'));
+    });
+
+    test('--insecure-file-read allows them', () async {
+      final r = await cli([
+        'run',
+        postman(outside, outside),
+        '--working-dir',
+        work.path,
+        '--insecure-file-read',
+      ]);
+      expect(r.code, 0, reason: r.out + r.err);
+      expect(seen.map((s) => s.body), [
+        contains('outside-secret'),
+        'outside-secret',
+      ]);
+    });
+
+    test(
+      'a link inside it that points outside is refused',
+      () async {
+        Link('${work.path}/link.txt').createSync(outside);
+        final r = await cli([
+          'run',
+          postman('link.txt', 'link.txt'),
+          '--working-dir',
+          work.path,
+        ]);
+        expect(r.code, 1);
+        expect(seen, isEmpty);
+      },
+      skip: Platform.isWindows ? 'needs symbolic link rights' : false,
+    );
+
+    test('a working directory that does not exist is exit code 2', () async {
+      final r = await cli([
+        'run',
+        postman('a', 'b'),
+        '--working-dir',
+        '${dir.path}/nowhere',
+      ]);
+      expect(r.code, 2);
+      expect(r.err, contains('does not exist'));
+      expect(seen, isEmpty);
+    });
+
+    test('the run trusts the scripts of the file it is given', () async {
+      // A workspace exported while a collection was still untrusted.
+      final ws = workspace(
+        [
+          CollectionModel(
+            name: 'Marked',
+            untrusted: true,
+            requests: [
+              RequestModel(name: 'A', url: '{{base}}/a', testScript: 'a'),
+            ],
+          ),
+        ],
+        [staging()],
+      );
+      var ran = 0;
+      final r = await cli(
+        ['run', ws, '-e', 'Staging'],
+        engine: () {
+          return FakeEngine((_, _) {
+            ran++;
+            return ScriptOutcome();
+          });
+        },
+      );
+      expect(r.code, 0, reason: r.out + r.err);
+      expect(ran, 1);
+    });
+  });
+
   group('reporters', () {
     test(
       'colors only on a terminal, and never with --no-color or NO_COLOR',
@@ -834,6 +1014,8 @@ void main() {
         expect(h.out, contains('apiworkbench-cli run <file>'));
         expect(h.out, contains('--iteration-data'));
         expect(h.out, contains('--reporter-junit-export'));
+        expect(h.out, contains('--working-dir'));
+        expect(h.out, contains('--[no-]insecure-file-read'));
         expect(h.out, contains('Exit codes'));
       }
     });

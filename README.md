@@ -18,8 +18,10 @@ codebase for **Linux, Windows, macOS, Android and iOS**.
   or folder. Folders and their settings, inherited auth (every Postman auth
   type), scripts, saved examples, collection variables, path variables,
   secret variables, disabled rows, descriptions, request settings and every
-  body type carry over. Export collections (v2.1), environments and globals
-  back to Postman.
+  body type carry over; local file paths do not, so you choose upload files
+  again. Export collections (v2.1), environments and globals back to
+  Postman; passwords, keys and OAuth tokens in auth settings stay out of the
+  file unless you include them.
 - **OpenAPI, Swagger and HAR** — import OpenAPI 3.0/3.1 and Swagger 2.0
   (JSON or YAML) as a collection with folders by tag, parameters, example
   bodies, auth and response examples; export a collection as OpenAPI 3.0.
@@ -30,8 +32,9 @@ codebase for **Linux, Windows, macOS, Android and iOS**.
   `to.have.*` checks, `pm.test` and `pm.expect` (chai), `pm.sendRequest`,
   `pm.cookies`, `pm.visualizer`, `postman.setNextRequest`, `console.*`, and
   lodash, crypto-js, moment, uuid, tv4 and ajv through `require()`. Scripts
-  have a timeout and no file system access. Scripts in imported collections
-  run when you send, as in Postman, so look at them first.
+  have a timeout and no file system access. Scripts of an imported
+  collection run only once you allow them: the first send or run that would
+  run them asks first.
 - **Folders** — collections show a folder tree; run, load-test or import into
   any collection or folder from its menu.
 - **Collection variables** — `{{variables}}` scoped to a collection; the
@@ -230,6 +233,12 @@ Options follow Newman:
   `--delay-request`, `--timeout-request`, `--bail` and `--insecure`.
 - Reports: `-r` takes cli, json, junit and html. Each reporter has an
   `--reporter-<name>-export` path.
+- Files: file bodies and form-data files are read from `--working-dir`
+  (default: the current folder), where relative paths start. Files outside
+  it are refused unless you pass `--insecure-file-read`.
+
+The runner runs the scripts of the collection you give it; only the app asks
+before running scripts from an imported collection.
 
 Run `apiworkbench-cli run --help` for the full list. It ships in the .deb,
 .rpm and Arch package (`/usr/bin/apiworkbench-cli`), the tarball, the Windows

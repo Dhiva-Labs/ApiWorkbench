@@ -5,6 +5,7 @@ import 'captures.dart';
 import 'console_events.dart';
 import 'http_service.dart';
 import 'scripting/script_engine.dart';
+import 'scripting/script_trust.dart';
 import 'var_scopes.dart';
 
 /// Where and how one request runs.
@@ -85,6 +86,10 @@ class ExecResult {
 /// pre-request scripts, the send (with inherited auth), then test scripts,
 /// declarative tests and captures. Used by the editor, the runner and the
 /// CLI.
+///
+/// No script runs for a request of a collection marked
+/// [CollectionModel.untrusted]: the caller asks the user first (see
+/// [needsScriptConsent]) and clears the mark when they allow it.
 class RequestExecutor {
   RequestExecutor(this.http, {this.engine});
 
@@ -95,10 +100,18 @@ class RequestExecutor {
     final working = request.clone(sameId: true);
     final col = ctx.collection;
     final settings = http.settings;
-    final engine = ctx.runScripts && settings.scriptsEnabled
-        ? this.engine
-        : null;
-    final logs = <ConsoleLine>[];
+    final wanted = ctx.runScripts && settings.scriptsEnabled;
+    final blocked = wanted && (col?.untrusted ?? false);
+    final engine = wanted && !blocked ? this.engine : null;
+    final logs = <ConsoleLine>[
+      if (blocked && this.engine != null && requestHasScripts(working, col))
+        ConsoleLine(
+          ConsoleLevel.warn,
+          'Scripts were not run: "${col!.name}" was imported and its '
+          'scripts have not been allowed.',
+          source: 'Scripts',
+        ),
+    ];
     final tests = <ScriptTestResult>[];
     NextRequest? next;
     VisualizerOutput? visualizer;
