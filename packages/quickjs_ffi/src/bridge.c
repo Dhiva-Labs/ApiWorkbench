@@ -58,9 +58,9 @@ static int64_t awq_now_ms(void) {
 #endif
 }
 
-static int awq_interrupt(JSRuntime *rt, void *opaque) {
+static int awq_interrupt(JSContext *ctx, void *opaque) {
   awq *h = (awq *)opaque;
-  (void)rt;
+  (void)ctx;
   if (h->deadline_ms > 0 && awq_now_ms() >= h->deadline_ms) {
     h->interrupted = 1;
     return 1;

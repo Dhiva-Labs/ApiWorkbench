@@ -1,8 +1,10 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:dio/dio.dart' show FormData, MultipartFile;
+import 'package:path/path.dart' as p;
 
 import '../models/models.dart';
 import 'dynamic_vars.dart';
@@ -62,10 +64,11 @@ Future<PreparedRequest> buildRequest(
           final value = substituteVars(f.value, vars);
           if (f.isFile) {
             if (value.isEmpty) continue;
-            if (!File(value).existsSync()) {
+            final path = _readablePath(value, 'Form file');
+            if (!File(path).existsSync()) {
               throw RequestBuildException('Form file not found: $value');
             }
-            form.files.add(MapEntry(key, await MultipartFile.fromFile(value)));
+            form.files.add(MapEntry(key, await MultipartFile.fromFile(path)));
           } else {
             form.fields.add(MapEntry(key, value));
           }
@@ -78,7 +81,7 @@ Future<PreparedRequest> buildRequest(
       case BodyType.binary:
         final path = substituteVars(r.body, vars).trim();
         if (path.isNotEmpty) {
-          final file = File(path);
+          final file = File(_readablePath(path, 'Body file'));
           if (!file.existsSync()) {
             throw RequestBuildException('Body file not found: $path');
           }
@@ -128,6 +131,64 @@ Future<PreparedRequest> buildRequest(
     settings: settings,
   );
 }
+
+/// Which local files request bodies (form files, binary bodies) may read.
+///
+/// The app runs without one: its file fields hold files the user picked,
+/// and imports never bring file paths along. The command line runs a
+/// collection from a file under a policy (see [run]): relative paths
+/// resolve against [workingDir], and files outside it are refused unless
+/// [allowOutside] is set.
+class FileReadPolicy {
+  FileReadPolicy(String workingDir, {this.allowOutside = false})
+    : workingDir = p.normalize(p.absolute(workingDir));
+
+  final String workingDir;
+  final bool allowOutside;
+
+  static final _zoneKey = Object();
+
+  /// The policy [run] set for the code running now, or null.
+  static FileReadPolicy? get current =>
+      Zone.current[_zoneKey] as FileReadPolicy?;
+
+  /// Runs [body] with this policy applied to every request it builds,
+  /// including in what it awaits.
+  R run<R>(R Function() body) => runZoned(body, zoneValues: {_zoneKey: this});
+
+  /// [path] resolved against [workingDir]. Throws [RequestBuildException]
+  /// when it lies outside it (after following symbolic links) and that is
+  /// not allowed.
+  String resolve(String path, String what) {
+    final full = p.normalize(p.join(workingDir, path));
+    if (allowOutside) return full;
+    if (p.isWithin(workingDir, full)) {
+      // A link inside the folder may still point outside it.
+      final real = _real(full);
+      if (real == null || p.isWithin(_real(workingDir) ?? workingDir, real)) {
+        return full;
+      }
+    }
+    throw RequestBuildException(
+      '$what $path is outside the working directory $workingDir. Move it '
+      'there, choose another --working-dir, or allow it with '
+      '--insecure-file-read.',
+    );
+  }
+
+  /// [path] with symbolic links resolved, or null when it does not exist.
+  static String? _real(String path) {
+    try {
+      return File(path).resolveSymbolicLinksSync();
+    } on FileSystemException {
+      return null;
+    }
+  }
+}
+
+/// [path] as it may be read under the current [FileReadPolicy].
+String _readablePath(String path, String what) =>
+    FileReadPolicy.current?.resolve(path, what) ?? path;
 
 /// The request URL with variables, path variables and enabled param rows
 /// applied. A missing scheme means https.
