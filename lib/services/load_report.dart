@@ -36,7 +36,7 @@ Map<String, dynamic> loadSummary(LoadTestService svc, String title) {
         {
           'name': st.request.name,
           'method': st.request.method,
-          'url': st.request.url,
+          'url': svc.redactor.url(st.url),
           'calls': st.count,
           'passed': st.passed,
           'failed': st.failed,
@@ -45,7 +45,10 @@ Map<String, dynamic> loadSummary(LoadTestService svc, String title) {
             for (final e in st.statusCounts.entries)
               e.key == 0 ? 'error' : '${e.key}': e.value,
           },
-          'errors': st.errors,
+          'errors': {
+            for (final e in st.errors.entries)
+              svc.redactor.text(e.key): e.value,
+          },
         },
     ],
     if (log != null) 'loggedCalls': log.count,
@@ -53,6 +56,14 @@ Map<String, dynamic> loadSummary(LoadTestService svc, String title) {
       'bodiesDropped': log.bodiesDropped,
   };
 }
+
+/// [e] with its URL and error passed through the run's redactor once more.
+/// The log is masked as it is written; this keeps an export safe even for
+/// an entry that was not.
+LoadLogEntry _masked(LoadTestService svc, LoadLogEntry e) => e.withUrlAndError(
+  svc.redactor.url(e.url),
+  e.error == null ? null : svc.redactor.text(e.error!),
+);
 
 Map<String, dynamic> _latency(LatencyHistogram h) => {
   'avgMs': double.parse(h.meanMs.toStringAsFixed(1)),
@@ -75,7 +86,7 @@ Future<String> buildLoadJson(LoadTestService svc, String title) async {
     await for (final e in log.entries()) {
       if (!first) b.write(',');
       first = false;
-      b.write(jsonEncode(e.toJson()));
+      b.write(jsonEncode(_masked(svc, e).toJson()));
     }
   }
   b.write(']}');
@@ -90,7 +101,8 @@ Future<String> buildLoadCsv(LoadTestService svc) async {
   );
   final log = svc.log;
   if (log != null) {
-    await for (final e in log.entries()) {
+    await for (final entry in log.entries()) {
+      final e = _masked(svc, entry);
       b.write(
         [
           e.seq,
@@ -146,7 +158,8 @@ Future<String> buildLoadHtml(
   var bodyCount = 0;
   final log = svc.log;
   if (log != null) {
-    await for (final c in log.entries()) {
+    await for (final entry in log.entries()) {
+      final c = _masked(svc, entry);
       if (rowCount < maxRows) {
         rowCount++;
         final anchor = c.body != null && bodyCount < maxBodies

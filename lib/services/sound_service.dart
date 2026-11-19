@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 
 import '../models/models.dart';
+import 'codegen/literals.dart' show psQuote;
 
 
 /// One playable sound: a bundled original or a user-imported meme clip.
@@ -115,6 +116,33 @@ String? extractAudioUrl(String urlOrHtml, {String? pageUrl}) {
   return abs?.group(0);
 }
 
+/// The file extension to store an imported sound under: [raw] lowercased
+/// when it is 1-5 letters or digits, else `mp3`. The extension becomes part
+/// of the stored file name, and a URL (or a path) can put anything there.
+String safeSoundExtension(String? raw) {
+  final ext = (raw ?? '').trim().toLowerCase();
+  return RegExp(r'^[a-z0-9]{1,5}$').hasMatch(ext) ? ext : 'mp3';
+}
+
+/// The extension after the last `.` of the last segment of [pathOrUrl]'s
+/// path (null when it has none).
+String? _extensionOf(String pathOrUrl) {
+  final last = pathOrUrl.split(RegExp(r'[\\/]')).last;
+  final dot = last.lastIndexOf('.');
+  return dot < 0 ? null : last.substring(dot + 1);
+}
+
+/// The PowerShell command that plays [path] on Windows. MediaPlayer lives in
+/// WPF's PresentationCore, which PowerShell does not load by default: without
+/// Add-Type, New-Object fails and nothing plays. The path is quoted as a
+/// PowerShell string literal ([psQuote] also handles the typographic quotes
+/// PowerShell reads as quotes), so a file name cannot end the string and run
+/// code.
+String windowsPlayCommand(String path) =>
+    'Add-Type -AssemblyName PresentationCore;'
+    '\$p=New-Object System.Windows.Media.MediaPlayer;'
+    '\$p.Open(${psQuote(path)});\$p.Play();Start-Sleep 4';
+
 /// Stores user sounds on disk and plays clips with whatever the platform
 /// offers (no extra native audio dependency needed).
 class SoundService {
@@ -164,7 +192,7 @@ class SoundService {
   Future<SoundInfo> importFile(String path, {String? name}) async {
     await load();
     final src = File(path);
-    final ext = path.contains('.') ? path.split('.').last : 'mp3';
+    final ext = safeSoundExtension(_extensionOf(path));
     final id = 'u${DateTime.now().millisecondsSinceEpoch}.$ext';
     await src.copy('${(await _base()).path}/$id');
     final info = SoundInfo(
@@ -197,7 +225,9 @@ class SoundService {
     if (bytes.length > 10 * 1024 * 1024) {
       throw Exception('That file is over 10 MB — pick a short clip.');
     }
-    final ext = audioUrl.split('.').last.split('?').first;
+    final ext = safeSoundExtension(
+      _extensionOf(Uri.tryParse(audioUrl)?.path ?? audioUrl),
+    );
     final id = 'u${DateTime.now().millisecondsSinceEpoch}.$ext';
     await File('${(await _base()).path}/$id').writeAsBytes(bytes);
     final fallback = Uri.parse(audioUrl).pathSegments.last;
@@ -265,17 +295,10 @@ class SoundService {
       return;
     }
     if (Platform.isWindows) {
-      // MediaPlayer lives in WPF's PresentationCore, which PowerShell does not
-      // load by default: without Add-Type, New-Object fails and nothing plays.
-      // A ' in the path (a user name like O'Neil) is doubled for the
-      // single-quoted PowerShell string.
-      final quoted = path.replaceAll("'", "''");
       await Process.start('powershell', [
         '-NoProfile',
         '-c',
-        "Add-Type -AssemblyName PresentationCore;"
-            "\$p=New-Object System.Windows.Media.MediaPlayer;"
-            "\$p.Open('$quoted');\$p.Play();Start-Sleep 4",
+        windowsPlayCommand(path),
       ]);
       return;
     }
