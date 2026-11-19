@@ -109,8 +109,11 @@ class HttpService {
             key.clientCertId != null ||
             net.proxyMode == ProxyMode.custom ||
             net.caCertPath.isNotEmpty;
+        // On Android devices whose Cronet providers are all disabled (no
+        // Google Play services, AOSP emulators) the native adapter falls
+        // back to HTTP/1.1 instead of failing every request.
         dio.httpClientAdapter = _platformHasNativeH3 && !custom
-            ? NativeAdapter()
+            ? NativeAdapter(createFallbackAdapter: (_, _) => h1())
             : h1();
     }
     return dio;
