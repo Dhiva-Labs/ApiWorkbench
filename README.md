@@ -105,6 +105,8 @@ codebase for **Linux, Windows, macOS, Android and iOS**.
   (see below).
 - **Workspace sharing** — export collections + environments to a JSON file
   and import them on another machine; same-id items are updated in place.
+  Passwords, keys and tokens in auth settings stay out of the file unless
+  you include them.
 - **Docs export** — save any request + response as a Markdown document
   (headers, bodies, cURL), or a whole collection as one HTML page or
   Markdown file; auth tokens and secrets are masked automatically.

@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import '../models/models.dart';
+import 'auth_secrets.dart';
 
 /// The schema URL Postman writes into `info.schema` of a v2.1 collection.
 const postmanCollectionSchema =
@@ -45,10 +46,9 @@ const _indent = JsonEncoder.withIndent('  ');
 /// Postman does when asked to. Requests of other kinds than HTTP are left
 /// out and listed in [PostmanExport.skipped].
 ///
-/// Auth credentials and live tokens ([secretAuthParams], plus the bearer
-/// token, Basic password and API key value) are left out unless
-/// [includeSecrets] is set: the fields stay, empty, so the file still
-/// imports as a working collection. Values that only name a variable
+/// Auth credentials and live tokens (see [withoutAuthSecrets]) are left
+/// out unless [includeSecrets] is set: the fields stay, empty, so the file
+/// still imports as a working collection. Values that only name a variable
 /// (`{{token}}`) hold no secret and are always kept.
 PostmanExport buildPostmanCollection(
   CollectionModel c, {
@@ -143,10 +143,7 @@ PostmanExport buildPostmanCollection(
         '${stats.assertions} test(s) and ${stats.captures} captured value(s) '
             'were written into the requests\' test scripts, since Postman '
             'only has scripts.',
-      if (stats.secretsLeftOut > 0)
-        '${stats.secretsLeftOut} password(s), key(s) or token(s) in auth '
-            'settings were left out; their fields are empty in the file. '
-            'Include secrets to keep them.',
+      if (stats.secretsLeftOut > 0) secretsLeftOutNote(stats.secretsLeftOut),
     ],
   );
 }
@@ -459,43 +456,15 @@ const _jsonAttrs = {
   'authRequestParams',
 };
 
-/// Auth attributes that hold a credential, per type, as Postman names
-/// them ([AuthConfig.params]). Bearer, Basic and API key keep theirs in
-/// dedicated fields: the token, the password and the key value.
-const secretAuthParams = <AuthType, Set<String>>{
-  AuthType.oauth2: {'clientSecret', 'password', 'code_verifier'},
-  AuthType.oauth1: {'consumerSecret', 'token', 'tokenSecret', 'privateKey'},
-  AuthType.digest: {'password'},
-  AuthType.awsV4: {'secretKey', 'sessionToken'},
-  AuthType.ntlm: {'password'},
-  AuthType.hawk: {'authKey'},
-  AuthType.edgegrid: {'accessToken', 'clientToken', 'clientSecret'},
-  AuthType.jwt: {'secret', 'privateKey'},
-};
-
-/// The OAuth 2.0 tokens currently in use. Left out (not emptied) unless
-/// secrets are included: no token means "get a new one" after an import.
-/// `tokenType` and `expiresAt` describe the access token and go with it.
-const liveOAuth2TokenParams = {
-  'accessToken',
-  'refreshToken',
-  'idToken',
-  'id_token',
-};
-
-/// A value that is only a `{{variable}}`, or nothing: no secret in it.
-final _onlyVariable = RegExp(r'^\s*(\{\{[^{}]+\}\}\s*)?$');
-
 /// Postman's auth object, or null for "inherit" (an absent `auth` key means
 /// exactly that in Postman) and for a collection with no auth.
-Map<String, dynamic>? _auth(AuthConfig a, _Stats stats) {
-  /// [value], or '' when it is a secret that is not to be written.
-  String secret(String value) {
-    if (stats.includeSecrets || _onlyVariable.hasMatch(value)) return value;
-    stats.secretsLeftOut++;
-    return '';
+Map<String, dynamic>? _auth(AuthConfig config, _Stats stats) {
+  var a = config;
+  if (!stats.includeSecrets) {
+    final (stripped, leftOut) = withoutAuthSecrets(config);
+    a = stripped;
+    stats.secretsLeftOut += leftOut;
   }
-
   final String type;
   final attrs = <String, String>{};
   switch (a.type) {
@@ -505,40 +474,22 @@ Map<String, dynamic>? _auth(AuthConfig a, _Stats stats) {
       return {'type': 'noauth'};
     case AuthType.bearer:
       type = 'bearer';
-      attrs['token'] = secret(a.bearerToken);
+      attrs['token'] = a.bearerToken;
     case AuthType.basic:
       type = 'basic';
       attrs['username'] = a.basicUser;
-      attrs['password'] = secret(a.basicPassword);
+      attrs['password'] = a.basicPassword;
     case AuthType.apiKey:
       type = 'apikey';
       attrs['key'] = a.apiKeyName;
-      attrs['value'] = secret(a.apiKeyValue);
+      attrs['value'] = a.apiKeyValue;
       attrs['in'] = a.apiKeyInHeader ? 'header' : 'query';
     default:
       type = a.type.postmanName;
   }
   // The saved-token list is ApiWorkbench's own token history; Postman keeps
   // its tokens outside the collection, so it stays local.
-  final secrets = secretAuthParams[a.type] ?? const <String>{};
-  final tokens = a.type == AuthType.oauth2 && !stats.includeSecrets;
-  bool literal(String key) => !_onlyVariable.hasMatch(a.params[key] ?? '');
-  final tokenLeftOut = tokens && literal('accessToken');
-  var leftOut = false;
-  for (final e in a.params.entries) {
-    if (e.key == 'savedTokens') continue;
-    if (tokens) {
-      if (liveOAuth2TokenParams.contains(e.key) && literal(e.key)) {
-        leftOut = true;
-        continue;
-      }
-      if (tokenLeftOut && (e.key == 'tokenType' || e.key == 'expiresAt')) {
-        continue;
-      }
-    }
-    attrs[e.key] = secrets.contains(e.key) ? secret(e.value) : e.value;
-  }
-  if (leftOut) stats.secretsLeftOut++;
+  attrs.addAll(Map.of(a.params)..remove('savedTokens'));
   return {
     'type': type,
     type: [for (final e in attrs.entries) _attribute(e.key, e.value)],
