@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:api_workbench/models/models.dart';
+import 'package:api_workbench/services/file_mode.dart';
 import 'package:api_workbench/services/secret_store.dart';
 import 'package:api_workbench/services/storage.dart';
 import 'package:api_workbench/services/version_history.dart';
@@ -249,7 +250,7 @@ void main() {
   });
 
   group('without a keychain', () {
-    test('secrets go to the fallback file and come back', () async {
+    test('secrets go to an owner-only file and come back', () async {
       keychain.failReads = true;
       final s = storage();
       await s.open();
@@ -259,6 +260,9 @@ void main() {
       expect(leakedOnDisk(), isEmpty);
       final file = File('${data.path}/secrets.json');
       expect(file.readAsStringSync(), contains('proxy-pass-0014'));
+      if (FileMode.supported) {
+        expect(FileMode.of(file.path), FileMode.privateFile);
+      }
       await expectAllBack(storage());
     });
 
@@ -345,6 +349,27 @@ void main() {
         await s.flush();
         expect(leakedOnDisk(), isEmpty);
       },
+    );
+  });
+
+  group('file permissions', () {
+    test(
+      'the data folder is 0700 and every file 0600, old ones included',
+      () async {
+        data.createSync(recursive: true);
+        final old = File('${data.path}/cookies.json')..writeAsStringSync('[]');
+        Process.runSync('chmod', ['0664', old.path]);
+        Process.runSync('chmod', ['0755', data.path]);
+        final s = storage();
+        await saveAll(s);
+        await s.saveHistory([]);
+        await s.flush();
+        expect(FileMode.of(data.path), FileMode.privateDir);
+        for (final f in data.listSync().whereType<File>()) {
+          expect(FileMode.of(f.path), FileMode.privateFile, reason: f.path);
+        }
+      },
+      skip: Platform.isWindows ? 'no POSIX modes on Windows' : false,
     );
   });
 

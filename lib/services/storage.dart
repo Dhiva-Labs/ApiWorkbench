@@ -5,6 +5,7 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
 import '../models/models.dart';
+import 'file_mode.dart';
 import 'json_store.dart';
 import 'keychain_backend.dart';
 import 'secret_fields.dart';
@@ -16,7 +17,9 @@ import 'version_history.dart';
 ///
 /// Credentials never reach those files (issue #61): they are taken out of
 /// every document before it is written and kept by [secrets], in the system
-/// keychain or, without one, in a fallback file.
+/// keychain or, without one, in an owner-only file. The data folder is
+/// owner-only (0700) and every file in it 0600 on Linux, macOS, Android
+/// and iOS.
 class Storage implements JsonStore {
   /// [overrideDir] puts the data folder elsewhere (tests). Unless a
   /// [keychain] is given as well, its secrets stay in the fallback file, so
@@ -57,7 +60,20 @@ class Storage implements JsonStore {
     final dir = await Directory(
       '${d.path}/apiworkbench',
     ).create(recursive: true);
+    if (_dir == null) _restrict(dir);
     return _dir ??= dir;
+  }
+
+  /// Owner-only access to the data folder and its files, including those
+  /// an older version created with the default umask.
+  static void _restrict(Directory dir) {
+    if (!FileMode.supported) return;
+    FileMode.set(dir.path, FileMode.privateDir);
+    try {
+      for (final e in dir.listSync(followLinks: false)) {
+        if (e is File) FileMode.set(e.path, FileMode.privateFile);
+      }
+    } catch (_) {}
   }
 
   Future<File> _file(String name) async =>
@@ -107,10 +123,13 @@ class Storage implements JsonStore {
     return next;
   }
 
-  /// Replaces [name] atomically.
+  /// Replaces [name] atomically. The temporary file is made owner-only
+  /// while still empty, so the content is never readable by others.
   Future<void> _writeText(String name, String payload) async {
     final f = await _file(name);
     final tmp = File('${f.path}.tmp');
+    await tmp.writeAsBytes(const []);
+    FileMode.set(tmp.path, FileMode.privateFile);
     await tmp.writeAsString(payload, flush: true);
     await tmp.rename(f.path);
   }
