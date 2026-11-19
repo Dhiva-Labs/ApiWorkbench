@@ -7,10 +7,17 @@ import 'package:api_workbench/services/file_mode.dart';
 import 'package:api_workbench/services/secret_store.dart';
 import 'package:api_workbench/services/storage.dart';
 import 'package:api_workbench/services/version_history.dart';
+import 'package:api_workbench/state/app_state.dart';
+import 'package:api_workbench/theme.dart';
+import 'package:api_workbench/ui/app_menu.dart';
+import 'package:api_workbench/ui/settings/secret_storage_notice.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:provider/provider.dart';
 
 import 'support/fake_keychain.dart';
 import 'support/secret_fixtures.dart';
+import 'support/state_harness.dart';
 import 'support/temp_dir.dart';
 
 void main() {
@@ -398,6 +405,107 @@ void main() {
       );
       final back = await storage().loadHistory();
       expect(back.single.request.url, 'https://api.example.com/orders?token=');
+    });
+  });
+
+  group('app state and settings', () {
+    testWidgets('AppState reports where secrets are kept', (tester) async {
+      late AppState state;
+      await tester.runAsync(() async {
+        state = AppState(storage: storage());
+        while (!state.loaded) {
+          await Future<void>.delayed(const Duration(milliseconds: 10));
+        }
+      });
+      expect(state.secretStorage.mode, SecretStorageMode.keychain);
+      await tester.runAsync(() async {
+        await state.flushPending();
+      });
+      state.dispose();
+    });
+
+    for (final width in [390.0, 1280.0]) {
+      testWidgets('Settings shows the notice at ${width.toInt()} px', (
+        tester,
+      ) async {
+        tester.view.physicalSize = Size(width, 900);
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.reset);
+        final h = StateHarness();
+        await h.setUp(tester); // a test data folder: the fallback file
+        await tester.pumpWidget(
+          ChangeNotifierProvider<AppState>.value(
+            value: h.state,
+            child: MaterialApp(
+              theme: buildTheme(),
+              home: Builder(
+                builder: (c) => Scaffold(
+                  body: TextButton(
+                    onPressed: () => showSettingsDialog(c),
+                    child: const Text('open'),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+        await tester.tap(find.text('open'));
+        await tester.pumpAndSettle();
+        final notice = find.textContaining(
+          'Secrets are stored in a local file',
+        );
+        await tester.scrollUntilVisible(
+          notice,
+          200,
+          scrollable: find.byType(Scrollable).last,
+        );
+        expect(notice, findsOneWidget);
+        expect(tester.takeException(), isNull);
+        await h.tearDown(tester);
+      });
+    }
+
+    testWidgets('the notice names the snap connect command', (tester) async {
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: Scaffold(
+            body: SecretStorageNotice(
+              status: SecretStorageStatus(
+                mode: SecretStorageMode.file,
+                reason: 'No Secret Service could be reached.',
+                snapName: 'apiworkbench',
+                keychainHoldsOlderSecrets: true,
+              ),
+            ),
+          ),
+        ),
+      );
+      expect(
+        find.textContaining(
+          'Secrets are stored in a local file because no '
+          'system keychain is available.',
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.text('sudo snap connect apiworkbench:password-manager-service'),
+        findsOneWidget,
+      );
+      expect(find.textContaining('still in the keychain'), findsOneWidget);
+    });
+
+    testWidgets('the keychain notice is one quiet line', (tester) async {
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: Scaffold(
+            body: SecretStorageNotice(
+              status: SecretStorageStatus(mode: SecretStorageMode.keychain),
+            ),
+          ),
+        ),
+      );
+      expect(find.textContaining('not in the workspace files'), findsOneWidget);
+      expect(find.textContaining('snap connect'), findsNothing);
     });
   });
 }
