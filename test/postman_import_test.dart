@@ -297,18 +297,21 @@ void main() {
       ]);
       final up = req('Upload invoice');
       expect(up.bodyType, BodyType.formData);
+      // File fields keep their name; the local path is left out.
       expect(
         up.formFields.map(
           (f) => '${f.key}|${f.value}|${f.isFile}|${f.enabled}',
         ),
         [
           'orderId|42|false|true',
-          'file|/tmp/invoice.pdf|true|true',
-          'extra|/tmp/a.png|true|true',
-          'extra|/tmp/b.png|true|true',
+          'file||true|true',
+          'extra||true|true',
+          'extra||true|true',
           'note|x|false|false',
         ],
       );
+      expect(up.formFields[1].description, contains('"invoice.pdf"'));
+      expect(up.formFields[1].description, contains('choose the file again'));
       expect(req('Search (form)').bodyType, BodyType.formUrlEncoded);
       expect(req('Search (form)').formFields.length, 2);
       final gql = req('GraphQL');
@@ -316,8 +319,32 @@ void main() {
       expect(gql.body, '{ orders { id } }');
       expect(gql.graphqlVariables, '{"first": 10}');
       expect(req('Upload raw').bodyType, BodyType.binary);
-      expect(req('Upload raw').body, '/tmp/blob.bin');
+      expect(req('Upload raw').body, isEmpty);
       expect(req('Plain raw').bodyType, BodyType.xml);
+      // 3 form files + 1 file body, each reported.
+      expect(r.fileReferencesCleared, 4);
+      expect(
+        r.warnings.join('\n'),
+        contains('4 file path(s) were not imported'),
+      );
+    });
+
+    test('the command line keeps file paths', () {
+      final kept = importApiFile(
+        jsonEncode(v21()),
+        keepFilePaths: true,
+      ).collections.single;
+      final up = kept.requests.firstWhere((x) => x.name == 'Upload invoice');
+      expect(up.formFields.where((f) => f.isFile).map((f) => f.value), [
+        '/tmp/invoice.pdf',
+        '/tmp/a.png',
+        '/tmp/b.png',
+      ]);
+      expect(up.formFields[1].description, isEmpty);
+      expect(
+        kept.requests.firstWhere((x) => x.name == 'Upload raw').body,
+        '/tmp/blob.bin',
+      );
     });
 
     test('scripts are kept at every level and not converted', () {
@@ -386,7 +413,8 @@ void main() {
         ],
       );
       expect(r.unsupportedAuth, isEmpty);
-      expect(r.warnings, isEmpty);
+      // Only the file paths that were left out are worth a warning.
+      expect(r.warnings.single, contains('file path(s) were not imported'));
     });
 
     test('folders keep description, auth and scripts', () {
@@ -533,7 +561,8 @@ void main() {
       expect(req('Upload invoice').formFields.where((f) => f.isFile).length, 3);
       expect(req('Search').bodyType, BodyType.graphql);
       expect(req('Blob').bodyType, BodyType.binary);
-      expect(req('Blob').body, '/tmp/blob.bin');
+      expect(req('Blob').body, isEmpty);
+      expect(r.fileReferencesCleared, 4);
       expect(req('Signed').bodyType, BodyType.xml);
       expect(req('Plain text').bodyType, BodyType.text);
     });

@@ -10,7 +10,17 @@ export 'import_report.dart';
 /// Postman environment or globals file, a Postman "Export data" dump, or an
 /// ApiWorkbench workspace. Results accumulate into [into] so several files
 /// can share one report. Throws [FormatException] for anything else.
-ImportReport importApiFile(String raw, {ImportReport? into}) {
+///
+/// Local file paths in file bodies and file form fields are left out (the
+/// fields stay, empty) and counted in [ImportReport.fileReferencesCleared]:
+/// a file from elsewhere must not decide which local files get read.
+/// [keepFilePaths] keeps them, for the command line, which reads them only
+/// inside its working directory.
+ImportReport importApiFile(
+  String raw, {
+  ImportReport? into,
+  bool keepFilePaths = false,
+}) {
   final report = into ?? ImportReport();
   final Object? json;
   try {
@@ -18,7 +28,7 @@ ImportReport importApiFile(String raw, {ImportReport? into}) {
   } catch (_) {
     throw const FormatException('The file is not valid JSON.');
   }
-  _importValue(json, report);
+  _importValue(json, report, keepFilePaths);
   return report;
 }
 
@@ -32,17 +42,18 @@ Map<String, dynamic> _wrapItems(List<dynamic> items, String name) => {
   'item': items,
 };
 
-void _importValue(Object? json, ImportReport r) {
+void _importValue(Object? json, ImportReport r, bool keepFiles) {
+  _V2 v2() => _V2(r, keepFiles: keepFiles);
   if (json is List && json.isNotEmpty && json.every(_isItem)) {
     r.formats.add('Postman requests');
-    r.collections.add(_V2(r).collection(_wrapItems(json, 'Imported requests')));
+    r.collections.add(v2().collection(_wrapItems(json, 'Imported requests')));
     return;
   }
   if (json is List) {
     var any = false;
     for (final x in json) {
       if (x is Map<String, dynamic>) {
-        _importValue(x, r);
+        _importValue(x, r, keepFiles);
         any = true;
       }
     }
@@ -55,6 +66,9 @@ void _importValue(Object? json, ImportReport r) {
 
   if (json['app'] == 'apiworkbench') {
     final ws = parseWorkspaceJson(jsonEncode(json));
+    for (final c in ws.collections) {
+      if (!keepFiles) r.fileReferencesCleared += clearFileReferences(c);
+    }
     r.collections.addAll(ws.collections);
     r.environments.addAll(ws.environments);
     r.globals.addAll(ws.globals);
@@ -69,9 +83,7 @@ void _importValue(Object? json, ImportReport r) {
     r.formats.add('Postman requests');
     final single = json['request'] != null || json['name'] != null;
     final items = single ? [json] : json['item'] as List;
-    r.collections.add(
-      _V2(r).collection(_wrapItems(items, 'Imported requests')),
-    );
+    r.collections.add(v2().collection(_wrapItems(items, 'Imported requests')));
     return;
   }
 
@@ -84,7 +96,7 @@ void _importValue(Object? json, ImportReport r) {
           ? 'Postman collection v2.0'
           : 'Postman collection v2.1',
     );
-    r.collections.add(_V2(r).collection(json));
+    r.collections.add(v2().collection(json));
     return;
   }
 
@@ -94,7 +106,7 @@ void _importValue(Object? json, ImportReport r) {
       (json['globals'] is List && json['version'] != null)) {
     r.formats.add('Postman data export');
     for (final c in (json['collections'] as List? ?? [])) {
-      if (c is Map<String, dynamic>) _importValue(c, r);
+      if (c is Map<String, dynamic>) _importValue(c, r, keepFiles);
     }
     for (final e in (json['environments'] as List? ?? [])) {
       if (e is Map<String, dynamic>) r.environments.add(_environment(e));
@@ -108,7 +120,7 @@ void _importValue(Object? json, ImportReport r) {
           json['folders'] is List ||
           json['id'] != null)) {
     r.formats.add('Postman collection v1');
-    r.collections.add(_V2(r).collection(_v1ToV2(json)));
+    r.collections.add(v2().collection(_v1ToV2(json)));
     return;
   }
 
@@ -129,6 +141,46 @@ void _importValue(Object? json, ImportReport r) {
     'Not a Postman collection, environment or globals file, nor an '
     'ApiWorkbench workspace.',
   );
+}
+
+/// Empties the local file paths of [c]'s file bodies and file form fields,
+/// examples included, and returns how many there were in its requests
+/// (examples not counted). Fields keep their name, with a note to choose
+/// the file again.
+int clearFileReferences(CollectionModel c) {
+  var n = 0;
+  for (final r in c.requests) {
+    n += _clearFiles(r);
+    for (final e in r.examples) {
+      final o = e.originalRequest;
+      if (o != null) _clearFiles(o);
+    }
+  }
+  return n;
+}
+
+int _clearFiles(RequestModel r) {
+  var n = 0;
+  for (final f in r.formFields) {
+    if (!f.isFile || f.value.trim().isEmpty) continue;
+    f.description = _chooseAgain(f.value, f.description);
+    f.value = '';
+    n++;
+  }
+  if (r.bodyType == BodyType.binary && r.body.trim().isNotEmpty) {
+    r.body = '';
+    n++;
+  }
+  return n;
+}
+
+/// The note on a file field whose path was left out.
+String _chooseAgain(String path, String description) {
+  final name = path.trim().split(RegExp(r'[/\\]')).last;
+  final note = name.isEmpty
+      ? 'Choose the file again to send it.'
+      : 'The import referred to "$name"; choose the file again to send it.';
+  return description.isEmpty ? note : '$description ($note)';
 }
 
 // ---- environments and variables --------------------------------------------
@@ -186,8 +238,14 @@ String _description(Object? d) => switch (d) {
 // ---- collection v2.x -------------------------------------------------------
 
 class _V2 {
-  _V2(this.r);
+  _V2(this.r, {required this.keepFiles});
   final ImportReport r;
+
+  /// Keep local file paths (see [importApiFile]).
+  final bool keepFiles;
+
+  /// False while reading examples, whose dropped paths are not counted.
+  bool _counting = true;
 
   CollectionModel collection(Map<String, dynamic> j) {
     final info = j['info'] as Map? ?? {};
@@ -435,7 +493,12 @@ class _V2 {
         m.formFields = _fields(body['formdata'], files: true);
       case 'file':
         m.bodyType = BodyType.binary;
-        m.body = _str((body['file'] as Map?)?['src']);
+        final src = _str((body['file'] as Map?)?['src']);
+        if (keepFiles) {
+          m.body = src;
+        } else if (src.trim().isNotEmpty && _counting) {
+          r.fileReferencesCleared++;
+        }
       case 'graphql':
         final g = body['graphql'] as Map? ?? {};
         m.bodyType = BodyType.graphql;
@@ -460,7 +523,7 @@ class _V2 {
     return BodyType.text;
   }
 
-  static List<KV> _fields(Object? list, {required bool files}) {
+  List<KV> _fields(Object? list, {required bool files}) {
     final out = <KV>[];
     for (final f in (list is List ? list : const [])) {
       if (f is! Map || _str(f['key']).isEmpty) continue;
@@ -469,14 +532,17 @@ class _V2 {
       if (files && f['type'] == 'file') {
         final src = f['src'];
         final paths = src is List ? src.map(_str).toList() : [_str(src)];
+        if (paths.isEmpty) paths.add('');
         for (final p in paths) {
+          final drop = !keepFiles && p.trim().isNotEmpty;
+          if (drop && _counting) r.fileReferencesCleared++;
           out.add(
             KV(
               key: _str(f['key']),
-              value: p,
+              value: drop ? '' : p,
               enabled: enabled,
               isFile: true,
-              description: description,
+              description: drop ? _chooseAgain(p, description) : description,
             ),
           );
         }
@@ -567,7 +633,16 @@ class _V2 {
 
   // -- examples --
 
-  List<ResponseExample> _examples(Object? list, String requestName) => [
+  List<ResponseExample> _examples(Object? list, String requestName) {
+    _counting = false;
+    try {
+      return _exampleList(list, requestName);
+    } finally {
+      _counting = true;
+    }
+  }
+
+  List<ResponseExample> _exampleList(Object? list, String requestName) => [
     for (final e in (list is List ? list : const []))
       if (e is Map)
         ResponseExample(

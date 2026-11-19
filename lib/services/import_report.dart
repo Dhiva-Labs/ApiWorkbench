@@ -24,6 +24,10 @@ class ImportReport {
   /// collection level).
   int scriptsKept = 0;
 
+  /// Local file paths left out of file bodies and file form fields. The
+  /// field stays, empty, so the user can choose the file again.
+  int fileReferencesCleared = 0;
+
   /// Saved response examples carried over.
   int examples = 0;
   int bodiesOnGetOrHead = 0;
@@ -44,6 +48,10 @@ class ImportReport {
     if (bodiesOnGetOrHead > 0)
       '$bodiesOnGetOrHead HEAD request(s) have a body, which '
           'ApiWorkbench does not send for HEAD.',
+    if (fileReferencesCleared > 0)
+      '$fileReferencesCleared file path(s) were not imported: imports never '
+          'keep local file paths. Choose the file(s) again in the request '
+          'body before sending.',
     ...notes,
   ];
 }

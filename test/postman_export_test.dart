@@ -10,8 +10,11 @@ import 'package:flutter_test/flutter_test.dart';
 String fixture(String name) =>
     File('test/fixtures/postman/$name').readAsStringSync();
 
-CollectionModel importRich() =>
-    importApiFile(fixture('rich.postman_collection.json')).collections.single;
+/// The rich fixture with its file paths, as the command line reads it.
+CollectionModel importRich() => importApiFile(
+  fixture('rich.postman_collection.json'),
+  keepFilePaths: true,
+).collections.single;
 
 Map<String, dynamic> decode(PostmanExport e) =>
     jsonDecode(e.json) as Map<String, dynamic>;
@@ -427,9 +430,11 @@ void main() {
       expect(bare(again.toJson()), bare(original.toJson()));
     }
 
+    // File paths kept, so nothing may get lost.
     CollectionModel again(CollectionModel c, {bool current = false}) =>
         importApiFile(
           buildPostmanCollection(c, includeCurrentValues: current).json,
+          keepFilePaths: true,
         ).collections.single;
 
     test('the rich fixture comes back identical', () {
@@ -453,7 +458,10 @@ void main() {
 
     test('the exported file keeps the same names and counts', () {
       final original = importRich();
-      final r = importApiFile(buildPostmanCollection(original).json);
+      final r = importApiFile(
+        buildPostmanCollection(original).json,
+        keepFilePaths: true,
+      );
       expect(r.requests, 11);
       expect(r.folders, 4);
       expect(r.scriptsKept, 6);

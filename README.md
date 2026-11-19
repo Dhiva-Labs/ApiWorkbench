@@ -18,8 +18,9 @@ codebase for **Linux, Windows, macOS, Android and iOS**.
   or folder. Folders and their settings, inherited auth (every Postman auth
   type), scripts, saved examples, collection variables, path variables,
   secret variables, disabled rows, descriptions, request settings and every
-  body type carry over. Export collections (v2.1), environments and globals
-  back to Postman.
+  body type carry over; local file paths do not, so you choose upload files
+  again. Export collections (v2.1), environments and globals back to
+  Postman.
 - **OpenAPI, Swagger and HAR** — import OpenAPI 3.0/3.1 and Swagger 2.0
   (JSON or YAML) as a collection with folders by tag, parameters, example
   bodies, auth and response examples; export a collection as OpenAPI 3.0.
