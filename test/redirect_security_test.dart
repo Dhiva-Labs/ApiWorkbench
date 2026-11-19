@@ -6,9 +6,14 @@ import 'package:api_workbench/models/models.dart';
 import 'package:api_workbench/services/auth/auth.dart';
 import 'package:api_workbench/services/cookie_store.dart';
 import 'package:api_workbench/services/http_service.dart';
+import 'package:api_workbench/services/protocols/live_connection.dart';
 import 'package:api_workbench/services/redirect_policy.dart';
 import 'package:api_workbench/services/request_builder.dart';
+import 'package:api_workbench/services/storage.dart';
+import 'package:api_workbench/state/app_state.dart';
 import 'package:flutter_test/flutter_test.dart';
+
+import 'support/temp_dir.dart';
 
 /// What one of the local servers saw.
 class Hit {
@@ -475,6 +480,85 @@ void main() {
         'http://other.example/',
       );
       expect(redirectTarget(from, 'data:text/plain,hi'), isNull);
+    });
+
+    test('the send path never leaves a tab loading', () async {
+      final dir = await Directory.systemTemp.createTemp('aw_redirect_state');
+      final storage = Storage(overrideDir: dir);
+      final state = AppState(storage: storage);
+      addTearDown(() async {
+        await state.flushPending();
+        await storage.flush();
+        await deleteTempDir(dir);
+      });
+      while (!state.loaded) {
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+      }
+      final tab = state.activeTab!;
+      tab.request.url = to('gopher://127.0.0.1/');
+      await state.sendActive();
+      expect(tab.loading, isFalse);
+      expect(tab.response?.statusCode, 302);
+    });
+  });
+
+  group('URL schemes', () {
+    test('buildUrl accepts http and https only', () {
+      Uri build(String url) => buildUrl(RequestModel(url: url), const {});
+      for (final url in [
+        'file:///etc/passwd',
+        'FILE://localhost/etc/passwd',
+        'ftp://example.com/x',
+        'gopher://example.com/',
+        'dict://example.com/',
+        'ws://example.com/',
+      ]) {
+        expect(
+          () => build(url),
+          throwsA(
+            isA<RequestBuildException>().having(
+              (e) => e.message,
+              'message',
+              contains('Only http:// and https://'),
+            ),
+          ),
+          reason: url,
+        );
+      }
+      expect(build('http://example.com/').scheme, 'http');
+      expect(build('HTTPS://example.com/').scheme, 'https');
+      expect(build('example.com/x').scheme, 'https');
+      // Live protocols check their own schemes.
+      expect(
+        buildUrl(
+          RequestModel(url: 'wss://example.com/'),
+          const {},
+          schemes: null,
+        ).scheme,
+        'wss',
+      );
+    });
+
+    test('sending a file: URL is an error, not a read', () async {
+      final f = File('${Directory.systemTemp.path}/aw-scheme-probe.txt')
+        ..writeAsStringSync('local secret');
+      addTearDown(() => f.deleteSync());
+      final res = await send(RequestModel(url: Uri.file(f.path).toString()));
+      expect(res.error, contains('Only http:// and https://'));
+      expect(res.bodyBytes, isEmpty);
+    });
+
+    test('WebSocket URLs still resolve', () {
+      final uri = resolveUrl(
+        RequestModel(url: 'ws://127.0.0.1:1/socket'),
+        const {},
+        plain: 'ws',
+        secure: 'wss',
+        allowed: const {'ws', 'wss'},
+        map: const {'http': 'ws', 'https': 'wss'},
+        what: 'WebSocket',
+      );
+      expect(uri.scheme, 'ws');
     });
   });
 }

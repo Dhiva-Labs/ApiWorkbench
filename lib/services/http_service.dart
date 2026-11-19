@@ -210,6 +210,12 @@ class HttpService {
     Stopwatch? stopwatch,
   }) async {
     final sw = stopwatch ?? (Stopwatch()..start());
+    if (!isWebUrl(p.url)) {
+      return ResponseData(
+        error: 'Only http:// and https:// URLs can be sent (got "${p.url}").',
+        durationMs: sw.elapsedMilliseconds,
+      );
+    }
     final token = CancelToken();
     _inflight[tabId] = token;
     final userCookies = p.headers.values('cookie');

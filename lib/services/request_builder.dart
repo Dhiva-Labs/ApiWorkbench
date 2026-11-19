@@ -7,6 +7,7 @@ import 'package:dio/dio.dart' show FormData, MultipartFile;
 import '../models/models.dart';
 import 'dynamic_vars.dart';
 import 'prepared_request.dart';
+import 'redirect_policy.dart' show webSchemes;
 
 export 'prepared_request.dart';
 
@@ -130,7 +131,16 @@ Future<PreparedRequest> buildRequest(
 
 /// The request URL with variables, path variables and enabled param rows
 /// applied. A missing scheme means https.
-Uri buildUrl(RequestModel r, Map<String, String> vars, {bool encode = true}) {
+///
+/// Only [schemes] are accepted (http and https by default), so a request
+/// never reads `file:` or other local resources. Pass null to accept any
+/// scheme and check it yourself, as the WebSocket and MQTT clients do.
+Uri buildUrl(
+  RequestModel r,
+  Map<String, String> vars, {
+  bool encode = true,
+  Set<String>? schemes = webSchemes,
+}) {
   var raw = substituteVars(r.url.trim(), vars);
   if (raw.isEmpty) throw RequestBuildException('Request URL is empty.');
   if (!raw.contains('://')) raw = 'https://$raw';
@@ -157,13 +167,20 @@ Uri buildUrl(RequestModel r, Map<String, String> vars, {bool encode = true}) {
     raw = '$raw$sep${rows.join('&')}';
   }
 
+  final Uri uri;
   try {
-    final uri = Uri.parse('$raw$fragment');
-    if (uri.host.isEmpty) throw const FormatException('no host');
-    return uri;
+    uri = Uri.parse('$raw$fragment');
   } on FormatException catch (e) {
     throw RequestBuildException('Invalid URL: ${e.message}');
   }
+  if (schemes != null && !schemes.contains(uri.scheme.toLowerCase())) {
+    throw RequestBuildException(
+      'Only ${schemes.map((s) => '$s://').join(' and ')} URLs can be sent '
+      '(found ${uri.scheme}:).',
+    );
+  }
+  if (uri.host.isEmpty) throw RequestBuildException('Invalid URL: no host');
+  return uri;
 }
 
 /// Replaces `:name` segments of [url] with their values. Empty values leave
