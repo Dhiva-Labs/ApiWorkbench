@@ -5,7 +5,6 @@ import 'dart:typed_data';
 import 'package:dio/dio.dart';
 import 'package:dio/io.dart';
 import 'package:dio_http2_adapter/dio_http2_adapter.dart';
-import 'package:native_dio_adapter/native_dio_adapter.dart';
 
 import '../models/models.dart';
 import 'auth/auth.dart';
@@ -13,14 +12,34 @@ import 'console_events.dart';
 import 'cookie_jar.dart';
 import 'curl_engine.dart';
 import 'net_config.dart';
+import 'redirect_policy.dart';
 import 'request_builder.dart';
 
 export 'request_builder.dart' show substituteVars;
 
+/// Builds the platform's own HTTP stack as a dio adapter (Cronet on
+/// Android, URLSession on iOS and macOS), which negotiates HTTP/3.
+/// [fallback] makes the HTTP/1.1 adapter, for when the platform stack is
+/// unavailable.
+typedef NativeAdapterFactory =
+    HttpClientAdapter Function(HttpClientAdapter Function() fallback);
+
 class HttpService {
-  HttpService() {
+  HttpService({this.nativeAdapter}) {
     configure(AppSettings());
   }
+
+  /// The native adapter every service uses for HTTP/3 on Android, iOS and
+  /// macOS unless one is passed to the constructor; read when the first
+  /// request is sent. The app sets it at startup (`useNativeHttpAdapters`
+  /// in native_adapter.dart). The command-line runner leaves it null: the
+  /// adapter package depends on Flutter, so it must stay out of the
+  /// runner's imports. Without it HTTP/3 on those platforms falls back to
+  /// HTTP/1.1; Linux and Windows use curl for HTTP/3 either way.
+  static NativeAdapterFactory? defaultNativeAdapter;
+
+  /// Overrides [defaultNativeAdapter] for this service.
+  final NativeAdapterFactory? nativeAdapter;
 
   AppSettings _settings = AppSettings();
   AppSettings get settings => _settings;
@@ -83,6 +102,10 @@ class HttpService {
         final h2 = Http2Adapter(
           ConnectionManager(
             idleTimeout: const Duration(seconds: 15),
+            // Offering http/1.1 as well lets servers that refuse an h2-only
+            // ALPN list pick it, and the request goes to the fallback
+            // adapter instead of failing the handshake.
+            supportedProtocols: const ['h2', 'http/1.1'],
             onClientCreate: (uri, config) => configureH2Client(
               config,
               net,
@@ -93,20 +116,23 @@ class HttpService {
           ),
           fallbackAdapter: h1(),
         );
-        dio.httpClientAdapter = _SchemeRoutingAdapter(h2: h2, h1: h1());
+        dio.httpClientAdapter = SchemeRoutingAdapter(secure: h2, plain: h1());
       case HttpVersionPref.v3:
         // Cronet (Android) / NSURLSession (iOS, macOS) negotiate HTTP/3
         // themselves and fall back to h2/h1 per server support. Desktop
         // requests go to the curl engine; this adapter covers the rest.
         // The platform stacks ignore our proxy, CA, client certificates and
-        // "don't verify", so those settings fall back to HTTP/1.1.
+        // "don't verify", so those settings fall back to HTTP/1.1, and so
+        // does plain http (see nativeH3Adapter).
         final custom =
             !key.verifySsl ||
             key.clientCertId != null ||
             net.proxyMode == ProxyMode.custom ||
             net.caCertPath.isNotEmpty;
-        dio.httpClientAdapter = _platformHasNativeH3 && !custom
-            ? NativeAdapter()
+        final native = nativeAdapter ?? defaultNativeAdapter;
+        dio.httpClientAdapter =
+            _platformHasNativeH3 && !custom && native != null
+            ? nativeH3Adapter(native, h1)
             : h1();
     }
     return dio;
@@ -181,6 +207,17 @@ class HttpService {
 
   /// Sends a built request: adds cookies, follows redirects, and lets
   /// [auth] answer one 401 challenge.
+  ///
+  /// Credentials stay with the origin the request was built for. A 401 is
+  /// answered only when it comes from that origin. When a redirect leaves
+  /// the origin of the previous hop (an https to http downgrade included),
+  /// the credentials are dropped for the rest of the chain, as
+  /// [RedirectCredentialPolicy] describes: Authorization, Cookie,
+  /// Proxy-Authorization, every header the auth helper set
+  /// ([AuthContext.authHeaders]) and other credential-looking headers. The
+  /// Cookie header typed on the request goes to its own origin only; jar
+  /// cookies are picked per hop. A `Location` that is not http(s) or has
+  /// no host is not followed: the 3xx is returned.
   Future<ResponseData> sendPrepared(
     PreparedRequest p, {
     required String tabId,
@@ -191,26 +228,31 @@ class HttpService {
     Stopwatch? stopwatch,
   }) async {
     final sw = stopwatch ?? (Stopwatch()..start());
+    if (!isWebUrl(p.url)) {
+      return ResponseData(
+        error: 'Only http:// and https:// URLs can be sent (got "${p.url}").',
+        durationMs: sw.elapsedMilliseconds,
+      );
+    }
     final token = CancelToken();
     _inflight[tabId] = token;
-    final userCookie = p.headers.value('cookie');
-    final origin = p.url.origin;
+    final userCookies = p.headers.values('cookie');
     var hop = p.copy();
     var hopIndex = 0;
     var redirects = 0;
     var challenged = false;
     try {
       while (true) {
+        final ownOrigin = sameOrigin(hop.url, p.url);
         final jar = hop.settings.useCookies ? cookieJar : null;
-        if (jar != null) {
-          final fromJar = jar.cookieHeaderFor(hop.url);
-          final own = hop.url.origin == origin ? userCookie : null;
-          final cookie = [?own, ?fromJar].join('; ');
-          if (cookie.isEmpty) {
-            hop.headers.remove('cookie');
-          } else {
-            hop.headers.set('Cookie', cookie);
-          }
+        final cookie = [
+          if (ownOrigin) ...userCookies,
+          ?jar?.cookieHeaderFor(hop.url),
+        ].join('; ');
+        if (cookie.isEmpty) {
+          hop.headers.remove('cookie');
+        } else if (cookie != hop.headers.values('cookie').join('; ')) {
+          hop.headers.set('Cookie', cookie);
         }
 
         final res = await _sendOnce(
@@ -229,7 +271,10 @@ class HttpService {
           jar.saveFromResponse(hop.url, setCookie);
         }
 
+        // Challenge-response schemes answer for the configured server only;
+        // a 401 from a site the request was redirected to is the answer.
         if (res.statusCode == 401 &&
+            ownOrigin &&
             !challenged &&
             auth != null &&
             authContext != null) {
@@ -242,10 +287,13 @@ class HttpService {
         }
 
         final location = _headerValues(res.headers, 'location').firstOrNull;
-        const redirectCodes = {301, 302, 303, 307, 308};
         if (!hop.settings.followRedirects ||
-            !redirectCodes.contains(res.statusCode) ||
+            !redirectStatusCodes.contains(res.statusCode) ||
             location == null) {
+          return _withDuration(res, sw.elapsedMilliseconds);
+        }
+        final target = redirectTarget(hop.url, location);
+        if (target == null) {
           return _withDuration(res, sw.elapsedMilliseconds);
         }
         if (++redirects > hop.settings.maxRedirects) {
@@ -257,35 +305,53 @@ class HttpService {
             durationMs: sw.elapsedMilliseconds,
           );
         }
-        hop = _redirect(hop, res.statusCode, location);
+        hop = _redirect(
+          hop,
+          res.statusCode,
+          target,
+          authHeaders: authContext?.authHeaders ?? const {},
+        );
       }
     } finally {
       if (identical(_inflight[tabId], token)) _inflight.remove(tabId);
     }
   }
 
-  /// The next hop of a redirect, following browsers and Postman: 303 (and
-  /// 301/302 for non-GET unless told otherwise) become a bodiless GET;
-  /// Authorization is dropped when the origin changes.
-  PreparedRequest _redirect(PreparedRequest from, int status, String location) {
-    final next = from.copy()..url = from.url.resolve(location);
-    final toGet =
-        status == 303 ||
-        ((status == 301 || status == 302) &&
-            !from.settings.followOriginalMethod &&
-            from.method != 'GET' &&
-            from.method != 'HEAD');
-    if (toGet) {
+  /// The next hop of a redirect to [to], following browsers and Postman:
+  /// 303 (and 301/302 for non-GET unless told otherwise) become a bodiless
+  /// GET. Leaving the origin drops credentials (see [sendPrepared]); the
+  /// "Keep Authorization on redirects to other hosts" setting keeps the
+  /// Authorization header alone, except on a downgrade to plain http.
+  PreparedRequest _redirect(
+    PreparedRequest from,
+    int status,
+    Uri to, {
+    required Set<String> authHeaders,
+  }) {
+    final next = from.copy()..url = to;
+    final m = redirectMethod(
+      from.method,
+      status,
+      keepMethod: from.settings.followOriginalMethod,
+    );
+    if (!m.keepBody) {
       next
-        ..method = from.method == 'HEAD' ? 'HEAD' : 'GET'
+        ..method = m.method
         ..body = null;
       next.headers
         ..remove('content-type')
         ..remove('content-length');
     }
-    if (next.url.origin != from.url.origin &&
-        !from.settings.followAuthorizationHeader) {
-      next.headers.remove('authorization');
+    final policy = RedirectCredentialPolicy(
+      authHeaders: authHeaders,
+      keepAuthorization: from.settings.followAuthorizationHeader,
+    );
+    for (final name in policy.namesToDrop(
+      next.headers,
+      from: from.url,
+      to: to,
+    )) {
+      next.headers.remove(name);
     }
     next.headers.remove('host');
     if (from.settings.removeRefererOnRedirect) {
@@ -358,7 +424,7 @@ class HttpService {
         connectTimeoutS: _settings.connectTimeoutS,
         receiveTimeoutS: (receive.inMilliseconds / 1000).ceil(),
         tabId: tabId,
-        extraArgs: curlNetworkArgs(net, p.url, cert: cert),
+        network: curlNetworkOptions(net, p.url, cert: cert),
       );
       return _withDuration(res, sw.elapsedMilliseconds);
     }
@@ -440,13 +506,23 @@ ResponseData _withDuration(ResponseData r, int ms) => ResponseData(
   protocol: r.protocol,
 );
 
-/// Routes https to the HTTP/2 adapter (which itself falls back to HTTP/1.1
-/// when the server doesn't negotiate h2) and plain http to HTTP/1.1.
-class _SchemeRoutingAdapter implements HttpClientAdapter {
-  _SchemeRoutingAdapter({required this.h2, required this.h1});
+/// The adapter for the HTTP/3 preference where the platform has its own
+/// stack: https goes to [native], plain http to HTTP/1.1. HTTP/3 needs TLS
+/// anyway, and Android's Cronet refuses cleartext requests under the
+/// platform's default network security policy.
+HttpClientAdapter nativeH3Adapter(
+  NativeAdapterFactory native,
+  HttpClientAdapter Function() h1,
+) => SchemeRoutingAdapter(secure: native(h1), plain: h1());
 
-  final HttpClientAdapter h2;
-  final HttpClientAdapter h1;
+/// Routes https to [secure] and everything else to [plain]. Used for HTTP/2
+/// (whose adapter itself falls back to HTTP/1.1 when the server doesn't
+/// negotiate h2) and for the native HTTP/3 stacks.
+class SchemeRoutingAdapter implements HttpClientAdapter {
+  SchemeRoutingAdapter({required this.secure, required this.plain});
+
+  final HttpClientAdapter secure;
+  final HttpClientAdapter plain;
 
   @override
   Future<ResponseBody> fetch(
@@ -454,13 +530,15 @@ class _SchemeRoutingAdapter implements HttpClientAdapter {
     Stream<Uint8List>? requestStream,
     Future<void>? cancelFuture,
   ) {
-    final adapter = options.uri.scheme == 'https' ? h2 : h1;
+    final adapter = options.uri.scheme.toLowerCase() == 'https'
+        ? secure
+        : plain;
     return adapter.fetch(options, requestStream, cancelFuture);
   }
 
   @override
   void close({bool force = false}) {
-    h2.close(force: force);
-    h1.close(force: force);
+    secure.close(force: force);
+    plain.close(force: force);
   }
 }

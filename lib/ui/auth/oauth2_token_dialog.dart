@@ -123,6 +123,8 @@ class _TokenDialogState extends State<_TokenDialog> {
       await _listener?.close();
       final listener = await LoopbackRedirectListener.start(
         _configuredRedirect,
+        state: _state,
+        stateIsFixed: _vars.param(widget.auth, 'state').isNotEmpty,
       );
       _listener = listener;
       _redirectUsed = listener.redirectUri.toString();

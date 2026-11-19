@@ -62,6 +62,12 @@ class AuthContext {
   /// Scratch space kept for one send, e.g. a challenge's state.
   final Map<String, Object?> state = {};
 
+  /// Lower-case names of the headers [applyAuth] and [retryAfterChallenge]
+  /// set or changed. A redirect to another origin drops all of them,
+  /// whatever they are called (an API key's own header name, AWS
+  /// `X-Amz-Security-Token`, ...).
+  final Set<String> authHeaders = {};
+
   /// The time signatures and token expiry use (fixed in tests).
   DateTime now() => _clock();
 
@@ -90,18 +96,48 @@ AuthConfig resolveAuth(RequestModel r, CollectionModel? c) {
 ///
 /// Throws [AuthException] only: a crypto library error (say, a key too
 /// small for RSA-PSS) is reported the same way instead of failing the send.
+///
+/// The names of the headers it sets are added to [AuthContext.authHeaders].
 Future<void> applyAuth(
   PreparedRequest p,
   AuthConfig auth,
   AuthContext ctx,
 ) async {
+  final before = _headerSnapshot(p.headers);
   try {
     await _apply(p, auth, ctx);
   } on AuthException {
     rethrow;
   } catch (e) {
     throw AuthException('${auth.type.label} could not be applied: $e');
+  } finally {
+    ctx.authHeaders.addAll(_changedHeaders(before, p.headers));
   }
+}
+
+Map<String, List<String>> _headerSnapshot(HeaderList headers) {
+  final out = <String, List<String>>{};
+  for (final h in headers) {
+    out.putIfAbsent(h.key.toLowerCase(), () => []).add(h.value);
+  }
+  return out;
+}
+
+/// Lower-case names whose values differ between [before] and [after].
+Set<String> _changedHeaders(
+  Map<String, List<String>> before,
+  HeaderList after,
+) {
+  final now = _headerSnapshot(after);
+  bool same(List<String>? a, List<String>? b) =>
+      a != null &&
+      b != null &&
+      a.length == b.length &&
+      Iterable<int>.generate(a.length).every((i) => a[i] == b[i]);
+  return {
+    for (final name in {...before.keys, ...now.keys})
+      if (!same(before[name], now[name])) name,
+  };
 }
 
 Future<void> _apply(PreparedRequest p, AuthConfig auth, AuthContext ctx) async {
@@ -148,6 +184,10 @@ Future<void> _apply(PreparedRequest p, AuthConfig auth, AuthContext ctx) async {
 /// Called with a 401 response. Returns the request to send again (for
 /// challenge-response schemes such as Digest and NTLM), or null to keep
 /// the response.
+///
+/// Only call it for a response from the origin the request was configured
+/// for: after a redirect to another site the 401 is the answer, since the
+/// credentials belong to the configured server.
 Future<PreparedRequest?> retryAfterChallenge(
   PreparedRequest sent,
   ResponseData res,
@@ -155,8 +195,9 @@ Future<PreparedRequest?> retryAfterChallenge(
   AuthContext ctx,
 ) async {
   if (ctx.offline) return null;
+  final PreparedRequest? retry;
   try {
-    return switch (auth.type) {
+    retry = switch (auth.type) {
       AuthType.digest => DigestAuth.retry(sent, res, auth, ctx),
       AuthType.ntlm => NtlmAuth.retry(sent, res, auth, ctx),
       _ => null,
@@ -165,6 +206,12 @@ Future<PreparedRequest?> retryAfterChallenge(
     // A challenge we can't answer: the 401 is the answer.
     return null;
   }
+  if (retry != null) {
+    ctx.authHeaders.addAll(
+      _changedHeaders(_headerSnapshot(sent.headers), retry.headers),
+    );
+  }
+  return retry;
 }
 
 /// [url] with `key=value` appended to its query, keeping what is there.

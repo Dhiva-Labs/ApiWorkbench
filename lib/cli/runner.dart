@@ -1,10 +1,11 @@
 import 'dart:async';
 
 import '../models/models.dart';
+import '../services/auth/auth.dart' show resolveAuth;
 import '../services/console_events.dart';
-import '../services/doc_export.dart' show maskSecrets;
 import '../services/executor.dart';
 import '../services/http_service.dart';
+import '../services/redact.dart';
 import '../services/scripting/script_engine.dart';
 import '../services/var_scopes.dart';
 import 'loader.dart';
@@ -35,13 +36,15 @@ class RunSettings {
 /// Runs a collection like the app's collection runner (the same executor,
 /// variable scopes, data rows and `setNextRequest`), without Flutter.
 class CliRunner {
-  CliRunner(this.http, {this.engine, this.secrets = const {}});
+  CliRunner(this.http, {this.engine, this.secrets = const {}})
+    : _redactor = Redactor(secrets: secrets);
 
   final HttpService http;
   final ScriptEngine? engine;
 
   /// Values of secret variables, masked in everything the run reports.
   final Set<String> secrets;
+  final Redactor _redactor;
 
   /// Jumps allowed per pass, so a setNextRequest loop cannot run forever.
   static const maxStepsPerPass = 10000;
@@ -82,7 +85,8 @@ class CliRunner {
       var jumps = 0;
       while (index < requests.length && jumps++ < maxStepsPerPass) {
         final req = requests[index];
-        final fallbackUrl = substituteVars(req.url, scopes.resolve());
+        final vars = scopes.resolve();
+        final fallbackUrl = substituteVars(req.url, vars);
         var timedOut = false;
         Timer? timer;
         final limit = settings.timeout;
@@ -116,6 +120,9 @@ class CliRunner {
           iteration,
           fallbackUrl,
           timedOut ? limit : null,
+          // The request's auth helper may add a credential to the URL under
+          // a name of the user's choosing.
+          _redactor.withAuth(resolveAuth(req, input.collection), vars),
         );
         steps.add(step);
         onStep?.call(step);
@@ -144,15 +151,18 @@ class CliRunner {
     );
   }
 
-  String _m(String s) => maskSecrets(s, secrets);
-
+  /// Everything a report shows passes through [mask]: secret variable values
+  /// (also URL-encoded), credential query parameters, and credential headers
+  /// such as Authorization and Set-Cookie.
   StepResult _step(
     RequestModel req,
     ExecResult exec,
     int iteration,
     String fallbackUrl,
     Duration? timedOut,
+    Redactor mask,
   ) {
+    String m(String s) => mask.text(s);
     final res = exec.response;
     String? error = res.error;
     if (timedOut != null && error != null) {
@@ -167,34 +177,31 @@ class CliRunner {
       name: req.name,
       folder: req.folder,
       method: req.method.toUpperCase(),
-      url: _m(res.finalUrl ?? fallbackUrl),
+      url: mask.url(res.finalUrl ?? fallbackUrl),
       at: DateTime.now(),
       status: res.statusCode,
       statusMessage: res.statusMessage,
       durationMs: res.durationMs,
       sizeBytes: res.sizeBytes,
-      headers: {
-        for (final e in res.headers.entries)
-          e.key: [for (final v in e.value) _m(v)],
-      },
+      headers: mask.headers(res.headers),
       body: text == null
           ? null
-          : _m(truncated ? text.substring(0, limit) : text),
+          : m(truncated ? text.substring(0, limit) : text),
       bodyTruncated: truncated,
-      error: error == null ? null : _m(error),
+      error: error == null ? null : m(error),
       assertions: [
         for (final a in exec.assertions)
-          CheckOutcome(_assertionName(a.assertion), a.pass, _m(a.message)),
+          CheckOutcome(_assertionName(a.assertion), a.pass, m(a.message)),
       ],
       tests: [
         for (final t in exec.scriptTests)
-          CheckOutcome(_m(t.name), t.pass, _m(t.error ?? '')),
+          CheckOutcome(m(t.name), t.pass, m(t.error ?? '')),
       ],
-      scriptError: exec.scriptError == null ? null : _m(exec.scriptError!),
+      scriptError: exec.scriptError == null ? null : m(exec.scriptError!),
       skipped: exec.skipped,
       logs: [
         for (final l in exec.logs)
-          ConsoleLine(l.level, _m(l.message), at: l.at, source: l.source),
+          ConsoleLine(l.level, m(l.message), at: l.at, source: l.source),
       ],
     );
   }

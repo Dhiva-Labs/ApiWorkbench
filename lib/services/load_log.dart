@@ -53,6 +53,27 @@ class LoadLogEntry {
   final String? body;
   final bool bodyTruncated;
 
+  /// This entry with [url] and [error] replaced.
+  LoadLogEntry withUrlAndError(String url, String? error) => LoadLogEntry(
+    seq: seq,
+    offsetMs: offsetMs,
+    startedAt: startedAt,
+    vu: vu,
+    iteration: iteration,
+    step: step,
+    name: name,
+    method: method,
+    url: url,
+    status: status,
+    durationMs: durationMs,
+    sizeBytes: sizeBytes,
+    pass: pass,
+    error: error,
+    contentType: contentType,
+    body: body,
+    bodyTruncated: bodyTruncated,
+  );
+
   Map<String, dynamic> toJson() => {
     'seq': seq,
     'offsetMs': offsetMs,
@@ -98,7 +119,7 @@ class LoadLogEntry {
 /// disk, not RAM; only the newest [recentLimit] entries stay in memory for
 /// the live view. Saved bodies are capped per response and per run.
 class LoadLog {
-  LoadLog._(this.file, this._sink, this.capture);
+  LoadLog._(this.file, this._sink, this.capture, this._ownedDir);
 
   static const recentLimit = 200;
   static const bodyLimitBytes = 64 * 1024;
@@ -107,6 +128,9 @@ class LoadLog {
   final File file;
   final IOSink _sink;
   final BodyCapture capture;
+
+  /// A directory made for this log alone, removed with it.
+  final Directory? _ownedDir;
   final List<LoadLogEntry> recent = [];
   int count = 0;
   int _bodyBytes = 0;
@@ -115,13 +139,19 @@ class LoadLog {
   int bodiesDropped = 0;
   bool _closed = false;
 
-  static Future<LoadLog> create(Directory dir, BodyCapture capture) async {
+  /// Opens a new log file in [dir]. With [removeDir] the log owns [dir] (a
+  /// private folder made for this run) and deletes it along with the file.
+  static Future<LoadLog> create(
+    Directory dir,
+    BodyCapture capture, {
+    bool removeDir = false,
+  }) async {
     await dir.create(recursive: true);
     final file = File(
       '${dir.path}${Platform.pathSeparator}'
       'load-${DateTime.now().microsecondsSinceEpoch}.jsonl',
     );
-    return LoadLog._(file, file.openWrite(), capture);
+    return LoadLog._(file, file.openWrite(), capture, removeDir ? dir : null);
   }
 
   bool wantsBody(bool pass) => switch (capture) {
@@ -181,6 +211,9 @@ class LoadLog {
     await close();
     try {
       if (await file.exists()) await file.delete();
+    } catch (_) {}
+    try {
+      await _ownedDir?.delete();
     } catch (_) {}
   }
 }

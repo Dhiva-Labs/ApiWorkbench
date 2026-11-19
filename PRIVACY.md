@@ -38,12 +38,16 @@ These files are not encrypted; they are protected by your operating system
 account like your other files. Removing the app (or that folder) deletes them.
 
 When a load test records its call log, the log (and response bodies, if you
-ask for them) is written to an `apiworkbench-load` folder in your temporary
-folder and deleted when the next run starts or the load tester closes.
+ask for them) is written to a folder of its own in your temporary folder (named
+`apiworkbench-load-` plus random characters, readable only by you) and deleted
+when the next run starts or the load tester closes.
 
 Files you export (workspace exports, Markdown docs, load test reports in HTML,
 CSV or JSON) are written only where you choose to save them. Markdown docs
-mask auth tokens.
+mask auth tokens. Load test reports and command-line reports mask secret
+variable values and credential query parameters (such as `api_key` and
+`access_token`); command-line reports also mask the Authorization, Cookie and
+Set-Cookie headers.
 
 ## Network use
 

@@ -38,7 +38,10 @@ class LoadedRun {
 /// file that is missing or of the wrong kind.
 LoadedRun loadRun(RunOptions o) {
   final main = _import(o.file);
-  final collection = _pickCollection(main, o.collection, o.file);
+  // Whoever runs the command line chose this file, so its scripts run
+  // (the app asks first for collections it imported).
+  final collection = _pickCollection(main, o.collection, o.file)
+    ..untrusted = false;
 
   List<KV>? environment;
   String? environmentName;
@@ -102,7 +105,12 @@ List<int> _readBytes(String path) {
 
 ImportReport _import(String path) {
   try {
-    return importApiFile(decodeDataBytes(_readBytes(path)));
+    // File paths stay: the run reads them only inside its working
+    // directory.
+    return importApiFile(
+      decodeDataBytes(_readBytes(path)),
+      keepFilePaths: true,
+    );
   } on FormatException catch (e) {
     throw InputError('$path: ${e.message}');
   }

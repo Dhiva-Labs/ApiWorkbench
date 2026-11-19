@@ -20,6 +20,7 @@ import 'mode_toggle.dart';
 import 'protocols/protocol_view.dart';
 import 'request_editor.dart';
 import 'response_view.dart';
+import 'script_consent_dialog.dart';
 import 'sidebar.dart';
 
 Widget _responseArea(AppState state, RequestTab tab) => ChaosEffects(
@@ -70,6 +71,8 @@ class HomeScreen extends StatelessWidget {
         body: Center(child: CircularProgressIndicator(strokeWidth: 2.5)),
       );
     }
+    // Sending from an imported collection asks before its scripts run.
+    state.askScriptConsent = (c, n) => showScriptConsentDialog(context, c, n);
     return CallbackShortcuts(
       bindings: {
         const SingleActivator(LogicalKeyboardKey.enter, control: true): () =>

@@ -268,7 +268,7 @@ Uri resolveUrl(
     params: r.params,
     pathVariables: r.pathVariables,
   );
-  final uri = buildUrl(probe, vars);
+  final uri = buildUrl(probe, vars, schemes: null);
   var scheme = uri.scheme.toLowerCase();
   scheme = map[scheme] ?? scheme;
   if (!allowed.contains(scheme)) {

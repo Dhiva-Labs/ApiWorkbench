@@ -3,8 +3,12 @@ import 'dart:convert';
 import 'dart:io';
 
 import '../../models/models.dart';
+import '../redirect_policy.dart';
 import '../request_builder.dart';
 import 'live_connection.dart';
+
+/// Redirects an SSE connection follows before giving up, as dart:io did.
+const maxSseRedirects = 5;
 
 /// One event of a `text/event-stream`.
 class SseEvent {
@@ -276,29 +280,8 @@ class SseConnection extends LiveConnection {
     client.connectionTimeout = config.connectTimeout;
     _client = client;
     try {
-      final request = await client.openUrl(config.method, config.url);
-      request.followRedirects = true;
-      request.headers.set(HttpHeaders.acceptHeader, 'text/event-stream');
-      request.headers.set(HttpHeaders.cacheControlHeader, 'no-cache');
-      for (final h in config.headers) {
-        request.headers.set(h.key, h.value, preserveHeaderCase: true);
-      }
-      final lastId = lastEventId;
-      if (lastId != null && lastId.isNotEmpty) {
-        request.headers.set('Last-Event-ID', lastId);
-      }
-      if (config.method == 'POST' && config.body.isNotEmpty) {
-        if (request.headers.value(HttpHeaders.contentTypeHeader) == null) {
-          request.headers.set(
-            HttpHeaders.contentTypeHeader,
-            _isJson(config.body)
-                ? 'application/json'
-                : 'text/plain; charset=utf-8',
-          );
-        }
-        request.add(utf8.encode(config.body));
-      }
-      final response = await request.close();
+      final response = await _send(client, config, gen);
+      if (response == null) return; // stopped or replaced meanwhile
       if (gen != _generation || !_wanted || isClosed) {
         client.close(force: true);
         return;
@@ -373,6 +356,84 @@ class SseConnection extends LiveConnection {
       _client = null;
       note('Could not connect: ${describeError(e)}', error: true);
       _ended(gen);
+    }
+  }
+
+  /// Opens the stream, following redirects here rather than in dart:io so
+  /// that a hop to another origin goes without credentials (the same rules
+  /// as the HTTP service, see [RedirectCredentialPolicy]). A `Location`
+  /// that is not http(s) or has no host is not followed; that response is
+  /// returned and reported like any other non-200 answer. Null when the
+  /// connection was stopped or replaced while redirecting.
+  Future<HttpClientResponse?> _send(
+    HttpClient client,
+    SseConfig config,
+    int gen,
+  ) async {
+    const policy = RedirectCredentialPolicy();
+    var url = config.url;
+    var method = config.method;
+    var headers = config.headers;
+    var body = config.body;
+    for (var hops = 0; ; hops++) {
+      final request = await client.openUrl(method, url);
+      request.followRedirects = false;
+      request.headers.set(HttpHeaders.acceptHeader, 'text/event-stream');
+      request.headers.set(HttpHeaders.cacheControlHeader, 'no-cache');
+      for (final h in headers) {
+        request.headers.set(h.key, h.value, preserveHeaderCase: true);
+      }
+      final lastId = lastEventId;
+      if (lastId != null && lastId.isNotEmpty) {
+        request.headers.set('Last-Event-ID', lastId);
+      }
+      if (method == 'POST' && body.isNotEmpty) {
+        if (request.headers.value(HttpHeaders.contentTypeHeader) == null) {
+          request.headers.set(
+            HttpHeaders.contentTypeHeader,
+            _isJson(body) ? 'application/json' : 'text/plain; charset=utf-8',
+          );
+        }
+        request.add(utf8.encode(body));
+      }
+      final response = await request.close();
+      final location = response.headers.value(HttpHeaders.locationHeader);
+      if (!redirectStatusCodes.contains(response.statusCode) ||
+          location == null) {
+        return response;
+      }
+      final target = redirectTarget(url, location);
+      if (target == null) {
+        note(
+          'Not following the redirect to "$location": only http(s) '
+          'addresses with a host are followed.',
+          error: true,
+        );
+        return response;
+      }
+      if (hops >= maxSseRedirects) {
+        note('Stopped after $maxSseRedirects redirects.', error: true);
+        return response;
+      }
+      await response.drain<void>().catchError((_) {});
+      if (gen != _generation || !_wanted || isClosed) {
+        client.close(force: true);
+        return null;
+      }
+      note('Redirected (${response.statusCode}) to $target');
+      headers = policy.filter(headers, from: url, to: target);
+      final m = redirectMethod(method, response.statusCode);
+      if (!m.keepBody) {
+        method = m.method;
+        body = '';
+        headers = [
+          for (final h in headers)
+            if (h.key.toLowerCase() != 'content-type' &&
+                h.key.toLowerCase() != 'content-length')
+              h,
+        ];
+      }
+      url = target;
     }
   }
 
