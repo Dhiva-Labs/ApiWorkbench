@@ -83,6 +83,10 @@ class HttpService {
         final h2 = Http2Adapter(
           ConnectionManager(
             idleTimeout: const Duration(seconds: 15),
+            // Offering http/1.1 as well lets servers that refuse an h2-only
+            // ALPN list pick it, and the request goes to the fallback
+            // adapter instead of failing the handshake.
+            supportedProtocols: const ['h2', 'http/1.1'],
             onClientCreate: (uri, config) => configureH2Client(
               config,
               net,
