@@ -5,7 +5,6 @@ import 'dart:typed_data';
 import 'package:dio/dio.dart';
 import 'package:dio/io.dart';
 import 'package:dio_http2_adapter/dio_http2_adapter.dart';
-import 'package:native_dio_adapter/native_dio_adapter.dart';
 
 import '../models/models.dart';
 import 'auth/auth.dart';
@@ -18,10 +17,29 @@ import 'request_builder.dart';
 
 export 'request_builder.dart' show substituteVars;
 
+/// Builds the platform's own HTTP stack as a dio adapter (Cronet on
+/// Android, URLSession on iOS and macOS), which negotiates HTTP/3.
+/// [fallback] makes the HTTP/1.1 adapter, for when the platform stack is
+/// unavailable.
+typedef NativeAdapterFactory =
+    HttpClientAdapter Function(HttpClientAdapter Function() fallback);
+
 class HttpService {
-  HttpService() {
+  HttpService({this.nativeAdapter}) {
     configure(AppSettings());
   }
+
+  /// The native adapter every service uses for HTTP/3 on Android, iOS and
+  /// macOS unless one is passed to the constructor; read when the first
+  /// request is sent. The app sets it at startup (`useNativeHttpAdapters`
+  /// in native_adapter.dart). The command-line runner leaves it null: the
+  /// adapter package depends on Flutter, so it must stay out of the
+  /// runner's imports. Without it HTTP/3 on those platforms falls back to
+  /// HTTP/1.1; Linux and Windows use curl for HTTP/3 either way.
+  static NativeAdapterFactory? defaultNativeAdapter;
+
+  /// Overrides [defaultNativeAdapter] for this service.
+  final NativeAdapterFactory? nativeAdapter;
 
   AppSettings _settings = AppSettings();
   AppSettings get settings => _settings;
@@ -110,11 +128,10 @@ class HttpService {
             key.clientCertId != null ||
             net.proxyMode == ProxyMode.custom ||
             net.caCertPath.isNotEmpty;
-        // On Android devices whose Cronet providers are all disabled (no
-        // Google Play services, AOSP emulators) the native adapter falls
-        // back to HTTP/1.1 instead of failing every request.
-        dio.httpClientAdapter = _platformHasNativeH3 && !custom
-            ? NativeAdapter(createFallbackAdapter: (_, _) => h1())
+        final native = nativeAdapter ?? defaultNativeAdapter;
+        dio.httpClientAdapter =
+            _platformHasNativeH3 && !custom && native != null
+            ? native(h1)
             : h1();
     }
     return dio;
