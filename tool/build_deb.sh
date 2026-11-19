@@ -52,7 +52,7 @@ Section: devel
 Priority: optional
 Architecture: ${DEB_ARCH}
 Installed-Size: $(du -sk "$ROOT/usr" | cut -f1)
-Depends: libgtk-3-0, libglib2.0-0
+Depends: libgtk-3-0, libglib2.0-0, libsecret-1-0
 Maintainer: Dhivakar <dhivakar1010@gmail.com>
 Description: Cross-platform API client for building and testing HTTP requests
  Postman-style workbench with request collections and folders,
