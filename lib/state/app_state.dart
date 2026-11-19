@@ -457,21 +457,33 @@ class AppState extends ChangeNotifier {
 
     final collection = collectionById(tab.sourceCollectionId);
     final scopes = scopesFor(tab.sourceCollectionId);
-    final result = await executor.execute(
-      tab.request,
-      ExecContext(
-        scopes: scopes,
-        collection: collection,
-        tabId: tab.id,
-        onAuthUpdated: () {
-          if (collection != null) _storage.saveCollections(collections);
-          tab.dirty = true;
-        },
-      ),
-    );
+    final ExecResult result;
+    try {
+      result = await executor.execute(
+        tab.request,
+        ExecContext(
+          scopes: scopes,
+          collection: collection,
+          tabId: tab.id,
+          onAuthUpdated: () {
+            if (collection != null) _storage.saveCollections(collections);
+            tab.dirty = true;
+          },
+        ),
+      );
+    } catch (e) {
+      // An unexpected failure is shown as the response, never left as a
+      // tab that spins forever.
+      tab.loading = false;
+      if (_disposed || !tabs.contains(tab)) return;
+      tab.response = ResponseData(error: 'The request failed: $e');
+      notifyListeners();
+      return;
+    } finally {
+      tab.loading = false;
+    }
     if (_disposed || !tabs.contains(tab)) return;
     final res = result.response;
-    tab.loading = false;
     tab.response = res;
     tab.assertionResults = result.assertions;
     tab.scriptTests = result.scriptTests;

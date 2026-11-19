@@ -1,24 +1,74 @@
+import 'dart:convert';
+import 'dart:ffi';
 import 'dart:io';
 
 /// Creates a new directory under the system temp directory (or [parent])
 /// that only this user can open.
 ///
 /// The name is [prefix] plus random characters, so unlike a fixed name in a
-/// shared temp directory it cannot be guessed. On Linux and macOS the mode is
-/// 0700. Windows temp folders are per-user already.
-Future<Directory> createPrivateDir(String prefix, {Directory? parent}) async {
-  final dir = await (parent ?? Directory.systemTemp).createTemp(prefix);
-  if (!Platform.isWindows) await _restrict(dir);
-  return dir;
+/// shared temp directory it cannot be guessed. `Directory.createTemp` makes
+/// its directory with the umask's permissions (often group- or
+/// world-readable), so on Linux and macOS this calls `mkdtemp`, which
+/// creates it with mode 0700 in one step. Windows temp folders are per-user
+/// already.
+///
+/// Throws a [FileSystemException] when no private directory can be made.
+Future<Directory> createPrivateDir(String prefix, {Directory? parent}) async =>
+    createPrivateDirSync(prefix, parent: parent);
+
+/// [createPrivateDir] for synchronous callers.
+Directory createPrivateDirSync(String prefix, {Directory? parent}) {
+  final root = parent ?? Directory.systemTemp;
+  if (Platform.isWindows) return root.createTempSync(prefix);
+  try {
+    return Directory(_mkdtemp('${root.path}/${prefix}XXXXXX'));
+  } on FileSystemException {
+    rethrow;
+  } catch (_) {
+    // No mkdtemp to call: create, then restrict. Anything that got in
+    // before the mode changed means the folder cannot be trusted.
+    final dir = root.createTempSync(prefix);
+    try {
+      if (dir.statSync().mode & 0x3f != 0) {
+        Process.runSync('chmod', ['700', dir.path]);
+      }
+    } catch (_) {}
+    if (dir.listSync().isNotEmpty) {
+      try {
+        dir.deleteSync(recursive: true);
+      } catch (_) {}
+      throw FileSystemException('Could not create a private folder', dir.path);
+    }
+    return dir;
+  }
 }
 
-/// `mkdtemp` already creates 0700; this only repairs a directory that came
-/// out wider (an unusual file system), and never fails the caller.
-Future<void> _restrict(Directory dir) async {
+typedef _MkdtempC = Pointer<Uint8> Function(Pointer<Uint8>);
+typedef _MallocC = Pointer<Uint8> Function(IntPtr);
+typedef _MallocD = Pointer<Uint8> Function(int);
+typedef _FreeC = Void Function(Pointer<Uint8>);
+typedef _FreeD = void Function(Pointer<Uint8>);
+
+/// libc `mkdtemp` on [template] (ending in `XXXXXX`); the created path.
+String _mkdtemp(String template) {
+  final libc = DynamicLibrary.process();
+  final mkdtemp = libc.lookupFunction<_MkdtempC, _MkdtempC>('mkdtemp');
+  final malloc = libc.lookupFunction<_MallocC, _MallocD>('malloc');
+  final free = libc.lookupFunction<_FreeC, _FreeD>('free');
+  final bytes = utf8.encode(template);
+  final buf = malloc(bytes.length + 1);
+  if (buf == nullptr) throw StateError('out of memory');
   try {
-    final mode = (await dir.stat()).mode;
-    if (mode & 0x3f != 0) await Process.run('chmod', ['700', dir.path]);
-  } catch (_) {}
+    buf.asTypedList(bytes.length + 1)
+      ..setAll(0, bytes)
+      ..[bytes.length] = 0;
+    if (mkdtemp(buf) == nullptr) {
+      throw FileSystemException('Could not create a private folder', template);
+    }
+    return utf8.decode(buf.asTypedList(bytes.length));
+  } finally {
+    free(buf);
+  }
 }
 
 /// Deletes what earlier runs left in the system temp directory (or
