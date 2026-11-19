@@ -78,7 +78,9 @@ class _ExportDialogState extends State<_ExportDialog> {
   String? _collectionId;
   String? _environmentId;
 
-  /// Off by default: current values are where session tokens end up.
+  /// Off by default: current values are where session tokens end up. For
+  /// a Postman collection it also writes the passwords, keys and tokens in
+  /// auth settings.
   bool _includeCurrent = false;
   bool _yaml = false;
   bool _busy = false;
@@ -121,6 +123,9 @@ class _ExportDialogState extends State<_ExportDialog> {
 
   /// OpenAPI documents hold no variable values.
   bool get _hasValues => _kind != _Kind.openApi;
+
+  /// The switch also covers secrets in auth settings.
+  bool get _secretsOption => _kind == _Kind.postmanCollection;
 
   // ---- export ------------------------------------------------------------
 
@@ -182,6 +187,7 @@ class _ExportDialogState extends State<_ExportDialog> {
         final e = buildPostmanCollection(
           c,
           includeCurrentValues: _includeCurrent,
+          includeSecrets: _includeCurrent,
         );
         return _Output(
           title: 'Export Postman collection',
@@ -424,36 +430,66 @@ class _ExportDialogState extends State<_ExportDialog> {
             onChanged: (v) => setState(() => _includeCurrent = v),
             title: Row(
               children: [
-                const Flexible(
+                Flexible(
                   child: Text(
-                    'Include current values',
-                    style: TextStyle(fontSize: 13),
+                    _secretsOption
+                        ? 'Include current values and secrets'
+                        : 'Include current values',
+                    style: const TextStyle(fontSize: 13),
                   ),
                 ),
                 HelpTip(
-                  _kind == _Kind.workspace
-                      ? "Keeps each variable's local current value next to "
-                            'its initial one.'
-                      : "Writes each variable's current value where it has "
-                            'one, instead of its initial value, the way '
-                            'Postman does when asked to.',
-                  title: 'Current values',
+                  switch (_kind) {
+                    _Kind.workspace =>
+                      "Keeps each variable's local current value next to "
+                          'its initial one.',
+                    _Kind.postmanCollection =>
+                      "Writes each variable's current value where it has "
+                          'one, instead of its initial value, and keeps the '
+                          'passwords, keys and tokens in auth settings.',
+                    _ =>
+                      "Writes each variable's current value where it has "
+                          'one, instead of its initial value, the way '
+                          'Postman does when asked to.',
+                  },
+                  title: _secretsOption
+                      ? 'Current values and secrets'
+                      : 'Current values',
                   example: 'token: initial "" → current "eyJhbGci…"',
                 ),
               ],
             ),
             subtitle: Text(
-              'Off exports initial values only, which is what is safe to '
-              'share.',
+              _secretsOption
+                  ? 'Off exports initial values and leaves out passwords, '
+                        'keys and tokens, which is what is safe to share.'
+                  : 'Off exports initial values only, which is what is safe '
+                        'to share.',
               style: TextStyle(fontSize: 12, color: Palette.textDim),
             ),
           ),
-          _note(
-            Icons.lock_outline,
-            Palette.textDim,
-            'Values, including secrets and tokens, are written to the file as '
-            'plain text.',
-          ),
+          if (_secretsOption && _includeCurrent)
+            _note(
+              Icons.warning_amber_rounded,
+              Palette.warning,
+              'Passwords, API keys and access tokens from auth settings are '
+              'written to the file as plain text. Share it only with people '
+              'who may use them.',
+            )
+          else if (_secretsOption)
+            _note(
+              Icons.lock_outline,
+              Palette.textDim,
+              'Passwords, API keys and tokens in auth settings are left out; '
+              'their fields stay empty. References like {{token}} are kept.',
+            )
+          else
+            _note(
+              Icons.lock_outline,
+              Palette.textDim,
+              'Values, including secrets and tokens, are written to the file '
+              'as plain text.',
+            ),
         ],
         if (_error != null) _note(Icons.error_outline, Palette.danger, _error!),
       ],

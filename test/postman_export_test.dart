@@ -241,9 +241,10 @@ void main() {
       );
       final basic = authOf('Plain text');
       expect(basic['type'], 'basic');
+      // Secrets are left out by default; the field stays, empty.
       expect(attrMap(basic), {
         'username': 'ada',
-        'password': 'lovelace',
+        'password': '',
         'showPassword': false,
       });
       expect(
@@ -266,7 +267,205 @@ void main() {
       expect(e.requests, 11);
       expect(e.folders, 4);
       expect(e.skipped, isEmpty);
-      expect(e.notes, isEmpty);
+      expect(e.notes.single, contains('password(s), key(s) or token(s)'));
+      expect(
+        buildPostmanCollection(importRich(), includeSecrets: true).notes,
+        isEmpty,
+      );
+    });
+  });
+
+  group('secrets in auth', () {
+    Map<String, dynamic> authOf(AuthConfig a, {bool secrets = false}) =>
+        decode(
+              buildPostmanCollection(
+                CollectionModel(
+                  name: 'C',
+                  requests: [RequestModel(name: 'R', url: 'x.test', auth: a)],
+                ),
+                includeSecrets: secrets,
+              ),
+            )['item'][0]['request']['auth']
+            as Map<String, dynamic>;
+
+    final oauth2 = AuthConfig(
+      type: AuthType.oauth2,
+      params: {
+        'grant_type': 'client_credentials',
+        'clientId': 'app',
+        'clientSecret': 'cs-literal',
+        'accessTokenUrl': 'https://id.test/token',
+        'accessToken': 'eyJ-live',
+        'refreshToken': 'rt-live',
+        'tokenType': 'Bearer',
+        'expiresAt': '2026-11-20T10:00:00.000Z',
+        'idToken': 'id-live',
+        'savedTokens': '[{"accessToken":"old"}]',
+      },
+    );
+
+    test('live OAuth 2.0 tokens and the client secret stay local', () {
+      final a = attrMap(authOf(oauth2));
+      expect(a['clientId'], 'app');
+      expect(a['accessTokenUrl'], 'https://id.test/token');
+      expect(a['clientSecret'], '');
+      for (final k in [
+        'accessToken',
+        'refreshToken',
+        'tokenType',
+        'expiresAt',
+        'idToken',
+        'savedTokens',
+      ]) {
+        expect(a.containsKey(k), isFalse, reason: k);
+      }
+    });
+
+    test('included on request, except the saved-token history', () {
+      final a = attrMap(authOf(oauth2, secrets: true));
+      expect(a['clientSecret'], 'cs-literal');
+      expect(a['accessToken'], 'eyJ-live');
+      expect(a['refreshToken'], 'rt-live');
+      expect(a['tokenType'], 'Bearer');
+      expect(a['expiresAt'], '2026-11-20T10:00:00.000Z');
+      expect(a.containsKey('savedTokens'), isFalse);
+    });
+
+    test('every type leaves out its credentials, nothing else', () {
+      final cases = <AuthConfig, Map<String, Object>>{
+        AuthConfig(type: AuthType.bearer, bearerToken: 'tok'): {'token': ''},
+        AuthConfig(type: AuthType.basic, basicUser: 'ada', basicPassword: 'pw'):
+            {'username': 'ada', 'password': ''},
+        AuthConfig(
+          type: AuthType.apiKey,
+          apiKeyName: 'X-Key',
+          apiKeyValue: 'k',
+        ): {
+          'key': 'X-Key',
+          'value': '',
+          'in': 'header',
+        },
+        AuthConfig(
+          type: AuthType.awsV4,
+          params: {
+            'accessKey': 'AKIA',
+            'secretKey': 'sk',
+            'sessionToken': 'st',
+            'region': 'eu-west-1',
+          },
+        ): {
+          'accessKey': 'AKIA',
+          'secretKey': '',
+          'sessionToken': '',
+          'region': 'eu-west-1',
+        },
+        AuthConfig(
+          type: AuthType.digest,
+          params: {'username': 'u', 'password': 'p', 'realm': 'r'},
+        ): {
+          'username': 'u',
+          'password': '',
+          'realm': 'r',
+        },
+        AuthConfig(
+          type: AuthType.ntlm,
+          params: {'username': 'u', 'password': 'p', 'domain': 'd'},
+        ): {
+          'username': 'u',
+          'password': '',
+          'domain': 'd',
+        },
+        AuthConfig(
+          type: AuthType.jwt,
+          params: {'algorithm': 'HS256', 'secret': 'shh', 'privateKey': 'pk'},
+        ): {
+          'algorithm': 'HS256',
+          'secret': '',
+          'privateKey': '',
+        },
+        AuthConfig(
+          type: AuthType.hawk,
+          params: {'authId': 'id', 'authKey': 'key'},
+        ): {
+          'authId': 'id',
+          'authKey': '',
+        },
+        AuthConfig(
+          type: AuthType.oauth1,
+          params: {
+            'consumerKey': 'ck',
+            'consumerSecret': 'cs',
+            'token': 't',
+            'tokenSecret': 'ts',
+          },
+        ): {
+          'consumerKey': 'ck',
+          'consumerSecret': '',
+          'token': '',
+          'tokenSecret': '',
+        },
+        AuthConfig(
+          type: AuthType.edgegrid,
+          params: {
+            'accessToken': 'at',
+            'clientToken': 'ct',
+            'clientSecret': 'cs',
+            'baseURL': 'https://akamai.test',
+          },
+        ): {
+          'accessToken': '',
+          'clientToken': '',
+          'clientSecret': '',
+          'baseURL': 'https://akamai.test',
+        },
+      };
+      cases.forEach((auth, want) {
+        expect(attrMap(authOf(auth)), want, reason: auth.type.name);
+        final full = attrMap(authOf(auth, secrets: true));
+        expect(full.values.where((v) => v == ''), isEmpty, reason: 'kept');
+      });
+    });
+
+    test('values that only name a variable are kept', () {
+      final a = attrMap(
+        authOf(
+          AuthConfig(
+            type: AuthType.oauth2,
+            params: {
+              'clientSecret': '{{clientSecret}}',
+              'accessToken': '{{token}}',
+              'tokenType': 'Bearer',
+            },
+          ),
+        ),
+      );
+      expect(a['clientSecret'], '{{clientSecret}}');
+      expect(a['accessToken'], '{{token}}');
+      expect(a['tokenType'], 'Bearer');
+      expect(
+        attrMap(
+          authOf(AuthConfig(type: AuthType.bearer, bearerToken: '{{t}}')),
+        )['token'],
+        '{{t}}',
+      );
+    });
+
+    test('a default export imports back with empty secrets', () {
+      final original = importRich();
+      final back = importApiFile(
+        buildPostmanCollection(original).json,
+      ).collections.single;
+      expect(back.requests.length, original.requests.length);
+      final plain = back.requests.firstWhere((r) => r.name == 'Plain text');
+      expect(plain.auth.type, AuthType.basic);
+      expect(plain.auth.basicUser, 'ada');
+      expect(plain.auth.basicPassword, isEmpty);
+      final admin = back.folders['Orders/Admin']!.auth;
+      expect(admin.type, AuthType.awsV4);
+      expect(admin.params['secretKey'], isEmpty);
+      // Variable references were never secrets.
+      expect(back.auth.bearerToken, '{{token}}');
+      expect(back.folders['Orders']!.auth.apiKeyValue, '{{apiKey}}');
     });
   });
 
@@ -430,10 +629,14 @@ void main() {
       expect(bare(again.toJson()), bare(original.toJson()));
     }
 
-    // File paths kept, so nothing may get lost.
+    // Everything included and file paths kept, so nothing may get lost.
     CollectionModel again(CollectionModel c, {bool current = false}) =>
         importApiFile(
-          buildPostmanCollection(c, includeCurrentValues: current).json,
+          buildPostmanCollection(
+            c,
+            includeCurrentValues: current,
+            includeSecrets: true,
+          ).json,
           keepFilePaths: true,
         ).collections.single;
 

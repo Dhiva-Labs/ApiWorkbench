@@ -20,7 +20,8 @@ codebase for **Linux, Windows, macOS, Android and iOS**.
   secret variables, disabled rows, descriptions, request settings and every
   body type carry over; local file paths do not, so you choose upload files
   again. Export collections (v2.1), environments and globals back to
-  Postman.
+  Postman; passwords, keys and OAuth tokens in auth settings stay out of the
+  file unless you include them.
 - **OpenAPI, Swagger and HAR** — import OpenAPI 3.0/3.1 and Swagger 2.0
   (JSON or YAML) as a collection with folders by tag, parameters, example
   bodies, auth and response examples; export a collection as OpenAPI 3.0.
