@@ -13,7 +13,7 @@
 library;
 
 /// [AuthConfig.params] keys that hold secrets, whatever the auth type.
-const secretAuthParams = {
+const secretAuthParamKeys = {
   'accessToken',
   'refreshToken',
   'idToken',
@@ -289,7 +289,7 @@ void _auth(Map<dynamic, dynamic> a, String p, _Visitor v) {
   }
   final params = a['authParams'];
   if (params is Map) {
-    for (final k in secretAuthParams) {
+    for (final k in secretAuthParamKeys) {
       if (params.containsKey(k)) v.field(params, k, '$p/ap/$k');
     }
   }

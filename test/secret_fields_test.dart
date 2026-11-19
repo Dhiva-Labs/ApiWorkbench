@@ -37,6 +37,18 @@ void main() {
       expect(jsonEncode(again), original);
     });
 
+    test('flags and fields that are not secrets stay in the file', () {
+      final json = [(secretCollection()..untrusted = true).toJson()];
+      final copy = deepCopyJson(json);
+      SecretDoc.collections.extract(copy);
+      final back = CollectionModel.fromJson(
+        (copy as List).single as Map<String, dynamic>,
+      );
+      expect(back.untrusted, isTrue);
+      expect(back.requests.first.auth.params['clientId'], 'client-id-public');
+      expect(back.requests.first.folder, 'Admin/Users');
+    });
+
     test('the live model is not changed by extracting from its JSON', () {
       final c = secretCollection();
       SecretDoc.collections.extract(deepCopyJson([c.toJson()]));
