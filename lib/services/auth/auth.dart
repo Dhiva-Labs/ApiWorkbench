@@ -184,6 +184,10 @@ Future<void> _apply(PreparedRequest p, AuthConfig auth, AuthContext ctx) async {
 /// Called with a 401 response. Returns the request to send again (for
 /// challenge-response schemes such as Digest and NTLM), or null to keep
 /// the response.
+///
+/// Only call it for a response from the origin the request was configured
+/// for: after a redirect to another site the 401 is the answer, since the
+/// credentials belong to the configured server.
 Future<PreparedRequest?> retryAfterChallenge(
   PreparedRequest sent,
   ResponseData res,

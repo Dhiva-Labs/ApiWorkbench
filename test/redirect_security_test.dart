@@ -377,6 +377,35 @@ void main() {
   });
 
   group('auth challenges', () {
+    for (final type in [AuthType.digest, AuthType.ntlm]) {
+      test('a 401 from another origin is returned (${type.name})', () async {
+        final res = await send(
+          RequestModel(
+            url: to('$bBase/challenge'),
+            authType: type,
+            authParams: {'username': 'ada', 'password': 's3cret'},
+          ),
+        );
+        expect(res.statusCode, 401);
+        final atB = hits.where((h) => h.server == 'b').toList();
+        expect(atB, hasLength(1));
+        expect(atB.single['authorization'], isNull);
+      });
+    }
+
+    test('a 401 from the configured origin is answered', () async {
+      final res = await send(
+        RequestModel(
+          url: '$aBase/challenge',
+          authType: AuthType.digest,
+          authParams: {'username': 'ada', 'password': 's3cret'},
+        ),
+      );
+      expect(res.statusCode, 401);
+      expect(hits, hasLength(2));
+      expect(hits[1]['authorization'], startsWith('Digest '));
+    });
+
     test('applyAuth and retryAfterChallenge report what they set', () async {
       final ctx = AuthContext();
       final p = PreparedRequest(method: 'GET', url: Uri.parse('$aBase/x'))

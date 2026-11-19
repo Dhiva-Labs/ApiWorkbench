@@ -190,10 +190,11 @@ class HttpService {
   /// Sends a built request: adds cookies, follows redirects, and lets
   /// [auth] answer one 401 challenge.
   ///
-  /// Credentials stay with the origin the request was built for. When a
-  /// redirect leaves the origin of the previous hop (an https to http
-  /// downgrade included), the credentials are dropped for the rest of the
-  /// chain, as [RedirectCredentialPolicy] describes: Authorization, Cookie,
+  /// Credentials stay with the origin the request was built for. A 401 is
+  /// answered only when it comes from that origin. When a redirect leaves
+  /// the origin of the previous hop (an https to http downgrade included),
+  /// the credentials are dropped for the rest of the chain, as
+  /// [RedirectCredentialPolicy] describes: Authorization, Cookie,
   /// Proxy-Authorization, every header the auth helper set
   /// ([AuthContext.authHeaders]) and other credential-looking headers. The
   /// Cookie header typed on the request goes to its own origin only; jar
@@ -246,7 +247,10 @@ class HttpService {
           jar.saveFromResponse(hop.url, setCookie);
         }
 
+        // Challenge-response schemes answer for the configured server only;
+        // a 401 from a site the request was redirected to is the answer.
         if (res.statusCode == 401 &&
+            ownOrigin &&
             !challenged &&
             auth != null &&
             authContext != null) {
