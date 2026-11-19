@@ -9,6 +9,7 @@ import 'assertions.dart';
 import 'captures.dart';
 import 'http_service.dart';
 import 'load_log.dart';
+import 'redact.dart';
 
 export 'load_log.dart';
 
@@ -127,8 +128,11 @@ class LoadTestConfig {
 }
 
 class StepStats {
-  StepStats(this.request);
+  StepStats(this.request, {String? url}) : url = url ?? request.url;
   final RequestModel request;
+
+  /// The request URL as reports show it, with credentials masked.
+  final String url;
   final hist = LatencyHistogram();
   int passed = 0;
   int failed = 0;
@@ -179,6 +183,11 @@ class LoadTestService extends ChangeNotifier {
   /// next run or [dispose] so it can be exported after the run.
   LoadLog? log;
   String? logError;
+
+  /// Masks credentials in what the last run recorded: its secret variable
+  /// values, and (per step) the names its auth helpers use.
+  Redactor redactor = Redactor.standard;
+  List<Redactor> _stepRedactors = const [];
   DateTime? startedAt;
   LoadTestConfig? lastConfig;
   int _seq = 0;
@@ -212,6 +221,9 @@ class LoadTestService extends ChangeNotifier {
     required List<LoadStep> plan,
     required LoadTestConfig config,
     required Map<String, String> vars,
+
+    /// Values of secret variables, masked in the log and every report.
+    Set<String> secrets = const {},
   }) async {
     if (running || _disposed) return;
     final active = plan.where((s) => s.enabled).toList();
@@ -227,6 +239,11 @@ class LoadTestService extends ChangeNotifier {
     await log?.delete();
     log = null;
     logError = null;
+    redactor = Redactor(secrets: secrets);
+    _stepRedactors = [
+      for (final s in active)
+        redactor.withAuth(s.request.auth, vars).withAuth(s.auth, vars),
+    ];
     if (config.recordLog) {
       try {
         log = await LoadLog.create(
@@ -250,7 +267,13 @@ class LoadTestService extends ChangeNotifier {
     lastConfig = config;
     _seq = 0;
     stopping = false;
-    steps = [for (final s in active) StepStats(s.request)];
+    steps = [
+      for (var i = 0; i < active.length; i++)
+        StepStats(
+          active[i].request,
+          url: _stepRedactors[i].url(active[i].request.url),
+        ),
+    ];
     _total = LatencyHistogram();
     iterationsDone = 0;
     perSecond.clear();
@@ -377,6 +400,7 @@ class LoadTestService extends ChangeNotifier {
         (assertions.isNotEmpty
             ? assertions.every((a) => a.pass)
             : res.statusCode < 400);
+    final mask = _stepRedactors[index];
     String? err = res.error;
     if (err == null && !pass) {
       final firstFail = assertions.where((a) => !a.pass).firstOrNull;
@@ -384,6 +408,9 @@ class LoadTestService extends ChangeNotifier {
           ? 'Test failed: ${firstFail.assertion.kind.label} — ${firstFail.message}'
           : 'HTTP ${res.statusCode}';
     }
+    // Mask before cutting, so a credential is never split into a piece the
+    // mask no longer recognises.
+    if (err != null) err = mask.text(err);
     if (err != null && err.length > 160) err = '${err.substring(0, 160)}…';
 
     steps[index]._record(res.statusCode, res.durationMs, pass, err);
@@ -404,14 +431,14 @@ class LoadTestService extends ChangeNotifier {
           step: index + 1,
           name: step.request.name,
           method: step.request.method,
-          url: res.finalUrl ?? step.request.url,
+          url: mask.url(res.finalUrl ?? step.request.url),
           status: res.statusCode,
           durationMs: res.durationMs,
           sizeBytes: res.sizeBytes,
           pass: pass,
           error: err,
           contentType: res.contentType,
-          body: b.body,
+          body: b.body == null ? null : mask.text(b.body!),
           bodyTruncated: b.truncated,
         ),
       );

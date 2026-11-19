@@ -72,10 +72,12 @@ class _LoadTestScreenState extends State<LoadTestScreen> {
       'with no tests, when its status is below 400.';
 
   void _start() {
+    final app = context.read<AppState>();
     _svc.start(
       plan: _plan,
       config: _config,
-      vars: context.read<AppState>().varsFor(widget.collectionId),
+      vars: app.varsFor(widget.collectionId),
+      secrets: app.secretValues,
     );
   }
 

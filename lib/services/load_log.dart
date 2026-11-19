@@ -53,6 +53,27 @@ class LoadLogEntry {
   final String? body;
   final bool bodyTruncated;
 
+  /// This entry with [url] and [error] replaced.
+  LoadLogEntry withUrlAndError(String url, String? error) => LoadLogEntry(
+    seq: seq,
+    offsetMs: offsetMs,
+    startedAt: startedAt,
+    vu: vu,
+    iteration: iteration,
+    step: step,
+    name: name,
+    method: method,
+    url: url,
+    status: status,
+    durationMs: durationMs,
+    sizeBytes: sizeBytes,
+    pass: pass,
+    error: error,
+    contentType: contentType,
+    body: body,
+    bodyTruncated: bodyTruncated,
+  );
+
   Map<String, dynamic> toJson() => {
     'seq': seq,
     'offsetMs': offsetMs,
@@ -107,6 +128,7 @@ class LoadLog {
   final File file;
   final IOSink _sink;
   final BodyCapture capture;
+
   final List<LoadLogEntry> recent = [];
   int count = 0;
   int _bodyBytes = 0;
