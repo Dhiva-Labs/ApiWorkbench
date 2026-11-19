@@ -12,6 +12,7 @@ import '../services/var_scopes.dart';
 import '../state/app_state.dart';
 import '../theme.dart';
 import 'help_tip.dart';
+import 'script_consent_dialog.dart';
 
 /// Collection / request runner: fixed iterations or recurring interval runs,
 /// with live results, assertion outcomes and latency statistics.
@@ -159,8 +160,17 @@ class _RunnerScreenState extends State<RunnerScreen> {
     );
   }
 
-  void _start() {
+  Future<void> _start() async {
     final state = context.read<AppState>();
+    // Asked once per run when an imported collection's scripts would run.
+    if (state.scriptConsentNeeded(widget.collectionId, widget.requests)) {
+      final go = await state.allowImportedScripts(
+        widget.collectionId,
+        widget.requests,
+        ask: (c, n) => showScriptConsentDialog(context, c, n),
+      );
+      if (!go || !mounted || _runner.running) return;
+    }
     final iterations = (int.tryParse(_iterCtrl.text) ?? 1).clamp(1, 100);
     final delayMs = (int.tryParse(_delayCtrl.text) ?? 0).clamp(0, 60000);
     final intervalS = (int.tryParse(_intervalCtrl.text) ?? 30).clamp(5, 3600);

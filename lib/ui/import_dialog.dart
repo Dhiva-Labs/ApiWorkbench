@@ -129,11 +129,19 @@ class _ImportDialogState extends State<_ImportDialog> {
     });
   }
 
-  void _import() {
+  Future<void> _import() async {
     final r = _report;
     if (r == null || r.isEmpty) return;
     final state = context.read<AppState>();
-    final globals = state.mergeGlobals(r.globals);
+    // Existing globals keep their values unless the user says otherwise.
+    var overwrite = false;
+    final clashes = state.conflictingGlobals(r.globals);
+    if (clashes.isNotEmpty) {
+      final answer = await _askOverwriteGlobals(clashes);
+      if (answer == null || !mounted) return;
+      overwrite = answer;
+    }
+    final globals = state.mergeGlobals(r.globals, overwrite: overwrite);
     final target = state.collectionById(_target);
     if (target != null && r.collections.isNotEmpty) {
       final added = state.addToCollection(
@@ -168,7 +176,7 @@ class _ImportDialogState extends State<_ImportDialog> {
       );
       return;
     }
-    final (nc, ne) = state.mergeWorkspace(r.collections, r.environments);
+    final (nc, ne) = state.addImported(r.collections, r.environments);
     if (state.activeEnvironmentId == null && r.environments.length == 1) {
       state.setActiveEnvironment(r.environments.single.id);
     }
@@ -182,6 +190,51 @@ class _ImportDialogState extends State<_ImportDialog> {
     ScaffoldMessenger.of(
       context,
     ).showSnackBar(SnackBar(content: Text('Imported ${parts.join(' and ')}')));
+  }
+
+  /// Asks whether imported globals replace the existing ones named
+  /// [names]: true replaces, false keeps them, null cancels the import.
+  Future<bool?> _askOverwriteGlobals(List<String> names) {
+    const shown = 8;
+    final list = names.take(shown).join(', ');
+    final more = names.length > shown
+        ? ' and ${names.length - shown} more'
+        : '';
+    return showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        scrollable: true,
+        title: Text(
+          names.length == 1
+              ? 'Replace the global "${names.single}"?'
+              : 'Replace ${names.length} globals?',
+        ),
+        content: SizedBox(
+          width: 420,
+          child: Text(
+            'The import has other values for '
+            '${names.length == 1 ? 'a global you already have' : 'globals you already have'}'
+            ': $list$more. Keep your values, or replace them with the '
+            'imported ones? New globals are added either way.',
+            style: const TextStyle(height: 1.45),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+          OutlinedButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Keep mine'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Replace'),
+          ),
+        ],
+      ),
+    );
   }
 
   /// Several imported collections default to one folder each, so their
@@ -587,6 +640,8 @@ class _ImportDialogState extends State<_ImportDialog> {
               'Converted from scripts: ${r.assertionsFromScripts} tests and '
               '${r.capturesFromScripts} captured values.',
             ),
+          if (r.scriptsNote case final scripts?)
+            _note(Icons.code, Palette.textDim, scripts),
           for (final w in r.warnings)
             _note(Icons.info_outline, Palette.warning, w),
         ],

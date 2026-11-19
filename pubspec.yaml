@@ -34,13 +34,13 @@ dependencies:
   # The following adds the Cupertino Icons font to your application.
   # Use with the CupertinoIcons class for iOS style icons.
   cupertino_icons: ^2.0.0
-  dio: ^5.10.0
+  dio: ^5.11.1
   provider: ^6.1.5+1
   path_provider: ^2.1.6
   uuid: ^4.5.3
   file_picker: ^13.0.0
-  dio_http2_adapter: ^2.7.1
-  native_dio_adapter: ^1.6.0
+  dio_http2_adapter: ^2.9.0
+  native_dio_adapter: ^1.8.0
   crypto: ^3.0.8
   yaml: ^3.1.4
   url_launcher: ^6.3.3

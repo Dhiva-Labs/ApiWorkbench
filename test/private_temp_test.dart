@@ -126,6 +126,26 @@ void main() {
       }
     });
 
+    test('the sync variant makes the same folders, in the temp root', () {
+      final a = createPrivateDirSync('aw-x-', parent: sandbox);
+      // Without a parent it uses the system temp directory.
+      final b = IOOverrides.runZoned(
+        () => createPrivateDirSync('aw-y-'),
+        getSystemTempDirectory: () => sandbox,
+      );
+      expect(a.parent.path, sandbox.path);
+      expect(b.parent.path, sandbox.path);
+      expect(
+        b.uri.pathSegments[b.uri.pathSegments.length - 2],
+        startsWith('aw-y-'),
+      );
+      if (!Platform.isWindows) {
+        // mkdtemp: 0700 whatever the umask, with no chmod afterwards.
+        expect(a.statSync().mode & 0x1ff, 0x1c0);
+        expect(b.statSync().mode & 0x1ff, 0x1c0);
+      }
+    });
+
     test('stale folders and legacy names go, fresh ones stay', () async {
       final stale = await createPrivateDir('aw-x-', parent: sandbox);
       File('${stale.path}/old.txt').writeAsStringSync('x');

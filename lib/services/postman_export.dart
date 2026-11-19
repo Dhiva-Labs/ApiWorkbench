@@ -44,12 +44,19 @@ const _indent = JsonEncoder.withIndent('  ');
 /// local current value is written instead where there is one, the way
 /// Postman does when asked to. Requests of other kinds than HTTP are left
 /// out and listed in [PostmanExport.skipped].
+///
+/// Auth credentials and live tokens ([secretAuthParams], plus the bearer
+/// token, Basic password and API key value) are left out unless
+/// [includeSecrets] is set: the fields stay, empty, so the file still
+/// imports as a working collection. Values that only name a variable
+/// (`{{token}}`) hold no secret and are always kept.
 PostmanExport buildPostmanCollection(
   CollectionModel c, {
   bool includeCurrentValues = false,
+  bool includeSecrets = false,
 }) {
   final skipped = <String>[];
-  final stats = _Stats();
+  final stats = _Stats(includeSecrets: includeSecrets);
 
   final root = _Folder('', '');
   _Folder folderAt(String path) {
@@ -92,7 +99,7 @@ PostmanExport buildPostmanCollection(
     final f = e as _Folder;
     stats.folders++;
     final meta = c.folders[f.path];
-    final auth = meta == null ? null : _auth(meta.auth);
+    final auth = meta == null ? null : _auth(meta.auth, stats);
     final events = meta == null
         ? const <Map<String, dynamic>>[]
         : _events(meta.preRequestScript, meta.testScript);
@@ -107,7 +114,7 @@ PostmanExport buildPostmanCollection(
   }
 
   // No auth on a collection is the same as an absent key.
-  final auth = c.auth.type == AuthType.none ? null : _auth(c.auth);
+  final auth = c.auth.type == AuthType.none ? null : _auth(c.auth, stats);
   final events = _events(c.preRequestScript, c.testScript);
   final variables = [
     for (final v in c.variables)
@@ -136,6 +143,10 @@ PostmanExport buildPostmanCollection(
         '${stats.assertions} test(s) and ${stats.captures} captured value(s) '
             'were written into the requests\' test scripts, since Postman '
             'only has scripts.',
+      if (stats.secretsLeftOut > 0)
+        '${stats.secretsLeftOut} password(s), key(s) or token(s) in auth '
+            'settings were left out; their fields are empty in the file. '
+            'Include secrets to keep them.',
     ],
   );
 }
@@ -202,10 +213,15 @@ Map<String, dynamic> _collectionVariable(KV v, bool current) => {
 };
 
 class _Stats {
+  _Stats({required this.includeSecrets});
+
+  /// Write auth credentials and live tokens (see [buildPostmanCollection]).
+  final bool includeSecrets;
   int requests = 0;
   int folders = 0;
   int assertions = 0;
   int captures = 0;
+  int secretsLeftOut = 0;
 }
 
 /// A folder in the tree being built; [entries] keeps requests and
@@ -230,13 +246,13 @@ Map<String, dynamic> _item(RequestModel r, _Stats stats) {
     'name': r.name,
     if (settings.isNotEmpty) 'protocolProfileBehavior': settings,
     if (events.isNotEmpty) 'event': events,
-    'request': _request(r),
-    'response': [for (final e in r.examples) _example(e)],
+    'request': _request(r, stats),
+    'response': [for (final e in r.examples) _example(e, stats)],
   };
 }
 
-Map<String, dynamic> _request(RequestModel r) {
-  final auth = _auth(r.auth);
+Map<String, dynamic> _request(RequestModel r, _Stats stats) {
+  final auth = _auth(r.auth, stats);
   final body = _body(r);
   return {
     'auth': ?auth,
@@ -443,9 +459,43 @@ const _jsonAttrs = {
   'authRequestParams',
 };
 
+/// Auth attributes that hold a credential, per type, as Postman names
+/// them ([AuthConfig.params]). Bearer, Basic and API key keep theirs in
+/// dedicated fields: the token, the password and the key value.
+const secretAuthParams = <AuthType, Set<String>>{
+  AuthType.oauth2: {'clientSecret', 'password', 'code_verifier'},
+  AuthType.oauth1: {'consumerSecret', 'token', 'tokenSecret', 'privateKey'},
+  AuthType.digest: {'password'},
+  AuthType.awsV4: {'secretKey', 'sessionToken'},
+  AuthType.ntlm: {'password'},
+  AuthType.hawk: {'authKey'},
+  AuthType.edgegrid: {'accessToken', 'clientToken', 'clientSecret'},
+  AuthType.jwt: {'secret', 'privateKey'},
+};
+
+/// The OAuth 2.0 tokens currently in use. Left out (not emptied) unless
+/// secrets are included: no token means "get a new one" after an import.
+/// `tokenType` and `expiresAt` describe the access token and go with it.
+const liveOAuth2TokenParams = {
+  'accessToken',
+  'refreshToken',
+  'idToken',
+  'id_token',
+};
+
+/// A value that is only a `{{variable}}`, or nothing: no secret in it.
+final _onlyVariable = RegExp(r'^\s*(\{\{[^{}]+\}\}\s*)?$');
+
 /// Postman's auth object, or null for "inherit" (an absent `auth` key means
 /// exactly that in Postman) and for a collection with no auth.
-Map<String, dynamic>? _auth(AuthConfig a) {
+Map<String, dynamic>? _auth(AuthConfig a, _Stats stats) {
+  /// [value], or '' when it is a secret that is not to be written.
+  String secret(String value) {
+    if (stats.includeSecrets || _onlyVariable.hasMatch(value)) return value;
+    stats.secretsLeftOut++;
+    return '';
+  }
+
   final String type;
   final attrs = <String, String>{};
   switch (a.type) {
@@ -455,22 +505,40 @@ Map<String, dynamic>? _auth(AuthConfig a) {
       return {'type': 'noauth'};
     case AuthType.bearer:
       type = 'bearer';
-      attrs['token'] = a.bearerToken;
+      attrs['token'] = secret(a.bearerToken);
     case AuthType.basic:
       type = 'basic';
       attrs['username'] = a.basicUser;
-      attrs['password'] = a.basicPassword;
+      attrs['password'] = secret(a.basicPassword);
     case AuthType.apiKey:
       type = 'apikey';
       attrs['key'] = a.apiKeyName;
-      attrs['value'] = a.apiKeyValue;
+      attrs['value'] = secret(a.apiKeyValue);
       attrs['in'] = a.apiKeyInHeader ? 'header' : 'query';
     default:
       type = a.type.postmanName;
   }
   // The saved-token list is ApiWorkbench's own token history; Postman keeps
   // its tokens outside the collection, so it stays local.
-  attrs.addAll(Map.of(a.params)..remove('savedTokens'));
+  final secrets = secretAuthParams[a.type] ?? const <String>{};
+  final tokens = a.type == AuthType.oauth2 && !stats.includeSecrets;
+  bool literal(String key) => !_onlyVariable.hasMatch(a.params[key] ?? '');
+  final tokenLeftOut = tokens && literal('accessToken');
+  var leftOut = false;
+  for (final e in a.params.entries) {
+    if (e.key == 'savedTokens') continue;
+    if (tokens) {
+      if (liveOAuth2TokenParams.contains(e.key) && literal(e.key)) {
+        leftOut = true;
+        continue;
+      }
+      if (tokenLeftOut && (e.key == 'tokenType' || e.key == 'expiresAt')) {
+        continue;
+      }
+    }
+    attrs[e.key] = secrets.contains(e.key) ? secret(e.value) : e.value;
+  }
+  if (leftOut) stats.secretsLeftOut++;
   return {
     'type': type,
     type: [for (final e in attrs.entries) _attribute(e.key, e.value)],
@@ -519,10 +587,10 @@ Map<String, dynamic> _profileBehavior(RequestSettings s) => {
   if (s.removeRefererOnRedirect) 'removeRefererHeaderOnRedirect': true,
 };
 
-Map<String, dynamic> _example(ResponseExample e) => {
+Map<String, dynamic> _example(ResponseExample e, _Stats stats) => {
   'name': e.name,
   if (e.originalRequest != null)
-    'originalRequest': _request(e.originalRequest!),
+    'originalRequest': _request(e.originalRequest!, stats),
   'status': e.statusText,
   'code': e.statusCode,
   '_postman_previewlanguage': _previewLanguage(e.contentType),

@@ -92,7 +92,9 @@ void main() {
         await tester.pumpAndSettle();
         expect(find.text('Collection'), findsOneWidget);
         expect(find.text('Shop API'), findsOneWidget);
-        expect(find.text('Include current values'), findsOneWidget);
+        // For a collection the switch also covers secrets in auth.
+        expect(find.text('Include current values and secrets'), findsOneWidget);
+        expect(find.textContaining('are left out'), findsOneWidget);
 
         await tester.tap(find.text('Postman environment'));
         await tester.pumpAndSettle();
@@ -130,6 +132,32 @@ void main() {
     expect(find.text('Collection'), findsOneWidget);
     expect(find.text('Admin API'), findsOneWidget);
     expect(find.text('Environment'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('including secrets in a Postman collection shows a warning', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1100, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final state = await _state(tester);
+    await _open(tester, state, collection: state.collections.first);
+    expect(
+      find.textContaining('written to the file as plain text'),
+      findsNothing,
+    );
+    await tester.tap(find.text('Include current values and secrets'));
+    await tester.pumpAndSettle();
+    expect(
+      find.textContaining('Passwords, API keys and access tokens'),
+      findsOneWidget,
+    );
+    expect(find.textContaining('Share it only with people'), findsOneWidget);
+    // Other formats keep their own wording.
+    await tester.tap(find.text('Postman environment'));
+    await tester.pumpAndSettle();
+    expect(find.text('Include current values'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 

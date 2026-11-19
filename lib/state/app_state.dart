@@ -9,6 +9,7 @@ import '../services/executor.dart';
 import '../services/http_service.dart';
 import '../services/scripting/engine_factory.dart';
 import '../services/scripting/script_engine.dart';
+import '../services/scripting/script_trust.dart';
 import '../services/sound_service.dart';
 import '../services/storage.dart';
 import '../services/var_scopes.dart';
@@ -230,15 +231,46 @@ class AppState extends ChangeNotifier {
     return (cols.length, envs.length);
   }
 
-  /// Adds imported globals; an existing name gets the imported value.
-  int mergeGlobals(List<KV> imported) {
+  /// Adds the collections and environments of an import (see
+  /// [mergeWorkspace]). The collections start untrusted: their scripts run
+  /// only once the user allows them (see [allowImportedScripts]).
+  (int, int) addImported(
+    List<CollectionModel> cols,
+    List<EnvironmentModel> envs,
+  ) {
+    for (final c in cols) {
+      c.untrusted = true;
+    }
+    return mergeWorkspace(cols, envs);
+  }
+
+  /// Names of [imported] globals that already exist here with another
+  /// value, which [mergeGlobals] would replace only when asked to.
+  List<String> conflictingGlobals(List<KV> imported) => {
+    for (final v in imported)
+      if (globals.any(
+        (g) =>
+            g.key == v.key &&
+            (g.value != v.value || g.effective != v.effective),
+      ))
+        v.key,
+  }.toList();
+
+  /// Adds imported globals. A name that already exists keeps its value
+  /// unless [overwrite] is set; then it gets the imported variable.
+  /// Returns how many were added or replaced.
+  int mergeGlobals(List<KV> imported, {bool overwrite = false}) {
+    var n = 0;
     for (final v in imported) {
       if (v.key.isEmpty) continue;
+      final exists = globals.any((x) => x.key == v.key);
+      if (exists && !overwrite) continue;
       globals.removeWhere((x) => x.key == v.key);
       globals.add(v);
+      n++;
     }
-    if (imported.isNotEmpty) updateGlobals();
-    return imported.length;
+    if (n > 0) updateGlobals();
+    return n;
   }
 
   /// Persists after editing [globals] in place.
@@ -270,6 +302,9 @@ class AppState extends ChangeNotifier {
         r.folder = join(base, r.folder);
         target.requests.add(r);
         requests++;
+        // Imported scripts make the whole collection ask before scripts
+        // run again.
+        if (requestHasScripts(r, null)) target.untrusted = true;
       }
       for (final v in c.variables) {
         if (v.key.isEmpty || target.variables.any((x) => x.key == v.key)) {
@@ -338,12 +373,80 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  // ---------------- Imported scripts ----------------
+
+  /// Asks the user whether an imported collection's scripts may run; set
+  /// by the UI. Without it such scripts are skipped.
+  Future<ScriptConsent> Function(CollectionModel collection, int scripts)?
+  askScriptConsent;
+
+  bool _askingScriptConsent = false;
+
+  /// Whether sending [requests] from the collection [collectionId] would
+  /// run scripts of an imported collection that were never allowed.
+  bool scriptConsentNeeded(
+    String? collectionId,
+    Iterable<RequestModel> requests,
+  ) =>
+      scripts != null &&
+      settings.scriptsEnabled &&
+      needsScriptConsent(collectionById(collectionId), requests);
+
+  /// Called before sending [requests] from the collection [collectionId].
+  /// When [scriptConsentNeeded], asks once ([ask], else
+  /// [askScriptConsent]): Allow trusts the collection from now on, Run
+  /// without scripts sends with the scripts skipped. Returns false when
+  /// the user cancels.
+  Future<bool> allowImportedScripts(
+    String? collectionId,
+    Iterable<RequestModel> requests, {
+    Future<ScriptConsent> Function(CollectionModel collection, int scripts)?
+    ask,
+  }) async {
+    if (!scriptConsentNeeded(collectionId, requests)) return true;
+    final c = collectionById(collectionId)!;
+    final question = ask ?? askScriptConsent;
+    if (question == null) return true; // the executor skips them
+    if (_askingScriptConsent) return false;
+    _askingScriptConsent = true;
+    final ScriptConsent answer;
+    try {
+      answer = await question(c, collectionScriptCount(c));
+    } finally {
+      _askingScriptConsent = false;
+    }
+    if (_disposed) return false;
+    switch (answer) {
+      case ScriptConsent.allow:
+        trustCollection(c);
+        return true;
+      case ScriptConsent.skipScripts:
+        return true;
+      case ScriptConsent.cancel:
+        return false;
+    }
+  }
+
+  /// Lets [c]'s scripts run from now on.
+  void trustCollection(CollectionModel c) {
+    if (!c.untrusted) return;
+    c.untrusted = false;
+    _storage.saveCollections(collections);
+    notifyListeners();
+  }
+
   // ---------------- Sending ----------------
 
   Future<void> sendActive() async {
     final tab = activeTab;
     if (tab == null || tab.loading) return;
     if (tab.request.kind != RequestKind.http) return; // protocols connect
+    if (scriptConsentNeeded(tab.sourceCollectionId, [tab.request])) {
+      if (!await allowImportedScripts(tab.sourceCollectionId, [tab.request])) {
+        return;
+      }
+      if (_disposed || tab.loading || !tabs.contains(tab)) return;
+    }
     tab.loading = true;
     tab.response = null;
     tab.assertionResults = [];
@@ -354,21 +457,33 @@ class AppState extends ChangeNotifier {
 
     final collection = collectionById(tab.sourceCollectionId);
     final scopes = scopesFor(tab.sourceCollectionId);
-    final result = await executor.execute(
-      tab.request,
-      ExecContext(
-        scopes: scopes,
-        collection: collection,
-        tabId: tab.id,
-        onAuthUpdated: () {
-          if (collection != null) _storage.saveCollections(collections);
-          tab.dirty = true;
-        },
-      ),
-    );
+    final ExecResult result;
+    try {
+      result = await executor.execute(
+        tab.request,
+        ExecContext(
+          scopes: scopes,
+          collection: collection,
+          tabId: tab.id,
+          onAuthUpdated: () {
+            if (collection != null) _storage.saveCollections(collections);
+            tab.dirty = true;
+          },
+        ),
+      );
+    } catch (e) {
+      // An unexpected failure is shown as the response, never left as a
+      // tab that spins forever.
+      tab.loading = false;
+      if (_disposed || !tabs.contains(tab)) return;
+      tab.response = ResponseData(error: 'The request failed: $e');
+      notifyListeners();
+      return;
+    } finally {
+      tab.loading = false;
+    }
     if (_disposed || !tabs.contains(tab)) return;
     final res = result.response;
-    tab.loading = false;
     tab.response = res;
     tab.assertionResults = result.assertions;
     tab.scriptTests = result.scriptTests;

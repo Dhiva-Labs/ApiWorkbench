@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -5,6 +6,8 @@ import 'package:crypto/crypto.dart';
 import 'package:dio_http2_adapter/dio_http2_adapter.dart';
 
 import '../models/models.dart';
+import 'curl_engine.dart' show CurlOption;
+import 'private_dir.dart';
 
 /// What a transport is built for. Requests with the same key share
 /// connections.
@@ -687,6 +690,10 @@ void configureH2Client(
 /// *in addition to* the system roots means handing it both. Null when no
 /// system bundle can be found (Windows, mostly), in which case the CA file
 /// alone is used.
+///
+/// Bundles are written to a directory this process created for itself
+/// ([_privateBundleDir]) and only reused from there, so a file another user
+/// placed in the shared temp directory is never handed to curl.
 String? _curlBundleWith(String caPath) {
   final candidates = [
     Platform.environment['CURL_CA_BUNDLE'],
@@ -703,45 +710,47 @@ String? _curlBundleWith(String caPath) {
     for (final c in candidates) {
       if (c == null || c.isEmpty || !File(c).existsSync()) continue;
       final stamp = '${_fileStamp(c)}|${_fileStamp(caPath)}';
+      final written = _curlBundles[stamp];
+      if (written != null && File(written).existsSync()) return written;
+      final dir = _privateBundleDir();
       final name = sha1.convert(utf8.encode(stamp)).toString().substring(0, 16);
-      final tmp = Directory.systemTemp;
-      final out = File('${tmp.path}/apiworkbench-ca-$name.pem');
-      if (!out.existsSync()) {
-        final extra = _certAsPem(_readFile(caPath, 'CA certificate file'));
-        // Write beside it and rename, so a second instance never reads half
-        // a file.
-        final partial = File('${out.path}.$pid');
-        partial.writeAsBytesSync([
-          ...File(c).readAsBytesSync(),
-          0x0A,
-          ...extra,
-          0x0A,
-        ]);
-        partial.renameSync(out.path);
-        _dropOldBundles(tmp);
-      }
+      final out = File('${dir.path}${Platform.pathSeparator}ca-$name.pem');
+      final extra = _certAsPem(_readFile(caPath, 'CA certificate file'));
+      // Write beside it and rename, so a curl still reading an older copy
+      // never sees half a file.
+      final partial = File('${out.path}.partial');
+      partial.writeAsBytesSync([
+        ...File(c).readAsBytesSync(),
+        0x0A,
+        ...extra,
+        0x0A,
+      ], flush: true);
+      partial.renameSync(out.path);
+      _curlBundles[stamp] = out.path;
       return out.path;
     }
   } catch (_) {}
   return null;
 }
 
-/// Removes bundles written for versions of the CA or system store that were
-/// replaced; day-old ones only, since a running curl may still read one.
-void _dropOldBundles(Directory dir) {
-  final cutoff = DateTime.now().subtract(const Duration(days: 1));
-  try {
-    for (final f in dir.listSync()) {
-      final name = f.uri.pathSegments.last;
-      if (f is File &&
-          name.startsWith('apiworkbench-ca-') &&
-          name.endsWith('.pem') &&
-          f.statSync().modified.isBefore(cutoff)) {
-        f.deleteSync();
-      }
-    }
-  } catch (_) {}
+/// Bundle paths written by this process, by the stamp of their inputs.
+final _curlBundles = <String, String>{};
+
+Directory? _bundleDir;
+
+/// A temp directory created by this process for its curl CA bundles, with
+/// a fresh random name and readable only by this user (see
+/// [createPrivateDirSync]). Bundle folders of earlier runs are removed in
+/// the background once nothing has touched them for a day (a running curl
+/// may still read a newer one).
+Directory _privateBundleDir() {
+  final existing = _bundleDir;
+  if (existing != null && existing.existsSync()) return existing;
+  unawaited(removeStalePrivateDirs(_bundlePrefix));
+  return _bundleDir = createPrivateDirSync(_bundlePrefix);
 }
+
+const _bundlePrefix = 'apiworkbench-ca-';
 
 /// [path] as curl's `--cert` expects it: a colon separates the password, so
 /// colons in the path are escaped, except a Windows drive letter's.
@@ -752,59 +761,61 @@ String _curlCertPath(String path) {
   return head + p.substring(head.length).replaceAll(':', r'\:');
 }
 
-/// Extra arguments for the curl HTTP/3 engine: proxy, CA certificate and
+/// Extra options for the curl HTTP/3 engine: proxy, CA certificate and
 /// client certificate for [url].
 ///
-/// Without a proxy the arguments say `--noproxy '*'`, so curl does not pick
-/// one up from its own environment against the settings. Credentials are
-/// passed as arguments (`--proxy-user`, `--pass`, `--cert file.p12:pass`)
-/// and are visible in the process list while the request runs. Unlike the
-/// dart:io transports this never throws; curl reports unreadable files.
-List<String> curlNetworkArgs(
+/// Without a proxy the options say `--noproxy '*'`, so curl does not pick
+/// one up from its own environment against the settings. Credentials
+/// (`--proxy-user`, `--pass`, `--cert file.p12:pass`) are among them; the
+/// engine hands these options to curl on standard input, never on the
+/// command line. Unlike the dart:io transports this never throws; curl
+/// reports unreadable files.
+List<CurlOption> curlNetworkOptions(
   NetworkSettings net,
   Uri url, {
   ClientCertificate? cert,
 }) {
-  final args = <String>[];
+  final o = <CurlOption>[];
 
   final proxy = proxyEndpointFor(net, url);
   if (proxy == null) {
-    args.addAll(['--noproxy', '*']);
+    o.add(const CurlOption('noproxy', '*'));
   } else {
     // An empty --noproxy stops curl applying NO_PROXY on top of a decision
     // that has already taken it into account.
-    args.addAll(['--proxy', 'http://${proxy.authority}', '--noproxy', '']);
+    o
+      ..add(CurlOption('proxy', 'http://${proxy.authority}'))
+      ..add(const CurlOption('noproxy', ''));
     if (proxy.hasCredentials) {
-      args.addAll(['--proxy-user', '${proxy.user}:${proxy.password}']);
+      o.add(CurlOption('proxy-user', '${proxy.user}:${proxy.password}'));
     }
   }
 
   final ca = net.caCertPath.trim();
   if (ca.isNotEmpty) {
-    args.addAll(['--cacert', _curlBundleWith(ca) ?? _expandHome(ca)]);
+    o.add(CurlOption('cacert', _curlBundleWith(ca) ?? _expandHome(ca)));
     // Schannel cannot check revocation for a private CA and would refuse
     // every certificate it signed.
-    if (Platform.isWindows) args.add('--ssl-revoke-best-effort');
+    if (Platform.isWindows) o.add(const CurlOption('ssl-revoke-best-effort'));
   }
 
   if (cert != null) {
     final pfx = cert.pfxPath.trim();
     if (pfx.isNotEmpty) {
-      args.addAll([
-        '--cert-type',
-        'P12',
-        '--cert',
-        '${_curlCertPath(pfx)}:${cert.passphrase}',
-      ]);
+      o
+        ..add(const CurlOption('cert-type', 'P12'))
+        ..add(CurlOption('cert', '${_curlCertPath(pfx)}:${cert.passphrase}'));
     } else if (cert.certPath.trim().isNotEmpty) {
-      args.addAll(['--cert', _curlCertPath(cert.certPath)]);
+      o.add(CurlOption('cert', _curlCertPath(cert.certPath)));
       if (cert.keyPath.trim().isNotEmpty) {
-        args.addAll(['--key', _expandHome(cert.keyPath)]);
+        o.add(CurlOption('key', _expandHome(cert.keyPath)));
       }
-      if (cert.passphrase.isNotEmpty) args.addAll(['--pass', cert.passphrase]);
+      if (cert.passphrase.isNotEmpty) {
+        o.add(CurlOption('pass', cert.passphrase));
+      }
     }
   }
-  return args;
+  return o;
 }
 
 // ---------------------------------------------------------------------------
