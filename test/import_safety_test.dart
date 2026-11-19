@@ -589,4 +589,18 @@ void main() {
       expect(kvMap(state.globals)['token'], '');
     });
   });
+
+  test('every import goes through the untrusted handling', () {
+    // mergeWorkspace adds collections as they are; imports use
+    // AppState.addImported, which marks them. Only a version-history
+    // restore (the user's own snapshot) may call it directly.
+    final callers = <String>{
+      for (final f in Directory('lib').listSync(recursive: true))
+        if (f is File &&
+            f.path.endsWith('.dart') &&
+            f.readAsStringSync().contains('.mergeWorkspace('))
+          f.path.replaceAll(r'\', '/'),
+    };
+    expect(callers.difference({'lib/ui/version_history_dialog.dart'}), isEmpty);
+  });
 }
