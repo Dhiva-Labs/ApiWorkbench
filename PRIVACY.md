@@ -43,7 +43,10 @@ folder and deleted when the next run starts or the load tester closes.
 
 Files you export (workspace exports, Markdown docs, load test reports in HTML,
 CSV or JSON) are written only where you choose to save them. Markdown docs
-mask auth tokens.
+mask auth tokens. Load test reports and command-line reports mask secret
+variable values and credential query parameters (such as `api_key` and
+`access_token`); command-line reports also mask the Authorization, Cookie and
+Set-Cookie headers.
 
 ## Network use
 
