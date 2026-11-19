@@ -406,7 +406,7 @@ class HttpService {
         connectTimeoutS: _settings.connectTimeoutS,
         receiveTimeoutS: (receive.inMilliseconds / 1000).ceil(),
         tabId: tabId,
-        extraArgs: curlNetworkArgs(net, p.url, cert: cert),
+        network: curlNetworkOptions(net, p.url, cert: cert),
       );
       return _withDuration(res, sw.elapsedMilliseconds);
     }

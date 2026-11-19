@@ -7,6 +7,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:api_workbench/models/models.dart';
+import 'package:api_workbench/services/curl_engine.dart';
 import 'package:api_workbench/services/http_service.dart';
 import 'package:api_workbench/services/net_config.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -303,30 +304,57 @@ final curlAvailable = () {
   }
 }();
 
-/// Runs the system curl with the arguments the HTTP/3 engine would add,
-/// minus `--http3` (the machine's curl may not have it).
-Future<ProcessResult> runCurl(
-  List<String> networkArgs,
+/// [curlNetworkOptions] as command-line arguments, for readable checks.
+List<String> curlNetworkArgs(
+  NetworkSettings n,
+  Uri url, {
+  ClientCertificate? cert,
+}) => [for (final o in curlNetworkOptions(n, url, cert: cert)) ...o.args];
+
+/// Runs the system curl the way the HTTP/3 engine does (fixed switches on
+/// the command line, everything else as a config file on stdin), minus
+/// `--http3` (the machine's curl may not have it).
+Future<({int exitCode, String stdout, String stderr})> runCurl(
+  List<CurlOption> network,
   String url, {
   Map<String, String> env = const {},
-}) => Process.run(
-  'curl',
-  ['-sS', '--max-time', '10', ...networkArgs, url],
-  environment: {
-    for (final v in [
-      'http_proxy',
-      'HTTP_PROXY',
-      'https_proxy',
-      'HTTPS_PROXY',
-      'all_proxy',
-      'ALL_PROXY',
-      'no_proxy',
-      'NO_PROXY',
-    ])
-      v: '',
-    ...env,
-  },
-);
+  List<CurlOption> extra = const [],
+}) async {
+  final proc = await Process.start(
+    'curl',
+    curlFixedArgs,
+    environment: {
+      for (final v in [
+        'http_proxy',
+        'HTTP_PROXY',
+        'https_proxy',
+        'HTTPS_PROXY',
+        'all_proxy',
+        'ALL_PROXY',
+        'no_proxy',
+        'NO_PROXY',
+      ])
+        v: '',
+      ...env,
+    },
+  );
+  final out = proc.stdout.transform(utf8.decoder).join();
+  final err = proc.stderr.transform(utf8.decoder).join();
+  proc.stdin.add(
+    utf8.encode(
+      curlConfig([
+        const CurlOption('silent'),
+        const CurlOption('show-error'),
+        const CurlOption('max-time', '10'),
+        ...extra,
+        ...network,
+        CurlOption('url', url),
+      ]),
+    ),
+  );
+  await proc.stdin.close();
+  return (exitCode: await proc.exitCode, stdout: await out, stderr: await err);
+}
 
 void main() {
   // -------------------------------------------------------------------------
@@ -1586,7 +1614,7 @@ void main() {
       final server = await httpsServer();
       final url = Uri.parse('https://127.0.0.1:${server.port}/curl');
 
-      final noCa = await runCurl(curlNetworkArgs(net(), url), '$url');
+      final noCa = await runCurl(curlNetworkOptions(net(), url), '$url');
       expect(noCa.exitCode, isNot(0), reason: 'untrusted CA must fail');
 
       for (final cert in <ClientCertificate?>[
@@ -1598,11 +1626,11 @@ void main() {
       ]) {
         final n = net(ca: fx('ca.pem'), certs: [?cert]);
         final res = await runCurl(
-          curlNetworkArgs(n, url, cert: clientCertFor(n, url)),
+          curlNetworkOptions(n, url, cert: clientCertFor(n, url)),
           '$url',
         );
         expect(res.exitCode, 0, reason: '${res.stderr} (${cert?.id})');
-        final body = jsonDecode(res.stdout as String) as Map<String, dynamic>;
+        final body = jsonDecode(res.stdout) as Map<String, dynamic>;
         expect(body['path'], '/curl');
         if (cert == null) {
           expect(body['cert'], isNull);
@@ -1619,8 +1647,8 @@ void main() {
         ca: fx('ca.pem'),
         certs: [pemCert(key: 'client-enc.key', passphrase: 'wrong')],
       );
-      final args = curlNetworkArgs(n, url, cert: clientCertFor(n, url));
-      final res = await runCurl(args, '$url');
+      final options = curlNetworkOptions(n, url, cert: clientCertFor(n, url));
+      final res = await runCurl(options, '$url');
       expect(res.exitCode, isNot(0));
     }, skip: skip);
 
@@ -1637,40 +1665,41 @@ void main() {
         bypass: bypass,
       );
 
-      final ok = await runCurl(curlNetworkArgs(via(), url), '$url');
-      expect(ok.exitCode, 0, reason: '${ok.stderr}');
+      final ok = await runCurl(curlNetworkOptions(via(), url), '$url');
+      expect(ok.exitCode, 0, reason: ok.stderr);
       expect(ok.stdout, contains('"/p"'));
       expect(proxy.served, ['GET $url']);
 
       // curl's own NO_PROXY must not undo the decision made here.
       final env = await runCurl(
-        curlNetworkArgs(via(), url),
+        curlNetworkOptions(via(), url),
         '$url',
         env: {'NO_PROXY': '127.0.0.1', 'no_proxy': '127.0.0.1'},
       );
-      expect(env.exitCode, 0, reason: '${env.stderr}');
+      expect(env.exitCode, 0, reason: env.stderr);
       expect(proxy.served, hasLength(2));
 
       // Bypassed: direct, even when curl's environment names a dead proxy.
       final direct = await runCurl(
-        curlNetworkArgs(via(bypass: '127.0.0.1'), url),
+        curlNetworkOptions(via(bypass: '127.0.0.1'), url),
         '$url',
         env: {
           'http_proxy': 'http://127.0.0.1:1',
           'HTTP_PROXY': 'http://127.0.0.1:1',
         },
       );
-      expect(direct.exitCode, 0, reason: '${direct.stderr}');
+      expect(direct.exitCode, 0, reason: direct.stderr);
       expect(proxy.served, hasLength(2));
 
       // No credentials: the proxy answers 407, which curl returns as a body.
-      final denied = await runCurl([
-        '-o',
-        '/dev/null',
-        '-w',
-        '%{http_code}',
-        ...curlNetworkArgs(via(user: ''), url),
-      ], '$url');
+      final denied = await runCurl(
+        curlNetworkOptions(via(user: ''), url),
+        '$url',
+        extra: [
+          CurlOption('output', Platform.isWindows ? 'NUL' : '/dev/null'),
+          const CurlOption('write-out', '%{http_code}'),
+        ],
+      );
       expect(denied.stdout, '407');
     }, skip: skip);
 
@@ -1690,10 +1719,10 @@ void main() {
           certs: [pfxCert()],
         );
         final res = await runCurl(
-          curlNetworkArgs(n, url, cert: clientCertFor(n, url)),
+          curlNetworkOptions(n, url, cert: clientCertFor(n, url)),
           '$url',
         );
-        expect(res.exitCode, 0, reason: '${res.stderr}');
+        expect(res.exitCode, 0, reason: res.stderr);
         expect(res.stdout, contains('ApiWorkbench Test Client'));
         expect(proxy.served, ['CONNECT 127.0.0.1:${server.port}']);
       },

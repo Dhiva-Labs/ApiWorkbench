@@ -5,6 +5,7 @@ import 'package:crypto/crypto.dart';
 import 'package:dio_http2_adapter/dio_http2_adapter.dart';
 
 import '../models/models.dart';
+import 'curl_engine.dart' show CurlOption;
 import 'private_temp.dart';
 
 /// What a transport is built for. Requests with the same key share
@@ -775,59 +776,61 @@ String _curlCertPath(String path) {
   return head + p.substring(head.length).replaceAll(':', r'\:');
 }
 
-/// Extra arguments for the curl HTTP/3 engine: proxy, CA certificate and
+/// Extra options for the curl HTTP/3 engine: proxy, CA certificate and
 /// client certificate for [url].
 ///
-/// Without a proxy the arguments say `--noproxy '*'`, so curl does not pick
-/// one up from its own environment against the settings. Credentials are
-/// passed as arguments (`--proxy-user`, `--pass`, `--cert file.p12:pass`)
-/// and are visible in the process list while the request runs. Unlike the
-/// dart:io transports this never throws; curl reports unreadable files.
-List<String> curlNetworkArgs(
+/// Without a proxy the options say `--noproxy '*'`, so curl does not pick
+/// one up from its own environment against the settings. Credentials
+/// (`--proxy-user`, `--pass`, `--cert file.p12:pass`) are among them; the
+/// engine hands these options to curl on standard input, never on the
+/// command line. Unlike the dart:io transports this never throws; curl
+/// reports unreadable files.
+List<CurlOption> curlNetworkOptions(
   NetworkSettings net,
   Uri url, {
   ClientCertificate? cert,
 }) {
-  final args = <String>[];
+  final o = <CurlOption>[];
 
   final proxy = proxyEndpointFor(net, url);
   if (proxy == null) {
-    args.addAll(['--noproxy', '*']);
+    o.add(const CurlOption('noproxy', '*'));
   } else {
     // An empty --noproxy stops curl applying NO_PROXY on top of a decision
     // that has already taken it into account.
-    args.addAll(['--proxy', 'http://${proxy.authority}', '--noproxy', '']);
+    o
+      ..add(CurlOption('proxy', 'http://${proxy.authority}'))
+      ..add(const CurlOption('noproxy', ''));
     if (proxy.hasCredentials) {
-      args.addAll(['--proxy-user', '${proxy.user}:${proxy.password}']);
+      o.add(CurlOption('proxy-user', '${proxy.user}:${proxy.password}'));
     }
   }
 
   final ca = net.caCertPath.trim();
   if (ca.isNotEmpty) {
-    args.addAll(['--cacert', _curlBundleWith(ca) ?? _expandHome(ca)]);
+    o.add(CurlOption('cacert', _curlBundleWith(ca) ?? _expandHome(ca)));
     // Schannel cannot check revocation for a private CA and would refuse
     // every certificate it signed.
-    if (Platform.isWindows) args.add('--ssl-revoke-best-effort');
+    if (Platform.isWindows) o.add(const CurlOption('ssl-revoke-best-effort'));
   }
 
   if (cert != null) {
     final pfx = cert.pfxPath.trim();
     if (pfx.isNotEmpty) {
-      args.addAll([
-        '--cert-type',
-        'P12',
-        '--cert',
-        '${_curlCertPath(pfx)}:${cert.passphrase}',
-      ]);
+      o
+        ..add(const CurlOption('cert-type', 'P12'))
+        ..add(CurlOption('cert', '${_curlCertPath(pfx)}:${cert.passphrase}'));
     } else if (cert.certPath.trim().isNotEmpty) {
-      args.addAll(['--cert', _curlCertPath(cert.certPath)]);
+      o.add(CurlOption('cert', _curlCertPath(cert.certPath)));
       if (cert.keyPath.trim().isNotEmpty) {
-        args.addAll(['--key', _expandHome(cert.keyPath)]);
+        o.add(CurlOption('key', _expandHome(cert.keyPath)));
       }
-      if (cert.passphrase.isNotEmpty) args.addAll(['--pass', cert.passphrase]);
+      if (cert.passphrase.isNotEmpty) {
+        o.add(CurlOption('pass', cert.passphrase));
+      }
     }
   }
-  return args;
+  return o;
 }
 
 // ---------------------------------------------------------------------------
