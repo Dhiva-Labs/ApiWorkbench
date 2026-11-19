@@ -398,5 +398,32 @@ void main() {
       expect(asked, 0);
       expect(paths, ['/ping', '/ping']);
     });
+
+    test('globals: an import never silently replaces a value', () {
+      state.globals.addAll([
+        KV(key: 'host', value: 'mine.test'),
+        KV(key: 'same', value: 'x'),
+        KV(key: 'token', value: '', current: 'live'),
+      ]);
+      final imported = [
+        KV(key: 'host', value: 'theirs.test'),
+        KV(key: 'same', value: 'x'),
+        KV(key: 'token', value: ''),
+        KV(key: 'fresh', value: 'new'),
+      ];
+      expect(state.conflictingGlobals(imported), ['host', 'token']);
+
+      expect(state.mergeGlobals(imported), 1, reason: 'only "fresh"');
+      expect(kvMap(state.globals), {
+        'host': 'mine.test',
+        'same': 'x',
+        'token': 'live',
+        'fresh': 'new',
+      });
+
+      expect(state.mergeGlobals(imported, overwrite: true), 4);
+      expect(kvMap(state.globals)['host'], 'theirs.test');
+      expect(kvMap(state.globals)['token'], '');
+    });
   });
 }

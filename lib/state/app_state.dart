@@ -244,15 +244,33 @@ class AppState extends ChangeNotifier {
     return mergeWorkspace(cols, envs);
   }
 
-  /// Adds imported globals; an existing name gets the imported value.
-  int mergeGlobals(List<KV> imported) {
+  /// Names of [imported] globals that already exist here with another
+  /// value, which [mergeGlobals] would replace only when asked to.
+  List<String> conflictingGlobals(List<KV> imported) => {
+    for (final v in imported)
+      if (globals.any(
+        (g) =>
+            g.key == v.key &&
+            (g.value != v.value || g.effective != v.effective),
+      ))
+        v.key,
+  }.toList();
+
+  /// Adds imported globals. A name that already exists keeps its value
+  /// unless [overwrite] is set; then it gets the imported variable.
+  /// Returns how many were added or replaced.
+  int mergeGlobals(List<KV> imported, {bool overwrite = false}) {
+    var n = 0;
     for (final v in imported) {
       if (v.key.isEmpty) continue;
+      final exists = globals.any((x) => x.key == v.key);
+      if (exists && !overwrite) continue;
       globals.removeWhere((x) => x.key == v.key);
       globals.add(v);
+      n++;
     }
-    if (imported.isNotEmpty) updateGlobals();
-    return imported.length;
+    if (n > 0) updateGlobals();
+    return n;
   }
 
   /// Persists after editing [globals] in place.
