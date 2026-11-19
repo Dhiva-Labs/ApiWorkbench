@@ -206,6 +206,23 @@ void main() {
       final loaded = await Storage(overrideDir: dir).loadCollections();
       expect(loaded.single.untrusted, isFalse);
     });
+
+    test('requests and history entries saved before it carry no mark', () {
+      final old = HistoryEntry.fromJson({
+        'id': 'h1',
+        'request': {'id': 'r1', 'name': 'R', 'testScript': 'a();'},
+        'statusCode': 200,
+        'durationMs': 5,
+        'at': '2026-11-01T10:00:00.000',
+      });
+      expect(old.request.untrustedScripts, isFalse);
+      expect(old.toJson()['request'], isNot(contains('untrustedScripts')));
+
+      final marked = RequestModel(name: 'M', untrustedScripts: true);
+      expect(marked.toJson()['untrustedScripts'], isTrue);
+      expect(RequestModel.fromJson(marked.toJson()).untrustedScripts, isTrue);
+      expect(marked.clone().untrustedScripts, isTrue);
+    });
   });
 
   group('the executor', () {
@@ -257,6 +274,38 @@ void main() {
       expect(runner.results.single.response.statusCode, 200);
     });
 
+    test('a marked request runs none of its scripts', () async {
+      final engine = RecordingEngine();
+      final reopened = RequestModel(
+        name: 'Ping',
+        url: '$base/ping',
+        testScript: 'pm.test("request ran", () => {});',
+        untrustedScripts: true,
+      );
+      final res = await RequestExecutor(
+        http,
+        engine: engine,
+      ).execute(reopened, ExecContext(scopes: VarScopes()));
+      expect(engine.runs, isEmpty);
+      expect(paths, ['/ping']);
+      expect(res.logs.single.message, contains('"Ping" came from an imported'));
+
+      // A marked request without scripts of its own leaves a trusted
+      // collection's scripts alone.
+      final c = scripted(base, untrusted: false);
+      final plain = RequestModel(
+        name: 'Plain',
+        url: '$base/ping',
+        folder: 'F',
+        untrustedScripts: true,
+      );
+      await RequestExecutor(
+        http,
+        engine: engine,
+      ).execute(plain, ExecContext(scopes: VarScopes(), collection: c));
+      expect(engine.runs.length, 2);
+    });
+
     test('which requests need consent', () {
       final c = scripted(base);
       expect(collectionScriptCount(c), 3);
@@ -274,6 +323,13 @@ void main() {
         isFalse,
       );
       expect(needsScriptConsent(null, c.requests), isFalse);
+
+      final marked = c.requests.single.clone()..untrustedScripts = true;
+      final q = scriptConsentQuestion(null, [marked])!;
+      expect(q.request, isTrue);
+      expect(q.name, 'Ping');
+      expect(q.scripts, 1);
+      expect(scriptConsentQuestion(c, [marked])!.request, isFalse);
     });
   });
 
@@ -330,9 +386,10 @@ void main() {
       state.openRequest(c.requests.single, collectionId: c.id);
       final asked = <int>[];
       var answer = ScriptConsent.skipScripts;
-      state.askScriptConsent = (col, n) async {
-        expect(col, same(c));
-        asked.add(n);
+      state.askScriptConsent = (q) async {
+        expect(q.name, 'Imported');
+        expect(q.request, isFalse);
+        asked.add(q.scripts);
         return answer;
       };
 
@@ -366,7 +423,7 @@ void main() {
       state.addImported([scripted(base)], []);
       final c = state.collections.single;
       state.openRequest(c.requests.single, collectionId: c.id);
-      state.askScriptConsent = (_, _) async => ScriptConsent.cancel;
+      state.askScriptConsent = (_) async => ScriptConsent.cancel;
       await state.sendActive();
       expect(paths, isEmpty);
       expect(state.activeTab!.loading, isFalse);
@@ -381,7 +438,7 @@ void main() {
       );
       state.addImported([quiet], []);
       var asked = 0;
-      state.askScriptConsent = (_, _) async {
+      state.askScriptConsent = (_) async {
         asked++;
         return ScriptConsent.cancel;
       };
@@ -397,6 +454,112 @@ void main() {
       await state.sendActive();
       expect(asked, 0);
       expect(paths, ['/ping', '/ping']);
+    });
+
+    test('History keeps the mark, and a reopened request asks first', () async {
+      state.addImported([scripted(base)], []);
+      final c = state.collections.single;
+      state.openRequest(c.requests.single, collectionId: c.id);
+      final asked = <ScriptConsentQuestion>[];
+      var answer = ScriptConsent.skipScripts;
+      state.askScriptConsent = (q) async {
+        asked.add(q);
+        return answer;
+      };
+      await state.sendActive();
+      expect(asked.single.request, isFalse);
+      final entry = state.history.first;
+      expect(entry.request.untrustedScripts, isTrue);
+      expect(
+        HistoryEntry.fromJson(
+          jsonDecode(jsonEncode(entry.toJson())) as Map<String, dynamic>,
+        ).request.untrustedScripts,
+        isTrue,
+      );
+
+      // What the History list does when an entry is tapped.
+      state.newTab(entry.request.clone());
+      await state.sendActive();
+      expect(asked.length, 2);
+      expect(asked.last.request, isTrue);
+      expect(asked.last.name, 'Ping');
+      expect(asked.last.scripts, 1);
+      expect(paths, ['/ping', '/ping']);
+      expect(state.activeTab!.scriptTests, isEmpty);
+      expect(consoleText().last, contains('came from an imported collection'));
+      expect(state.history.first.request.untrustedScripts, isTrue);
+
+      answer = ScriptConsent.allow;
+      await state.sendActive();
+      expect(asked.length, 3);
+      expect(state.activeTab!.scriptTests.map((t) => t.name), ['request ran']);
+      expect(state.activeTab!.request.untrustedScripts, isFalse);
+      expect(state.history.first.request.untrustedScripts, isFalse);
+      expect(c.untrusted, isTrue, reason: 'only the request was allowed');
+
+      await state.sendActive();
+      expect(asked.length, 3);
+    });
+
+    test('old history entries reopen as before', () async {
+      final old = HistoryEntry.fromJson({
+        'request': {
+          'name': 'Mine',
+          'url': '$base/ping',
+          'testScript': 'pm.test("mine", () => {});',
+        },
+      });
+      state.askScriptConsent = (_) async => ScriptConsent.cancel;
+      state.newTab(old.request.clone());
+      await state.sendActive();
+      expect(paths, ['/ping']);
+      expect(state.activeTab!.scriptTests.map((t) => t.name), ['mine']);
+    });
+
+    test('allowing a marked request clears its saved copy', () async {
+      final mine = state.addCollection('Mine');
+      mine.requests.add(
+        RequestModel(
+          name: 'Saved',
+          url: '$base/ping',
+          testScript: 'pm.test("saved", () => {});',
+          untrustedScripts: true,
+        ),
+      );
+      state.updateCollections();
+      state.openRequest(mine.requests.single, collectionId: mine.id);
+      expect(
+        state.scriptConsentNeeded(mine.id, [state.activeTab!.request]),
+        isTrue,
+      );
+      state.askScriptConsent = (_) async => ScriptConsent.allow;
+      await state.sendActive();
+      expect(mine.requests.single.untrustedScripts, isFalse);
+      await state.flushPending();
+      final saved = await Storage(overrideDir: dir).loadCollections();
+      expect(saved.single.requests.single.untrustedScripts, isFalse);
+    });
+
+    test('the runner asks for a marked request without a collection', () async {
+      final marked = RequestModel(
+        name: 'Ping',
+        url: '$base/ping',
+        testScript: 'x();',
+        untrustedScripts: true,
+      );
+      expect(state.scriptConsentNeeded(null, [marked]), isTrue);
+      ScriptConsentQuestion? asked;
+      final go = await state.allowImportedScripts(
+        null,
+        [marked],
+        ask: (q) async {
+          asked = q;
+          return ScriptConsent.cancel;
+        },
+      );
+      expect(go, isFalse);
+      expect(asked!.request, isTrue);
+      expect(marked.untrustedScripts, isTrue);
     });
 
     test('globals: an import never silently replaces a value', () {
