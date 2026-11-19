@@ -111,27 +111,23 @@ void _toast(BuildContext context, String msg) {
   ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
 }
 
-/// Writes [bytes] to a user-picked location. Returns the path (or a marker
-/// on mobile where the platform handles the write), null when cancelled.
+/// Writes [bytes] to a user-picked location. Returns the path (or the
+/// content URI on mobile, where the platform handles the write), null when
+/// cancelled. The picker writes the file on every platform; [extensions] is
+/// kept for the callers and no longer filters the dialog.
 Future<String?> savePickedFile({
   required String dialogTitle,
   required String fileName,
   required List<String> extensions,
   required Uint8List bytes,
 }) async {
-  final path = await FilePicker.platform.saveFile(
+  final saved = await FilePicker.saveFile(
     dialogTitle: dialogTitle,
     fileName: fileName,
-    type: FileType.custom,
-    allowedExtensions: extensions,
     bytes: bytes,
   );
-  if (path == null) return null;
-  // On desktop the picker only returns the path; write the file ourselves.
-  if (!Platform.isAndroid && !Platform.isIOS) {
-    await File(path).writeAsBytes(bytes, flush: true);
-  }
-  return path;
+  if (saved == null) return null;
+  return saved.scheme == 'file' ? saved.toFilePath() : saved.toString();
 }
 
 Future<void> exportWorkspace(BuildContext context) async {
@@ -166,20 +162,13 @@ Future<void> exportWorkspace(BuildContext context) async {
 Future<void> importWorkspace(BuildContext context) async {
   final state = context.read<AppState>();
   try {
-    final picked = await FilePicker.platform.pickFiles(
+    final f = await FilePicker.pickFile(
       dialogTitle: 'Import workspace',
       type: FileType.custom,
       allowedExtensions: ['json'],
-      withData: true,
     );
-    if (picked == null || picked.files.isEmpty) return;
-    final f = picked.files.single;
-    final bytes =
-        f.bytes ?? (f.path != null ? await File(f.path!).readAsBytes() : null);
-    if (bytes == null) {
-      if (context.mounted) _toast(context, 'Could not read the selected file.');
-      return;
-    }
+    if (f == null) return;
+    final bytes = await f.readAsBytes();
     final ws = parseWorkspaceJson(utf8.decode(bytes));
     final (nc, ne) = state.mergeWorkspace(ws.collections, ws.environments);
     if (context.mounted) {

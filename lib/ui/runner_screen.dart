@@ -104,29 +104,23 @@ class _RunnerScreenState extends State<RunnerScreen> {
   }
 
   Future<void> _loadFile() async {
-    final picked = await FilePicker.platform.pickFiles(
+    final f = await FilePicker.pickFile(
       dialogTitle: 'Choose a CSV or JSON data file',
       type: FileType.custom,
       allowedExtensions: ['csv', 'tsv', 'json', 'txt'],
-      withData: true,
     );
-    final f = picked?.files.firstOrNull;
     if (f == null || !mounted) return;
     String? error;
     DataFile? file;
     try {
-      if (f.size > _maxFileBytes) {
+      final size = await f.length() ?? 0;
+      if (size > _maxFileBytes) {
         throw FormatException(
-          'The file is ${(f.size / (1024 * 1024)).toStringAsFixed(1)} MB; '
+          'The file is ${(size / (1024 * 1024)).toStringAsFixed(1)} MB; '
           'data files can be up to ${_maxFileBytes ~/ (1024 * 1024)} MB.',
         );
       }
-      final bytes =
-          f.bytes ??
-          (f.path != null ? await File(f.path!).readAsBytes() : null);
-      if (bytes == null) {
-        throw const FormatException('The file could not be read.');
-      }
+      final bytes = await f.readAsBytes();
       file = readDataFile(decodeDataBytes(bytes), fileName: f.name);
     } on FormatException catch (e) {
       error = '${f.name}: ${e.message}';

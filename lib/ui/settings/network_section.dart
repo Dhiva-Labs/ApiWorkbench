@@ -18,13 +18,13 @@ import '../help_tip.dart';
 Future<String?> Function(String title) certFilePicker = _pickCertFile;
 
 Future<String?> _pickCertFile(String title) async {
-  final picked = await FilePicker.platform.pickFiles(
+  final picked = await FilePicker.pickFile(
     dialogTitle: title,
     // Certificate and key files have no common extension or MIME type, and
     // phone pickers grey out files they cannot classify.
     type: FileType.any,
   );
-  final path = picked?.files.singleOrNull?.path;
+  final path = picked?.path;
   if (path == null) return null;
   if (!(Platform.isAndroid || Platform.isIOS)) return path;
   // Phone pickers hand over a copy in the cache folder, which the system may
