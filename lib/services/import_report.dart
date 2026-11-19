@@ -21,7 +21,7 @@ class ImportReport {
   int capturesFromScripts = 0;
 
   /// Pre-request and test scripts carried over (request, folder and
-  /// collection level).
+  /// collection level). They run only after the user allows them.
   int scriptsKept = 0;
 
   /// Local file paths left out of file bodies and file form fields. The
@@ -54,6 +54,12 @@ class ImportReport {
           'body before sending.',
     ...notes,
   ];
+
+  /// What the summary says about imported scripts, or null for none.
+  String? get scriptsNote => scriptsKept == 0
+      ? null
+      : '$scriptsKept script${scriptsKept == 1 ? '' : 's'} imported. '
+            'ApiWorkbench asks before running them the first time.';
 }
 
 String authLabel(String t) => switch (t) {

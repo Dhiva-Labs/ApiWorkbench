@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import '../models/models.dart';
 import 'import_report.dart';
+import 'scripting/script_trust.dart';
 import 'workspace.dart';
 
 export 'import_report.dart';
@@ -67,6 +68,7 @@ void _importValue(Object? json, ImportReport r, bool keepFiles) {
   if (json['app'] == 'apiworkbench') {
     final ws = parseWorkspaceJson(jsonEncode(json));
     for (final c in ws.collections) {
+      r.scriptsKept += collectionScriptCount(c);
       if (!keepFiles) r.fileReferencesCleared += clearFileReferences(c);
     }
     r.collections.addAll(ws.collections);

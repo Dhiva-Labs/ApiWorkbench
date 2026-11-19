@@ -793,6 +793,34 @@ void main() {
       expect(r.err, contains('does not exist'));
       expect(seen, isEmpty);
     });
+
+    test('the run trusts the scripts of the file it is given', () async {
+      // A workspace exported while a collection was still untrusted.
+      final ws = workspace(
+        [
+          CollectionModel(
+            name: 'Marked',
+            untrusted: true,
+            requests: [
+              RequestModel(name: 'A', url: '{{base}}/a', testScript: 'a'),
+            ],
+          ),
+        ],
+        [staging()],
+      );
+      var ran = 0;
+      final r = await cli(
+        ['run', ws, '-e', 'Staging'],
+        engine: () {
+          return FakeEngine((_, _) {
+            ran++;
+            return ScriptOutcome();
+          });
+        },
+      );
+      expect(r.code, 0, reason: r.out + r.err);
+      expect(ran, 1);
+    });
   });
 
   group('reporters', () {

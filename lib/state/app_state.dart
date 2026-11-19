@@ -9,6 +9,7 @@ import '../services/executor.dart';
 import '../services/http_service.dart';
 import '../services/scripting/engine_factory.dart';
 import '../services/scripting/script_engine.dart';
+import '../services/scripting/script_trust.dart';
 import '../services/sound_service.dart';
 import '../services/storage.dart';
 import '../services/var_scopes.dart';
@@ -230,6 +231,19 @@ class AppState extends ChangeNotifier {
     return (cols.length, envs.length);
   }
 
+  /// Adds the collections and environments of an import (see
+  /// [mergeWorkspace]). The collections start untrusted: their scripts run
+  /// only once the user allows them (see [allowImportedScripts]).
+  (int, int) addImported(
+    List<CollectionModel> cols,
+    List<EnvironmentModel> envs,
+  ) {
+    for (final c in cols) {
+      c.untrusted = true;
+    }
+    return mergeWorkspace(cols, envs);
+  }
+
   /// Adds imported globals; an existing name gets the imported value.
   int mergeGlobals(List<KV> imported) {
     for (final v in imported) {
@@ -270,6 +284,9 @@ class AppState extends ChangeNotifier {
         r.folder = join(base, r.folder);
         target.requests.add(r);
         requests++;
+        // Imported scripts make the whole collection ask before scripts
+        // run again.
+        if (requestHasScripts(r, null)) target.untrusted = true;
       }
       for (final v in c.variables) {
         if (v.key.isEmpty || target.variables.any((x) => x.key == v.key)) {
@@ -338,12 +355,80 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  // ---------------- Imported scripts ----------------
+
+  /// Asks the user whether an imported collection's scripts may run; set
+  /// by the UI. Without it such scripts are skipped.
+  Future<ScriptConsent> Function(CollectionModel collection, int scripts)?
+  askScriptConsent;
+
+  bool _askingScriptConsent = false;
+
+  /// Whether sending [requests] from the collection [collectionId] would
+  /// run scripts of an imported collection that were never allowed.
+  bool scriptConsentNeeded(
+    String? collectionId,
+    Iterable<RequestModel> requests,
+  ) =>
+      scripts != null &&
+      settings.scriptsEnabled &&
+      needsScriptConsent(collectionById(collectionId), requests);
+
+  /// Called before sending [requests] from the collection [collectionId].
+  /// When [scriptConsentNeeded], asks once ([ask], else
+  /// [askScriptConsent]): Allow trusts the collection from now on, Run
+  /// without scripts sends with the scripts skipped. Returns false when
+  /// the user cancels.
+  Future<bool> allowImportedScripts(
+    String? collectionId,
+    Iterable<RequestModel> requests, {
+    Future<ScriptConsent> Function(CollectionModel collection, int scripts)?
+    ask,
+  }) async {
+    if (!scriptConsentNeeded(collectionId, requests)) return true;
+    final c = collectionById(collectionId)!;
+    final question = ask ?? askScriptConsent;
+    if (question == null) return true; // the executor skips them
+    if (_askingScriptConsent) return false;
+    _askingScriptConsent = true;
+    final ScriptConsent answer;
+    try {
+      answer = await question(c, collectionScriptCount(c));
+    } finally {
+      _askingScriptConsent = false;
+    }
+    if (_disposed) return false;
+    switch (answer) {
+      case ScriptConsent.allow:
+        trustCollection(c);
+        return true;
+      case ScriptConsent.skipScripts:
+        return true;
+      case ScriptConsent.cancel:
+        return false;
+    }
+  }
+
+  /// Lets [c]'s scripts run from now on.
+  void trustCollection(CollectionModel c) {
+    if (!c.untrusted) return;
+    c.untrusted = false;
+    _storage.saveCollections(collections);
+    notifyListeners();
+  }
+
   // ---------------- Sending ----------------
 
   Future<void> sendActive() async {
     final tab = activeTab;
     if (tab == null || tab.loading) return;
     if (tab.request.kind != RequestKind.http) return; // protocols connect
+    if (scriptConsentNeeded(tab.sourceCollectionId, [tab.request])) {
+      if (!await allowImportedScripts(tab.sourceCollectionId, [tab.request])) {
+        return;
+      }
+      if (_disposed || tab.loading || !tabs.contains(tab)) return;
+    }
     tab.loading = true;
     tab.response = null;
     tab.assertionResults = [];

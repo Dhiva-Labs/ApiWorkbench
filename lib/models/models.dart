@@ -1142,6 +1142,7 @@ class CollectionModel {
     this.preRequestScript = '',
     this.testScript = '',
     Map<String, FolderMeta>? folders,
+    this.untrusted = false,
   }) : id = id ?? newId(),
        requests = requests ?? [],
        variables = variables ?? [],
@@ -1169,6 +1170,11 @@ class CollectionModel {
   /// themselves exist through their requests' [RequestModel.folder].
   Map<String, FolderMeta> folders;
 
+  /// Came from an import and its scripts have not been allowed yet: they
+  /// do not run until the user agrees. Collections saved before this flag
+  /// existed have no such key and stay trusted.
+  bool untrusted;
+
   Map<String, String> get variableMap => kvMap(variables);
 
   /// Folder paths from the root down to [folder]: 'a/b' → ['a', 'a/b'].
@@ -1193,6 +1199,7 @@ class CollectionModel {
         for (final e in folders.entries)
           if (!e.value.isEmpty) e.key: e.value.toJson(),
       },
+    if (untrusted) 'untrusted': true,
   };
 
   factory CollectionModel.fromJson(Map<String, dynamic> j) => CollectionModel(
@@ -1211,6 +1218,7 @@ class CollectionModel {
     folders: (j['folders'] as Map<String, dynamic>? ?? {}).map(
       (k, v) => MapEntry(k, FolderMeta.fromJson(v as Map<String, dynamic>)),
     ),
+    untrusted: j['untrusted'] == true,
   );
 }
 

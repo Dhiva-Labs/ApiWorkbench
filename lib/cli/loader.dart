@@ -38,7 +38,10 @@ class LoadedRun {
 /// file that is missing or of the wrong kind.
 LoadedRun loadRun(RunOptions o) {
   final main = _import(o.file);
-  final collection = _pickCollection(main, o.collection, o.file);
+  // Whoever runs the command line chose this file, so its scripts run
+  // (the app asks first for collections it imported).
+  final collection = _pickCollection(main, o.collection, o.file)
+    ..untrusted = false;
 
   List<KV>? environment;
   String? environmentName;

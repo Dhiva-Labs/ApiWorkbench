@@ -236,6 +236,11 @@ environment or data export.
 Options of "run":
 ${run.usage}
 
+Scripts:
+  The pre-request and test scripts of the collection you run are run. (The
+  app asks before it first runs scripts from an imported collection; here
+  you choose the file yourself.)
+
 Exit codes:
   0  every request and test passed
   1  a request or test failed

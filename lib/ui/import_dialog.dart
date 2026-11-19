@@ -169,7 +169,7 @@ class _ImportDialogState extends State<_ImportDialog> {
       );
       return;
     }
-    final (nc, ne) = state.mergeWorkspace(r.collections, r.environments);
+    final (nc, ne) = state.addImported(r.collections, r.environments);
     if (state.activeEnvironmentId == null && r.environments.length == 1) {
       state.setActiveEnvironment(r.environments.single.id);
     }
@@ -588,6 +588,8 @@ class _ImportDialogState extends State<_ImportDialog> {
               'Converted from scripts: ${r.assertionsFromScripts} tests and '
               '${r.capturesFromScripts} captured values.',
             ),
+          if (r.scriptsNote case final scripts?)
+            _note(Icons.code, Palette.textDim, scripts),
           for (final w in r.warnings)
             _note(Icons.info_outline, Palette.warning, w),
         ],
