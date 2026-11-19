@@ -7,12 +7,14 @@ import 'package:api_workbench/services/auth/auth.dart';
 import 'package:api_workbench/services/cookie_store.dart';
 import 'package:api_workbench/services/http_service.dart';
 import 'package:api_workbench/services/protocols/live_connection.dart';
+import 'package:api_workbench/services/protocols/sse_connection.dart';
 import 'package:api_workbench/services/redirect_policy.dart';
 import 'package:api_workbench/services/request_builder.dart';
 import 'package:api_workbench/services/storage.dart';
 import 'package:api_workbench/state/app_state.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'protocols_support.dart';
 import 'support/temp_dir.dart';
 
 /// What one of the local servers saw.
@@ -559,6 +561,81 @@ void main() {
         what: 'WebSocket',
       );
       expect(uri.scheme, 'ws');
+    });
+  });
+
+  group('Server-Sent Events', () {
+    Future<SseConnection> open(String url) async {
+      final c = SseConnection();
+      addTearDown(c.close);
+      await c.start(
+        SseConfig(
+          url: Uri.parse(url),
+          headers: const [
+            MapEntry('Authorization', 'Bearer tok'),
+            MapEntry('X-API-Key', 'k-123'),
+            MapEntry('Cookie', 'hand=typed'),
+            MapEntry('X-Plain', 'kept'),
+          ],
+          autoReconnect: false,
+        ),
+      );
+      return c;
+    }
+
+    test('a redirect to another origin goes without credentials', () async {
+      final c = await open(to('$bBase/sse'));
+      await waitFor(() => c.log.entries.any((e) => e.text == 'from b'));
+      expect(hits.map((h) => h.server), ['a', 'b']);
+      expect(hits[0]['authorization'], 'Bearer tok');
+      final atB = hits[1];
+      expect(atB['authorization'], isNull);
+      expect(atB['x-api-key'], isNull);
+      expect(atB['cookie'], isNull);
+      expect(atB['x-plain'], 'kept');
+      expect(atB['accept'], 'text/event-stream');
+      expect(c.state, LinkState.connected);
+    });
+
+    test('a same-origin redirect keeps them', () async {
+      final c = await open(to('/sse'));
+      await waitFor(() => c.log.entries.any((e) => e.text == 'from a'));
+      expect(hits[1]['authorization'], 'Bearer tok');
+      expect(hits[1]['x-api-key'], 'k-123');
+      expect(hits[1]['cookie'], 'hand=typed');
+    });
+
+    test(
+      'a POST becomes a GET after a 303, and keeps its body on 307',
+      () async {
+        for (final (code, method) in [(303, 'GET'), (307, 'POST')]) {
+          hits.clear();
+          final c = SseConnection();
+          addTearDown(c.close);
+          await c.start(
+            SseConfig(
+              url: Uri.parse(to('/sse', code: code)),
+              method: 'POST',
+              body: '{"q":1}',
+              autoReconnect: false,
+            ),
+          );
+          await waitFor(() => c.log.entries.any((e) => e.text == 'from a'));
+          expect(hits.map((h) => h.method), ['POST', method]);
+          c.close();
+        }
+      },
+    );
+
+    test('a Location that is not http(s) is not followed', () async {
+      final c = await open(to('file:///etc/passwd'));
+      await waitFor(() => c.state == LinkState.idle);
+      expect(hits, hasLength(1));
+      expect(c.statusCode, 302);
+      expect(
+        c.log.entries.any((e) => e.text.startsWith('Not following')),
+        isTrue,
+      );
     });
   });
 }
