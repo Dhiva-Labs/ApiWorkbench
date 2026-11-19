@@ -56,6 +56,11 @@ android {
 
     buildTypes {
         release {
+            // R8 is already on for release: Flutter's Gradle plugin enables
+            // minify and resource shrinking, and adds
+            // proguard-android-optimize.txt (so optimisation and full mode on
+            // AGP 9), its own rules and proguard-rules.pro next to this file.
+            // `flutter build --no-shrink` turns it off.
             signingConfig =
                 if (hasUploadKey) {
                     signingConfigs.getByName("upload")
