@@ -56,7 +56,7 @@ dependencies:
   # Credentials live in the platform keychain (issue #61): Secret Service
   # through libsecret on Linux, DPAPI on Windows, Keystore on Android, the
   # Keychain on macOS and iOS. See lib/services/keychain_backend.dart.
-  # 10.x is what 1.5.0 was tested with on every platform.
+  # 1.5.0 stays on 10.x; 11.x became possible once file_picker 13 allowed win32 6.
   flutter_secure_storage: ^10.3.4
   # Checks (and unlocks) the Linux keyring without blocking the app before
   # libsecret is asked. See lib/services/secret_service_probe.dart.
