@@ -33,6 +33,10 @@ flatpak run --command=apiworkbench-cli com.dhivalabs.api_workbench --help
   saving files (imports, exports, reports) goes through the file chooser
   portal, which grants write access to the chosen file only.
 - `--socket=pulseaudio`: Chaos Mode's sound effects.
+- `--talk-name=org.freedesktop.secrets`: passwords and tokens are kept in
+  the desktop's Secret Service (GNOME Keyring, KWallet, KeePassXC) through
+  the runtime's libsecret. Without it they go to an owner-only file in the
+  app's data folder, and Settings says so.
 - HTTP/3 uses the `curl` of the runtime; when that curl has no HTTP/3 support
   the app says so, as it does on a host without one.
 

@@ -66,12 +66,14 @@ jobs:
           dart --version
 
       # xvfb, xauth, xdotool, dbus-x11: the smoke run of the installed .deb.
+      # libsecret-1-dev: the keychain plugin (flutter_secure_storage) links
+      # libsecret.
       - name: Install build dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y \
             clang cmake ninja-build pkg-config \
-            libgtk-3-dev liblzma-dev libstdc++-12-dev \
+            libgtk-3-dev liblzma-dev libstdc++-12-dev libsecret-1-dev \
             file xvfb xauth xdotool dbus-x11
 
       - name: Get packages
@@ -557,9 +559,12 @@ jobs:
           echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
 
       # One installed tree, the .deb's, for every format. The Flatpak job
-      # gets the same cleaned tree (tar keeps modes and symlinks).
+      # gets the same cleaned tree (tar keeps modes and symlinks). The
+      # AppImage carries this runner's libsecret (BUNDLE_LIBS in distro.conf).
       - name: Build .rpm, Arch package and AppImage
         run: |
+          sudo apt-get update
+          sudo apt-get install -y libsecret-1-0
           VERSION="$(grep '^version:' pubspec.yaml | sed 's/version: *//; s/+.*//')"
           dpkg-deb -x "deb/apiworkbench_${VERSION}_${{ matrix.deb_arch }}.deb" "$RUNNER_TEMP/root"
           VERSION="$VERSION" TREE_TARBALL="$RUNNER_TEMP/tree.tar.xz" \
@@ -656,6 +661,21 @@ jobs:
           mkdir -p packaging/flatpak/tree
           tar -xJf flatpak-tree/tree.tar.xz -C packaging/flatpak/tree
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      # The image ships its runtimes in lower overlay layers. On the x64
+      # runners, flatpak-builder's update of them then fails with "Invalid
+      # cross-device link" (a directory rename across overlay layers) and
+      # flatpak-builder crashes. Copying the installation into the
+      # container's own layer first makes those renames ordinary ones.
+      - name: Move the preinstalled runtimes into the container layer
+        run: |
+          for dir in $(flatpak --installations); do
+            [ -d "$dir" ] || continue
+            cp -a "$dir" "$dir.copy"
+            rm -rf "$dir"
+            mv "$dir.copy" "$dir"
+            echo "copied $dir ($(du -sh "$dir" | cut -f1))"
+          done
 
       - uses: flatpak/flatpak-github-actions/flatpak-builder@v6
         with:

@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
@@ -99,18 +100,16 @@ class _ImportDialogState extends State<_ImportDialog> {
   Future<void> _chooseFiles() async {
     setState(() => _busy = true);
     try {
-      final picked = await FilePicker.platform.pickFiles(
+      final picked = await FilePicker.pickFiles(
         dialogTitle: 'Import API files',
         type: FileType.custom,
         allowedExtensions: ['json', 'yaml', 'yml', 'har'],
-        allowMultiple: true,
-        withData: true,
       );
-      for (final f in picked?.files ?? <PlatformFile>[]) {
-        final bytes =
-            f.bytes ??
-            (f.path != null ? await File(f.path!).readAsBytes() : null);
-        if (bytes == null) {
+      for (final f in picked) {
+        final Uint8List bytes;
+        try {
+          bytes = await f.readAsBytes();
+        } on FileSystemException {
           _errors.add('${f.name}: could not be read.');
           continue;
         }

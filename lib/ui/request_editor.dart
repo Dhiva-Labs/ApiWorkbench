@@ -1053,10 +1053,10 @@ class _RequestEditorState extends State<RequestEditor> {
             const SizedBox(width: 8),
             OutlinedButton.icon(
               onPressed: () async {
-                final picked = await FilePicker.platform.pickFiles(
+                final picked = await FilePicker.pickFile(
                   dialogTitle: 'Choose the body file',
                 );
-                final path = picked?.files.singleOrNull?.path;
+                final path = picked?.path;
                 if (path == null || !mounted) return;
                 setState(() {
                   req.body = path;

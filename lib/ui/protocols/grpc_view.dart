@@ -1089,13 +1089,12 @@ class _GrpcEditorState extends State<GrpcEditor> {
   );
 
   Future<void> _addProtoFiles() async {
-    final picked = await FilePicker.platform.pickFiles(
+    final picked = await FilePicker.pickFiles(
       dialogTitle: 'Choose .proto files',
-      allowMultiple: true,
     );
-    if (picked == null || !mounted) return;
+    if (picked.isEmpty || !mounted) return;
     final paths = [
-      for (final f in picked.files)
+      for (final f in picked)
         if (f.path != null && !_cfg.protoPaths.contains(f.path)) f.path!,
     ];
     if (paths.isEmpty) return;
@@ -1104,10 +1103,25 @@ class _GrpcEditorState extends State<GrpcEditor> {
   }
 
   Future<void> _addImportFolder() async {
-    final dir = await FilePicker.platform.getDirectoryPath(
+    final picked = await FilePicker.pickDirectory(
       dialogTitle: 'Choose an import folder',
     );
-    if (dir == null || !mounted || _cfg.importPaths.contains(dir)) return;
+    if (picked == null || !mounted) return;
+    if (picked.scheme != 'file') {
+      // Android hands over a content:// grant that dart:io cannot read.
+      ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+        const SnackBar(
+          content: Text(
+            'This device only shares that folder through the system, so '
+            'the app cannot read imports from it. Choose the .proto files '
+            'instead.',
+          ),
+        ),
+      );
+      return;
+    }
+    final dir = picked.toFilePath();
+    if (_cfg.importPaths.contains(dir)) return;
     _set(() => _cfg.importPaths.add(dir));
   }
 

@@ -10,6 +10,7 @@ import '../services/http_service.dart';
 import '../services/scripting/engine_factory.dart';
 import '../services/scripting/script_engine.dart';
 import '../services/scripting/script_trust.dart';
+import '../services/secret_store.dart';
 import '../services/sound_service.dart';
 import '../services/storage.dart';
 import '../services/var_scopes.dart';
@@ -55,6 +56,10 @@ class AppState extends ChangeNotifier {
 
   final Storage _storage;
   final HttpService http = HttpService();
+
+  /// Where credentials are kept: the system keychain or, without one, an
+  /// owner-only file in the data folder (issue #61). Shown in Settings.
+  SecretStorageStatus get secretStorage => _storage.secrets.status;
 
   /// Script engine for this platform; null when none is available.
   /// Reads its sandbox from the asset bundle, which on Android lives

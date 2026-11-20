@@ -491,12 +491,12 @@ class _ChaosModeDialogState extends State<_ChaosModeDialog> {
 
   Future<void> _importFile(AppState state) async {
     try {
-      final picked = await FilePicker.platform.pickFiles(
+      final picked = await FilePicker.pickFile(
         dialogTitle: 'Import sound',
         type: FileType.custom,
         allowedExtensions: ['mp3', 'wav', 'ogg', 'm4a'],
       );
-      final path = picked?.files.single.path;
+      final path = picked?.path;
       if (path == null) return;
       setState(() => _busy = true);
       final s = await state.sounds.importFile(path);

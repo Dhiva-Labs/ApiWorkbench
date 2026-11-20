@@ -381,10 +381,10 @@ class _KVEditorState extends State<KVEditor> {
   );
 
   Future<void> _pickFile(KV row) async {
-    final picked = await FilePicker.platform.pickFiles(
+    final picked = await FilePicker.pickFile(
       dialogTitle: 'Choose a file to upload',
     );
-    final path = picked?.files.singleOrNull?.path;
+    final path = picked?.path;
     if (path == null || !mounted) return;
     setState(() {
       row.value = path;
