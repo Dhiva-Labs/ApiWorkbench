@@ -164,35 +164,6 @@ Future<void> exportWorkspace(BuildContext context) async {
   }
 }
 
-Future<void> importWorkspace(BuildContext context) async {
-  final state = context.read<AppState>();
-  try {
-    final picked = await FilePicker.platform.pickFiles(
-      dialogTitle: 'Import workspace',
-      type: FileType.custom,
-      allowedExtensions: ['json'],
-      withData: true,
-    );
-    if (picked == null || picked.files.isEmpty) return;
-    final f = picked.files.single;
-    final bytes =
-        f.bytes ?? (f.path != null ? await File(f.path!).readAsBytes() : null);
-    if (bytes == null) {
-      if (context.mounted) _toast(context, 'Could not read the selected file.');
-      return;
-    }
-    final ws = parseWorkspaceJson(utf8.decode(bytes));
-    final (nc, ne) = state.mergeWorkspace(ws.collections, ws.environments);
-    if (context.mounted) {
-      _toast(context, 'Imported $nc collection(s) and $ne environment(s).');
-    }
-  } on FormatException catch (e) {
-    if (context.mounted) _toast(context, e.message);
-  } catch (e) {
-    if (context.mounted) _toast(context, 'Import failed: $e');
-  }
-}
-
 Future<void> showSettingsDialog(BuildContext context) async {
   final state = context.read<AppState>();
   final s = state.settings;

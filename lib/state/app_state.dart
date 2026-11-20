@@ -380,15 +380,18 @@ class AppState extends ChangeNotifier {
 
   // ---------------- Imported scripts ----------------
 
-  /// Asks the user whether an imported collection's scripts may run; set
-  /// by the UI. Without it such scripts are skipped.
-  Future<ScriptConsent> Function(CollectionModel collection, int scripts)?
+  /// Asks the user whether scripts that were never allowed may run (an
+  /// imported collection's, or a request's that came from one); set by
+  /// the UI. Without it such scripts are skipped.
+  Future<ScriptConsent> Function(ScriptConsentQuestion question)?
   askScriptConsent;
 
   bool _askingScriptConsent = false;
 
   /// Whether sending [requests] from the collection [collectionId] would
-  /// run scripts of an imported collection that were never allowed.
+  /// run scripts that were never allowed: an imported collection's, or a
+  /// request's own that came from one (see
+  /// [RequestModel.untrustedScripts]).
   bool scriptConsentNeeded(
     String? collectionId,
     Iterable<RequestModel> requests,
@@ -399,31 +402,32 @@ class AppState extends ChangeNotifier {
 
   /// Called before sending [requests] from the collection [collectionId].
   /// When [scriptConsentNeeded], asks once ([ask], else
-  /// [askScriptConsent]): Allow trusts the collection from now on, Run
-  /// without scripts sends with the scripts skipped. Returns false when
-  /// the user cancels.
+  /// [askScriptConsent]): Allow trusts the collection and the requests
+  /// from now on, Run without scripts sends with the scripts skipped.
+  /// Returns false when the user cancels.
   Future<bool> allowImportedScripts(
     String? collectionId,
     Iterable<RequestModel> requests, {
-    Future<ScriptConsent> Function(CollectionModel collection, int scripts)?
-    ask,
+    Future<ScriptConsent> Function(ScriptConsentQuestion question)? ask,
   }) async {
     if (!scriptConsentNeeded(collectionId, requests)) return true;
-    final c = collectionById(collectionId)!;
-    final question = ask ?? askScriptConsent;
-    if (question == null) return true; // the executor skips them
+    final c = collectionById(collectionId);
+    final question = scriptConsentQuestion(c, requests)!;
+    final asker = ask ?? askScriptConsent;
+    if (asker == null) return true; // the executor skips them
     if (_askingScriptConsent) return false;
     _askingScriptConsent = true;
     final ScriptConsent answer;
     try {
-      answer = await question(c, collectionScriptCount(c));
+      answer = await asker(question);
     } finally {
       _askingScriptConsent = false;
     }
     if (_disposed) return false;
     switch (answer) {
       case ScriptConsent.allow:
-        trustCollection(c);
+        if (c != null) trustCollection(c);
+        _trustRequests(c, requests);
         return true;
       case ScriptConsent.skipScripts:
         return true;
@@ -438,6 +442,23 @@ class AppState extends ChangeNotifier {
     c.untrusted = false;
     _storage.saveCollections(collections);
     notifyListeners();
+  }
+
+  /// Lets the own scripts of [requests] run from now on, and those of
+  /// their saved copies in [c].
+  void _trustRequests(CollectionModel? c, Iterable<RequestModel> requests) {
+    var saved = false;
+    for (final r in requests) {
+      if (!r.untrustedScripts) continue;
+      r.untrustedScripts = false;
+      for (final copy in c?.requests ?? const <RequestModel>[]) {
+        if (copy.id == r.id && copy.untrustedScripts) {
+          copy.untrustedScripts = false;
+          saved = true;
+        }
+      }
+    }
+    if (saved) _storage.saveCollections(collections);
   }
 
   // ---------------- Sending ----------------
@@ -505,10 +526,16 @@ class AppState extends ChangeNotifier {
       );
     }
 
+    // A request whose scripts were not allowed keeps that mark in
+    // History, so reopening it asks again before they run.
+    final untrusted =
+        (collection?.untrusted ?? false) || tab.request.untrustedScripts;
     history.insert(
       0,
       HistoryEntry(
-        request: tab.request.clone()..examples = [],
+        request: tab.request.clone()
+          ..examples = []
+          ..untrustedScripts = untrusted,
         statusCode: res.statusCode,
         durationMs: res.durationMs,
         at: DateTime.now(),

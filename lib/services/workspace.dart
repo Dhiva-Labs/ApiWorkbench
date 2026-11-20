@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import '../models/models.dart';
+import 'auth_secrets.dart';
 
 /// Serialized workspace shared between machines / teammates.
 ///
@@ -8,32 +9,75 @@ import '../models/models.dart';
 /// still read; newer files stay readable by older apps, which ignore the key.
 const workspaceFormatVersion = 1;
 
-/// The whole workspace as JSON text.
-///
-/// Variables carry their local current value only when [includeCurrentValues]
-/// is set: a workspace is usually shared, and current values are where
-/// session tokens end up.
+/// The whole workspace as JSON text (see [buildWorkspaceExport]).
 String buildWorkspaceJson(
   List<CollectionModel> collections,
   List<EnvironmentModel> environments, {
   List<KV> globals = const [],
   bool includeCurrentValues = false,
+  bool includeSecrets = false,
+}) => buildWorkspaceExport(
+  collections,
+  environments,
+  globals: globals,
+  includeCurrentValues: includeCurrentValues,
+  includeSecrets: includeSecrets,
+).json;
+
+/// The whole workspace as JSON text, and how many auth secrets were left
+/// out of it.
+///
+/// Variables carry their local current value only when [includeCurrentValues]
+/// is set: a workspace is usually shared, and current values are where
+/// session tokens end up. For the same reason auth credentials and live
+/// tokens (see [withoutAuthSecrets]) are written empty unless
+/// [includeSecrets] is set; the file still imports as working collections.
+({String json, int secretsLeftOut}) buildWorkspaceExport(
+  List<CollectionModel> collections,
+  List<EnvironmentModel> environments, {
+  List<KV> globals = const [],
+  bool includeCurrentValues = false,
+  bool includeSecrets = false,
 }) {
+  var leftOut = 0;
   Map<String, dynamic> variable(KV v) {
     final j = v.toJson();
     if (!includeCurrentValues) j.remove('c');
     return j;
   }
 
+  AuthConfig auth(AuthConfig a) {
+    final (stripped, n) = withoutAuthSecrets(a);
+    leftOut += n;
+    return stripped;
+  }
+
+  /// [c] as written: a copy without secrets unless they are included.
+  CollectionModel written(CollectionModel c) {
+    if (includeSecrets) return c;
+    final copy = CollectionModel.fromJson(c.toJson())..auth = auth(c.auth);
+    for (final f in copy.folders.values) {
+      f.auth = auth(f.auth);
+    }
+    for (final r in copy.requests) {
+      r.auth = auth(r.auth);
+      for (final e in r.examples) {
+        final o = e.originalRequest;
+        if (o != null) o.auth = auth(o.auth);
+      }
+    }
+    return copy;
+  }
+
   Map<String, dynamic> collection(CollectionModel c) {
-    final j = c.toJson();
+    final j = written(c).toJson();
     if (c.variables.isNotEmpty) {
       j['variables'] = c.variables.map(variable).toList();
     }
     return j;
   }
 
-  return const JsonEncoder.withIndent('  ').convert({
+  final json = const JsonEncoder.withIndent('  ').convert({
     'app': 'apiworkbench',
     'format': workspaceFormatVersion,
     'exportedAt': DateTime.now().toIso8601String(),
@@ -44,6 +88,7 @@ String buildWorkspaceJson(
     ],
     if (globals.isNotEmpty) 'globals': globals.map(variable).toList(),
   });
+  return (json: json, secretsLeftOut: leftOut);
 }
 
 class WorkspaceImport {
