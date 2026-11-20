@@ -803,6 +803,13 @@ void main() {
             untrusted: true,
             requests: [
               RequestModel(name: 'A', url: '{{base}}/a', testScript: 'a'),
+              // A request reopened from History and saved again.
+              RequestModel(
+                name: 'B',
+                url: '{{base}}/b',
+                testScript: 'b',
+                untrustedScripts: true,
+              ),
             ],
           ),
         ],
@@ -819,7 +826,7 @@ void main() {
         },
       );
       expect(r.code, 0, reason: r.out + r.err);
-      expect(ran, 1);
+      expect(ran, 2);
     });
   });
 

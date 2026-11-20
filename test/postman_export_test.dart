@@ -1005,8 +1005,131 @@ void main() {
 
     test('the rich fixture survives the workspace format', () {
       final original = importRich();
-      final ws = parseWorkspaceJson(buildWorkspaceJson([original], []));
+      final ws = parseWorkspaceJson(
+        buildWorkspaceJson([original], [], includeSecrets: true),
+      );
       expect(bare(ws.collections.single.toJson()), bare(original.toJson()));
+    });
+  });
+
+  group('secrets in a workspace file', () {
+    CollectionModel shop() => CollectionModel(
+      name: 'Shop',
+      auth: AuthConfig(
+        type: AuthType.apiKey,
+        apiKeyName: 'X-Key',
+        apiKeyValue: 'live-key',
+      ),
+      folders: {
+        'Admin': FolderMeta(
+          auth: AuthConfig(
+            type: AuthType.awsV4,
+            params: {
+              'accessKey': 'AKIA',
+              'secretKey': 'aws-secret',
+              'region': 'eu-west-1',
+            },
+          ),
+        ),
+      },
+      requests: [
+        RequestModel(
+          name: 'Login',
+          auth: AuthConfig(
+            type: AuthType.oauth2,
+            params: {
+              'clientId': 'app',
+              'clientSecret': '{{clientSecret}}',
+              'accessToken': 'eyJ-live',
+              'refreshToken': 'rt-live',
+              'tokenType': 'Bearer',
+              'expiresAt': '2026-11-20T10:00:00.000Z',
+              'savedTokens': '[{"accessToken":"old"}]',
+            },
+          ),
+          examples: [
+            ResponseExample(
+              name: 'ok',
+              originalRequest: RequestModel(
+                auth: AuthConfig(
+                  type: AuthType.basic,
+                  basicUser: 'ada',
+                  basicPassword: 'pw',
+                ),
+              ),
+            ),
+          ],
+        ),
+        RequestModel(
+          name: 'Switched',
+          // Bearer now, but it still holds what OAuth 2.0 left behind.
+          auth: AuthConfig(
+            type: AuthType.bearer,
+            bearerToken: 'tok',
+            params: {'accessToken': 'stale', 'clientSecret': 'stale-cs'},
+          ),
+        ),
+      ],
+    );
+
+    test('are left out by default and the file imports back', () {
+      final original = shop();
+      final out = buildWorkspaceExport([original], []);
+      // key, AWS secret, OAuth tokens (once), password, bearer token and
+      // the two stale attributes.
+      expect(out.secretsLeftOut, 7);
+      for (final secret in [
+        'live-key',
+        'aws-secret',
+        'eyJ-live',
+        'rt-live',
+        'old',
+        'pw',
+        'tok',
+        'stale',
+      ]) {
+        expect(out.json, isNot(contains('"$secret')), reason: secret);
+      }
+
+      final back = parseWorkspaceJson(out.json).collections.single;
+      expect(back.auth.type, AuthType.apiKey);
+      expect(back.auth.apiKeyName, 'X-Key');
+      expect(back.auth.apiKeyValue, isEmpty);
+      final admin = back.folders['Admin']!.auth;
+      expect(admin.params, {
+        'accessKey': 'AKIA',
+        'secretKey': '',
+        'region': 'eu-west-1',
+      });
+      final login = back.requests.first.auth;
+      expect(login.type, AuthType.oauth2);
+      expect(login.params, {
+        'clientId': 'app',
+        'clientSecret': '{{clientSecret}}',
+      });
+      final example = back.requests.first.examples.single.originalRequest!;
+      expect(example.auth.basicUser, 'ada');
+      expect(example.auth.basicPassword, isEmpty);
+      final switched = back.requests.last.auth;
+      expect(switched.type, AuthType.bearer);
+      expect(switched.bearerToken, isEmpty);
+      expect(switched.params, {'clientSecret': ''});
+
+      // Through the import dialog's reader too.
+      final r = importApiFile(out.json);
+      expect(r.collections.single.requests.length, 2);
+
+      // The collection itself keeps its secrets.
+      expect(original.auth.apiKeyValue, 'live-key');
+      expect(original.requests.first.auth.params['accessToken'], 'eyJ-live');
+    });
+
+    test('are written when asked for', () {
+      final original = shop();
+      final out = buildWorkspaceExport([original], [], includeSecrets: true);
+      expect(out.secretsLeftOut, 0);
+      final back = parseWorkspaceJson(out.json).collections.single;
+      expect(bare(back.toJson()), bare(original.toJson()));
     });
   });
 }

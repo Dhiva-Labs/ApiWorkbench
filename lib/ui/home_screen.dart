@@ -72,7 +72,7 @@ class HomeScreen extends StatelessWidget {
       );
     }
     // Sending from an imported collection asks before its scripts run.
-    state.askScriptConsent = (c, n) => showScriptConsentDialog(context, c, n);
+    state.askScriptConsent = (q) => showScriptConsentDialog(context, q);
     return CallbackShortcuts(
       bindings: {
         const SingleActivator(LogicalKeyboardKey.enter, control: true): () =>
