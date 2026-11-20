@@ -1,3 +1,20 @@
+apiworkbench (1.5.0) noble; urgency=medium
+
+  * Security: redirects to another site no longer carry credentials;
+    Digest and NTLM only answer the server the request was sent to; only
+    http and https addresses are followed.
+  * Imported collections no longer bring local file paths, and their
+    scripts run only after you allow them. Exports leave out tokens and
+    secrets unless you choose to include them.
+  * Passwords, tokens and secret variables are kept in the system keychain
+    (Secret Service), with a private file as the fallback. History no
+    longer stores credentials. Depends on libsecret.
+  * Load-test and command-line reports mask credentials; temporary files
+    go to private folders.
+  * The script engine is QuickJS-ng 0.18.0; dependencies refreshed.
+
+ -- Dhivakar R <dhivakar1010@gmail.com>  Fri, 20 Nov 2026 12:00:00 +0530
+
 apiworkbench (1.4.0) noble; urgency=medium
 
   * Scripts: pre-request and test scripts run with Postman's pm API on an

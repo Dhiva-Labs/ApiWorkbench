@@ -8,6 +8,96 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Releases before 1.3.1 are described on the
 [releases page](https://github.com/Dhiva-Labs/ApiWorkbench/releases).
 
+## [1.5.0] - 2026-11-20
+
+The security release: credentials stay with the server they were meant for,
+imported collections can't act on your machine before you've looked at them,
+secrets live in the system keychain, and reports no longer carry them. Also a
+leaner, edge-to-edge Android build and refreshed dependencies.
+
+### Security
+
+- **Redirects.** A redirect to another site no longer carries credentials:
+  `Authorization`, cookies, proxy credentials, API key and AWS signature
+  headers, and other headers that look like secrets are dropped, including on
+  an https → http downgrade. Server-Sent Events follow redirects with the same
+  rules.
+- Digest and NTLM only answer authentication challenges from the server the
+  request was sent to.
+- Requests and redirects are limited to http and https. A redirect to any
+  other kind of address is shown instead of followed.
+- **Imported collections.** Imports no longer bring local file paths; choose
+  upload files again. The import summary says how many were left out.
+- Scripts in an imported collection run only after you allow them: the first
+  Send or Runner start asks once (Allow scripts, Run without scripts,
+  Cancel). Collections from earlier versions stay trusted.
+- Importing globals no longer silently replaces existing values; you choose
+  to keep yours or replace them.
+- Postman collection and workspace exports leave out OAuth tokens, passwords,
+  API keys and other auth secrets unless "Include current values and secrets"
+  is on.
+- `apiworkbench-cli` reads request files only inside `--working-dir` (default:
+  the current folder); `--insecure-file-read` allows other locations.
+- **Keychain.** Passwords, tokens, API keys, OAuth tokens, credential headers,
+  secret variable values, the proxy password and client certificate
+  passphrases are kept in the system keychain instead of the workspace files:
+  the Secret Service (GNOME Keyring, KWallet) on Linux, Windows data
+  protection, the Android Keystore and the macOS Keychain. Existing workspaces
+  are moved over on first start.
+- Without a keychain, secrets are kept in a file in the data folder that only
+  your user can read, and Settings › Security says so. Snap users can run
+  `sudo snap connect apiworkbench:password-manager-service` and restart the
+  app to use the desktop keyring.
+- Request history and collection version history no longer store
+  credentials; existing history is cleaned on first start. A request reopened
+  from history needs its auth chosen again.
+- The data folder is readable only by your user (folder 0700, files 0600) on
+  Linux and macOS.
+- **Reports.** Load-test logs and reports (HTML, CSV, JSON) and command-line
+  reports (console, JSON, HTML, JUnit) mask API keys, tokens, signatures,
+  passwords and secret variable values, including URL-encoded forms.
+  Command-line reports also mask `Authorization`, `Cookie` and `Set-Cookie`.
+- Load-test logs, response previews and the HTTP/3 engine's temporary files
+  are written to private, per-run folders instead of shared fixed ones.
+- HTTP/3 on Linux and Windows keeps headers and passwords out of the process
+  list and ignores `~/.curlrc`.
+- OAuth browser sign-in ignores answers that don't match the sign-in in
+  progress and warns when a fixed `state` value is configured.
+- Android: workspace data is no longer included in cloud backups or
+  device-to-device transfers.
+- The script engine (QuickJS-ng) is updated to 0.18.0 for upstream
+  memory-safety fixes.
+- dio_http2_adapter 2.9.0 (GHSA-cr65-55v9-xhvv). ApiWorkbench follows
+  redirects itself, so the adapter's redirect code was not used, but the
+  dependency is updated.
+
+### Changed
+
+- Android draws edge to edge on every version, with the system bars handled
+  consistently.
+- Android: a leaner release build. The app's own Java/Kotlin code is about a
+  third smaller and almost all of it is optimised.
+- HTTP/3 on Android falls back to HTTP/1.1 on devices without a working
+  Cronet provider, and plain `http://` requests use HTTP/1.1.
+- File picking and saving use file_picker 13 on every platform; Android image
+  picks no longer decode full-size images.
+- dio 5.11.1 (response streams respect backpressure, so large responses no
+  longer pile up in memory) and the HTTP/2 adapter offers HTTP/1.1 to servers
+  that refuse h2-only negotiation.
+- Linux packages depend on libsecret; the AppImage includes it.
+- macOS: sandboxed builds can receive the OAuth sign-in redirect and open and
+  save the files you pick.
+- Dependencies refreshed, including cupertino_icons 2 and flutter_svg 2.4.
+
+### Upgrading and downgrading
+
+- Once 1.5.0 has moved them, ApiWorkbench 1.4.x shows empty passwords, tokens
+  and secret variables, because they are in the keychain. Upgrading again
+  brings them back. Export with current values before downgrading if you need
+  them in 1.4.
+- Cross-site redirects now drop custom headers that look like secrets (for
+  example `X-Session-Id`). Same-site redirects are unchanged.
+
 ## [1.4.0] - 2026-10-31
 
 The Postman gaps release: scripts, every Postman auth type, cookies, the
