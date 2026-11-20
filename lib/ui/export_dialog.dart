@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../models/models.dart';
+import '../services/auth_secrets.dart' show secretsLeftOutNote;
 import '../services/openapi_export.dart';
 import '../services/postman_export.dart';
 import '../services/workspace.dart';
@@ -79,8 +80,8 @@ class _ExportDialogState extends State<_ExportDialog> {
   String? _environmentId;
 
   /// Off by default: current values are where session tokens end up. For
-  /// a Postman collection it also writes the passwords, keys and tokens in
-  /// auth settings.
+  /// a workspace or a Postman collection it also writes the passwords, keys
+  /// and tokens in auth settings.
   bool _includeCurrent = false;
   bool _yaml = false;
   bool _busy = false;
@@ -125,7 +126,8 @@ class _ExportDialogState extends State<_ExportDialog> {
   bool get _hasValues => _kind != _Kind.openApi;
 
   /// The switch also covers secrets in auth settings.
-  bool get _secretsOption => _kind == _Kind.postmanCollection;
+  bool get _secretsOption =>
+      _kind == _Kind.postmanCollection || _kind == _Kind.workspace;
 
   // ---- export ------------------------------------------------------------
 
@@ -167,16 +169,21 @@ class _ExportDialogState extends State<_ExportDialog> {
   _Output _build(AppState state) {
     switch (_kind) {
       case _Kind.workspace:
+        final ws = buildWorkspaceExport(
+          state.collections,
+          state.environments,
+          globals: state.globals,
+          includeCurrentValues: _includeCurrent,
+          includeSecrets: _includeCurrent,
+        );
         return _Output(
           title: 'Export workspace',
           fileName: 'apiworkbench-workspace.json',
           extension: 'json',
-          text: buildWorkspaceJson(
-            state.collections,
-            state.environments,
-            globals: state.globals,
-            includeCurrentValues: _includeCurrent,
-          ),
+          text: ws.json,
+          notes: [
+            if (ws.secretsLeftOut > 0) secretsLeftOutNote(ws.secretsLeftOut),
+          ],
           what:
               '${_count(state.collections.length, 'collection')}, '
               '${_count(state.environments.length, 'environment')} and '
@@ -323,8 +330,9 @@ class _ExportDialogState extends State<_ExportDialog> {
             ),
             const HelpTip(
               'ApiWorkbench workspace files keep everything and import '
-              'back without loss. Postman files keep folders, auth, '
-              'scripts, examples and settings.',
+              'back without loss (passwords and tokens only when you '
+              'include them). Postman files keep folders, auth, scripts, '
+              'examples and settings.',
               title: 'Which format?',
               example: 'Shop API.postman_collection.json',
             ),
@@ -442,7 +450,8 @@ class _ExportDialogState extends State<_ExportDialog> {
                   switch (_kind) {
                     _Kind.workspace =>
                       "Keeps each variable's local current value next to "
-                          'its initial one.',
+                          'its initial one, and the passwords, keys and '
+                          'tokens in auth settings.',
                     _Kind.postmanCollection =>
                       "Writes each variable's current value where it has "
                           'one, instead of its initial value, and keeps the '

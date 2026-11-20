@@ -42,6 +42,9 @@ LoadedRun loadRun(RunOptions o) {
   // (the app asks first for collections it imported).
   final collection = _pickCollection(main, o.collection, o.file)
     ..untrusted = false;
+  for (final r in collection.requests) {
+    r.untrustedScripts = false;
+  }
 
   List<KV>? environment;
   String? environmentName;

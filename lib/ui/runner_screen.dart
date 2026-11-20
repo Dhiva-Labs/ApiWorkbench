@@ -167,7 +167,7 @@ class _RunnerScreenState extends State<RunnerScreen> {
       final go = await state.allowImportedScripts(
         widget.collectionId,
         widget.requests,
-        ask: (c, n) => showScriptConsentDialog(context, c, n),
+        ask: (q) => showScriptConsentDialog(context, q),
       );
       if (!go || !mounted || _runner.running) return;
     }

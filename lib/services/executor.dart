@@ -88,8 +88,9 @@ class ExecResult {
 /// CLI.
 ///
 /// No script runs for a request of a collection marked
-/// [CollectionModel.untrusted]: the caller asks the user first (see
-/// [needsScriptConsent]) and clears the mark when they allow it.
+/// [CollectionModel.untrusted], nor for a request whose own scripts are
+/// marked [RequestModel.untrustedScripts]: the caller asks the user first
+/// (see [needsScriptConsent]) and clears the mark when they allow it.
 class RequestExecutor {
   RequestExecutor(this.http, {this.engine});
 
@@ -101,14 +102,20 @@ class RequestExecutor {
     final col = ctx.collection;
     final settings = http.settings;
     final wanted = ctx.runScripts && settings.scriptsEnabled;
-    final blocked = wanted && (col?.untrusted ?? false);
+    final collectionBlocked = col?.untrusted ?? false;
+    final blocked =
+        wanted && (collectionBlocked || hasUntrustedOwnScripts(working));
     final engine = wanted && !blocked ? this.engine : null;
     final logs = <ConsoleLine>[
       if (blocked && this.engine != null && requestHasScripts(working, col))
         ConsoleLine(
           ConsoleLevel.warn,
-          'Scripts were not run: "${col!.name}" was imported and its '
-          'scripts have not been allowed.',
+          collectionBlocked
+              ? 'Scripts were not run: "${col!.name}" was imported and its '
+                    'scripts have not been allowed.'
+              : 'Scripts were not run: "${working.name}" came from an '
+                    'imported collection and its scripts have not been '
+                    'allowed.',
           source: 'Scripts',
         ),
     ];

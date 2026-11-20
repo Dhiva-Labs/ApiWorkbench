@@ -85,7 +85,9 @@ void main() {
         ]) {
           expect(find.text(label), findsOneWidget, reason: label);
         }
-        expect(find.text('Include current values'), findsOneWidget);
+        // The workspace is chosen first; its switch covers auth secrets.
+        expect(find.text('Include current values and secrets'), findsOneWidget);
+        expect(find.textContaining('are left out'), findsOneWidget);
         expect(find.text('Export'), findsWidgets);
 
         await tester.tap(find.text('Postman collection'));
@@ -158,6 +160,24 @@ void main() {
     await tester.tap(find.text('Postman environment'));
     await tester.pumpAndSettle();
     expect(find.text('Include current values'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('including secrets in a workspace shows the same warning', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1100, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final state = await _state(tester);
+    await _open(tester, state);
+    expect(find.text('ApiWorkbench workspace'), findsOneWidget);
+    await tester.tap(find.text('Include current values and secrets'));
+    await tester.pumpAndSettle();
+    expect(
+      find.textContaining('Passwords, API keys and access tokens'),
+      findsOneWidget,
+    );
     expect(tester.takeException(), isNull);
   });
 

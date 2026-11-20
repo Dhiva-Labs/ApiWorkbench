@@ -83,7 +83,11 @@ void main() {
   );
 
   Future<({int code, String out, Map<String, String> files})> run() async {
-    final ws = file('ws.json', buildWorkspaceJson([collection()], [env()]));
+    // The run file carries the credentials the reports must mask.
+    final ws = file(
+      'ws.json',
+      buildWorkspaceJson([collection()], [env()], includeSecrets: true),
+    );
     final paths = {
       'json': '${dir.path}/r.json',
       'html': '${dir.path}/r.html',

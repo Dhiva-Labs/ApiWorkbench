@@ -934,6 +934,7 @@ class RequestModel {
     RequestSettings? settings,
     List<ResponseExample>? examples,
     Map<String, dynamic>? protocolConfig,
+    this.untrustedScripts = false,
   }) : id = id ?? newId(),
        params = params ?? [],
        pathVariables = pathVariables ?? [],
@@ -1000,6 +1001,12 @@ class RequestModel {
   /// must be JSON-encodable.
   Map<String, dynamic> protocolConfig;
 
+  /// A copy of a request from an imported collection whose scripts were
+  /// never allowed, such as one reopened from History: its own scripts
+  /// run only once the user agrees. Requests saved before this flag
+  /// existed have no such key.
+  bool untrustedScripts;
+
   // Flat auth accessors, kept for the many call sites that predate
   // [AuthConfig].
   AuthType get authType => auth.type;
@@ -1042,6 +1049,7 @@ class RequestModel {
     protocolConfig: protocolConfig.isEmpty
         ? null
         : (jsonDecode(jsonEncode(protocolConfig)) as Map<String, dynamic>),
+    untrustedScripts: untrustedScripts,
   );
 
   Map<String, dynamic> toJson() => {
@@ -1069,6 +1077,7 @@ class RequestModel {
     if (examples.isNotEmpty)
       'examples': examples.map((e) => e.toJson()).toList(),
     if (protocolConfig.isNotEmpty) 'protocol': protocolConfig,
+    if (untrustedScripts) 'untrustedScripts': true,
   };
 
   factory RequestModel.fromJson(Map<String, dynamic> j) => RequestModel(
@@ -1102,6 +1111,7 @@ class RequestModel {
     protocolConfig: (j['protocol'] as Map<String, dynamic>?) == null
         ? null
         : Map<String, dynamic>.of(j['protocol'] as Map<String, dynamic>),
+    untrustedScripts: j['untrustedScripts'] == true,
   );
 
   static List<KV> _kvList(dynamic v) => (v as List<dynamic>? ?? [])

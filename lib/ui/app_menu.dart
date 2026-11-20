@@ -159,28 +159,6 @@ Future<void> exportWorkspace(BuildContext context) async {
   }
 }
 
-Future<void> importWorkspace(BuildContext context) async {
-  final state = context.read<AppState>();
-  try {
-    final f = await FilePicker.pickFile(
-      dialogTitle: 'Import workspace',
-      type: FileType.custom,
-      allowedExtensions: ['json'],
-    );
-    if (f == null) return;
-    final bytes = await f.readAsBytes();
-    final ws = parseWorkspaceJson(utf8.decode(bytes));
-    final (nc, ne) = state.mergeWorkspace(ws.collections, ws.environments);
-    if (context.mounted) {
-      _toast(context, 'Imported $nc collection(s) and $ne environment(s).');
-    }
-  } on FormatException catch (e) {
-    if (context.mounted) _toast(context, e.message);
-  } catch (e) {
-    if (context.mounted) _toast(context, 'Import failed: $e');
-  }
-}
-
 Future<void> showSettingsDialog(BuildContext context) async {
   final state = context.read<AppState>();
   final s = state.settings;

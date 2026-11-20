@@ -150,7 +150,7 @@ class _ImportDialogState extends State<_ImportDialog> {
         folder: _folder,
         groupByCollection: _groupFor(r),
       );
-      state.mergeWorkspace(const [], r.environments);
+      state.addImported(const [], r.environments);
       if (state.activeEnvironmentId == null && r.environments.length == 1) {
         state.setActiveEnvironment(r.environments.single.id);
       }
