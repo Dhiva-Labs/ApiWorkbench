@@ -4,6 +4,7 @@
 ![Linux x64 | arm64](https://img.shields.io/badge/Linux-x64%20%7C%20arm64-informational?logo=linux&logoColor=white)
 ![Windows x64 | arm64](https://img.shields.io/badge/Windows-x64%20%7C%20arm64-informational?logo=windows&logoColor=white)
 ![Linux: deb | rpm | Arch | AppImage | Flatpak | Snap](https://img.shields.io/badge/Linux-deb%20%7C%20rpm%20%7C%20Arch%20%7C%20AppImage%20%7C%20Flatpak%20%7C%20Snap-informational?logo=linux&logoColor=white)
+[![Get it on Google Play](https://img.shields.io/badge/Google_Play-Get_it_on-01875F?logo=googleplay&logoColor=white)](https://play.google.com/store/apps/details?id=com.dhivalabs.api_workbench)
 
 A fast, keyboard-friendly API client in the spirit of Postman — one Flutter
 codebase for **Linux, Windows, macOS, Android and iOS**.
@@ -155,7 +156,9 @@ codebase for **Linux, Windows, macOS, Android and iOS**.
 
 ## Install
 
-Download from the [releases page](https://github.com/Dhiva-Labs/ApiWorkbench/releases):
+**Android:** [Google Play](https://play.google.com/store/apps/details?id=com.dhivalabs.api_workbench).
+
+Or download from the [releases page](https://github.com/Dhiva-Labs/ApiWorkbench/releases):
 
 | Platform | File |
 |---|---|
