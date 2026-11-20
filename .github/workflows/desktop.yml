@@ -657,6 +657,21 @@ jobs:
           tar -xJf flatpak-tree/tree.tar.xz -C packaging/flatpak/tree
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
+      # The image ships its runtimes in lower overlay layers. On the x64
+      # runners, flatpak-builder's update of them then fails with "Invalid
+      # cross-device link" (a directory rename across overlay layers) and
+      # flatpak-builder crashes. Copying the installation into the
+      # container's own layer first makes those renames ordinary ones.
+      - name: Move the preinstalled runtimes into the container layer
+        run: |
+          for dir in $(flatpak --installations); do
+            [ -d "$dir" ] || continue
+            cp -a "$dir" "$dir.copy"
+            rm -rf "$dir"
+            mv "$dir.copy" "$dir"
+            echo "copied $dir ($(du -sh "$dir" | cut -f1))"
+          done
+
       - uses: flatpak/flatpak-github-actions/flatpak-builder@v6
         with:
           manifest-path: packaging/flatpak/${{ env.APP_ID }}.yml
