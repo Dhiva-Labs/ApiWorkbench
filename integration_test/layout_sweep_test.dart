@@ -1421,7 +1421,11 @@ class _Sweep {
       await show('open request from tree', () async {
         await showSection(SidebarSection.collections);
         await expandTree();
-        await tap(inPanel(find.text(_kitchenName)).first);
+        // The tree is a lazy list: after the last folder opens, its rows sit
+        // below the viewport and are not built until scrolled to.
+        final request = inPanel(find.text(_kitchenName));
+        if (!has(request)) await reveal(request, within: find.byType(Sidebar));
+        await tap(request.first);
         if (cfg.touch) await leaveDrawer();
       });
       final tabs = [

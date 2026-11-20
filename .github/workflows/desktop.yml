@@ -66,12 +66,14 @@ jobs:
           dart --version
 
       # xvfb, xauth, xdotool, dbus-x11: the smoke run of the installed .deb.
+      # libsecret-1-dev: the keychain plugin (flutter_secure_storage) links
+      # libsecret.
       - name: Install build dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y \
             clang cmake ninja-build pkg-config \
-            libgtk-3-dev liblzma-dev libstdc++-12-dev \
+            libgtk-3-dev liblzma-dev libstdc++-12-dev libsecret-1-dev \
             file xvfb xauth xdotool dbus-x11
 
       - name: Get packages
@@ -557,9 +559,12 @@ jobs:
           echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
 
       # One installed tree, the .deb's, for every format. The Flatpak job
-      # gets the same cleaned tree (tar keeps modes and symlinks).
+      # gets the same cleaned tree (tar keeps modes and symlinks). The
+      # AppImage carries this runner's libsecret (BUNDLE_LIBS in distro.conf).
       - name: Build .rpm, Arch package and AppImage
         run: |
+          sudo apt-get update
+          sudo apt-get install -y libsecret-1-0
           VERSION="$(grep '^version:' pubspec.yaml | sed 's/version: *//; s/+.*//')"
           dpkg-deb -x "deb/apiworkbench_${VERSION}_${{ matrix.deb_arch }}.deb" "$RUNNER_TEMP/root"
           VERSION="$VERSION" TREE_TARBALL="$RUNNER_TEMP/tree.tar.xz" \

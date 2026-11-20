@@ -6,6 +6,7 @@ import 'package:crypto/crypto.dart';
 import '../models/models.dart';
 import 'collection_diff.dart';
 import 'json_store.dart';
+import 'secret_fields.dart' as secret_fields;
 
 /// A saved copy of one collection at a point in time.
 class HistorySnapshot {
@@ -26,13 +27,38 @@ class HistorySnapshot {
   /// added, 1 request changed`.
   final String summary;
 
-  /// The collection as JSON text. Kept as text so fifty snapshots stay
-  /// cheap in memory and are only parsed when compared or restored.
+  /// The collection as JSON text, without its secrets (issue #61). Kept as
+  /// text so fifty snapshots stay cheap in memory and are only parsed when
+  /// compared or restored.
   final String json;
 
-  /// A fresh copy of the collection as it was.
-  CollectionModel toCollection() =>
-      CollectionModel.fromJson(jsonDecode(json) as Map<String, dynamic>);
+  /// A fresh copy of the collection as it was. Snapshots keep no secrets;
+  /// [secretsFrom] (the collection as it is now) lends its own wherever the
+  /// snapshot has the same field, so a restore keeps working credentials.
+  CollectionModel toCollection({CollectionModel? secretsFrom}) {
+    final j = jsonDecode(json) as Map<String, dynamic>;
+    if (secretsFrom != null) {
+      secret_fields.fillCollection(
+        j,
+        secret_fields.collectionSecrets(secretsFrom.toJson()),
+      );
+    }
+    return CollectionModel.fromJson(j);
+  }
+
+  /// This snapshot with any secrets an older version kept in it removed,
+  /// and its hash to match.
+  HistorySnapshot withoutSecrets() {
+    final text = jsonEncode(
+      secret_fields.withoutSecrets(jsonDecode(json) as Map<String, dynamic>),
+    );
+    return HistorySnapshot(
+      time: time,
+      hash: CollectionHistory._hash(text),
+      summary: summary,
+      json: text,
+    );
+  }
 
   Map<String, dynamic> toJson() => {
     't': time.millisecondsSinceEpoch,
@@ -105,7 +131,11 @@ class CollectionHistory {
   /// Older snapshots are dropped beyond this many.
   int maxSnapshots = 50;
 
-  static const _indexFile = 'history-index.json';
+  /// Collection id → newest snapshot hash.
+  static const indexFile = 'history-index.json';
+
+  /// The `v` of snapshot files. 2: snapshots leave out secrets (#61).
+  static const formatVersion = 2;
 
   final Map<String, _Track> _tracks = {};
 
@@ -126,15 +156,21 @@ class CollectionHistory {
 
   static String _hash(String s) => md5.convert(utf8.encode(s)).toString();
 
+  /// What a snapshot of [c] keeps: its JSON without secrets, so neither
+  /// the files nor their hashes give a credential away, and a refreshed
+  /// token is no new state.
+  static String _snapshotJson(CollectionModel c) =>
+      jsonEncode(secret_fields.withoutSecrets(c.toJson()));
+
   /// The hash a snapshot of [c] would have right now; equal to a
   /// [HistorySnapshot.hash] when [c] is in that snapshot's state.
-  static String hashOf(CollectionModel c) => _hash(jsonEncode(c.toJson()));
+  static String hashOf(CollectionModel c) => _hash(_snapshotJson(c));
 
   /// Called after collections are saved; takes throttled snapshots.
   void record(List<CollectionModel> collections) {
     final now = clock();
     for (final c in collections) {
-      final json = jsonEncode(c.toJson());
+      final json = _snapshotJson(c);
       final hash = _hash(json);
       final t = _tracks.putIfAbsent(c.id, _Track.new);
       if (t.seenHash == hash) {
@@ -182,7 +218,7 @@ class CollectionHistory {
   /// Snapshots [c] as it is now, ignoring the throttle. Returns the new
   /// snapshot, or the newest one when [c] has not changed since.
   Future<HistorySnapshot?> snapshotNow(CollectionModel c) {
-    final json = jsonEncode(c.toJson());
+    final json = _snapshotJson(c);
     final hash = _hash(json);
     final now = clock();
     final t = _tracks.putIfAbsent(c.id, _Track.new);
@@ -217,7 +253,7 @@ class CollectionHistory {
   }
 
   Future<void> _loadIndex() => _indexLoad ??= () async {
-    final raw = await _store?.readJson(_indexFile);
+    final raw = await _store?.readJson(indexFile);
     _index = {
       if (raw is Map<String, dynamic>)
         for (final e in raw.entries)
@@ -287,12 +323,12 @@ class CollectionHistory {
     final store = _store;
     if (store == null) return;
     await store.writeJson(fileName(id), {
-      'v': 1,
+      'v': formatVersion,
       'snapshots': [for (final s in snaps) s.toJson()],
     });
     await _loadIndex();
     _index![id] = p.hash;
-    await store.writeJson(_indexFile, _index!);
+    await store.writeJson(indexFile, _index!);
   }
 
   static String _summarize(HistorySnapshot? prev, String json) {

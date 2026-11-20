@@ -33,12 +33,12 @@ dependencies:
 
   # The following adds the Cupertino Icons font to your application.
   # Use with the CupertinoIcons class for iOS style icons.
-  cupertino_icons: ^1.0.8
+  cupertino_icons: ^2.0.0
   dio: ^5.11.1
   provider: ^6.1.5+1
   path_provider: ^2.1.6
   uuid: ^4.5.3
-  file_picker: ^10.0.0
+  file_picker: ^13.0.0
   dio_http2_adapter: ^2.9.0
   native_dio_adapter: ^1.8.0
   crypto: ^3.0.8
@@ -53,6 +53,14 @@ dependencies:
   pointycastle: ^4.0.0
   path: ^1.9.1
   args: ^2.7.0
+  # Credentials live in the platform keychain (issue #61): Secret Service
+  # through libsecret on Linux, DPAPI on Windows, Keystore on Android, the
+  # Keychain on macOS and iOS. See lib/services/keychain_backend.dart.
+  # 1.5.0 stays on 10.x; 11.x became possible once file_picker 13 allowed win32 6.
+  flutter_secure_storage: ^10.3.4
+  # Checks (and unlocks) the Linux keyring without blocking the app before
+  # libsecret is asked. See lib/services/secret_service_probe.dart.
+  dbus: ^0.7.14
   # QuickJS-ng built from source by its build hook (pre-request and test
   # scripts, issue #10).
   quickjs_ffi:
