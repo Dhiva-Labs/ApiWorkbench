@@ -76,7 +76,7 @@ void main() {
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
     await h.setUp(tester);
-    final c = CollectionModel(name: 'Shop API', untrusted: true);
+    const c = ScriptConsentQuestion(name: 'Shop API', scripts: 4);
     final answers = <ScriptConsent>[];
     for (final button in [
       'Allow scripts',
@@ -85,7 +85,7 @@ void main() {
       null, // tapping outside
     ]) {
       await open(tester, h.state, (ctx) async {
-        answers.add(await showScriptConsentDialog(ctx, c, 4));
+        answers.add(await showScriptConsentDialog(ctx, c));
       });
       expect(find.text('Run scripts from "Shop API"?'), findsOneWidget);
       expect(find.textContaining('has 4 scripts'), findsOneWidget);
@@ -103,6 +103,37 @@ void main() {
       ScriptConsent.cancel,
     ]);
     expect(tester.takeException(), isNull);
+    await h.tearDown(tester);
+  });
+
+  testWidgets('a request reopened from History is asked about as such', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1100, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await h.setUp(tester);
+    ScriptConsent? answer;
+    await open(tester, h.state, (ctx) async {
+      answer = await showScriptConsentDialog(
+        ctx,
+        const ScriptConsentQuestion(
+          name: 'Get user',
+          scripts: 1,
+          request: true,
+        ),
+      );
+    });
+    expect(find.text('Run scripts from "Get user"?'), findsOneWidget);
+    expect(
+      find.textContaining('This request came from an imported collection'),
+      findsOneWidget,
+    );
+    expect(find.textContaining('has 1 script ('), findsOneWidget);
+    expect(find.textContaining('remembered for this request'), findsOneWidget);
+    await tester.tap(find.text('Run without scripts'));
+    await tester.pumpAndSettle();
+    expect(answer, ScriptConsent.skipScripts);
     await h.tearDown(tester);
   });
 

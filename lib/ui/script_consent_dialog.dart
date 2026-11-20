@@ -1,19 +1,25 @@
 import 'package:flutter/material.dart';
 
-import '../models/models.dart';
 import '../services/scripting/script_trust.dart';
 import '../theme.dart';
 
-export '../services/scripting/script_trust.dart' show ScriptConsent;
+export '../services/scripting/script_trust.dart'
+    show ScriptConsent, ScriptConsentQuestion;
 
-/// Asks whether the [scripts] scripts of the imported collection [c] may
-/// run. Shown once, before the first send that would run them; dismissing
-/// it cancels the send.
+/// Asks whether the scripts [q] describes may run: an imported
+/// collection's, or a request's that came from one. Shown before the first
+/// send that would run them; dismissing it cancels the send.
 Future<ScriptConsent> showScriptConsentDialog(
   BuildContext context,
-  CollectionModel c,
-  int scripts,
+  ScriptConsentQuestion q,
 ) async {
+  final scripts = q.scripts;
+  final count = '$scripts ${scripts == 1 ? 'script' : 'scripts'}';
+  final what = q.request ? 'request' : 'collection';
+  final intro = q.request
+      ? 'This request came from an imported collection whose scripts were '
+            'not allowed, and has'
+      : 'This collection was imported and has';
   final answer = await showDialog<ScriptConsent>(
     context: context,
     builder: (ctx) => AlertDialog(
@@ -24,7 +30,7 @@ Future<ScriptConsent> showScriptConsentDialog(
           const SizedBox(width: 10),
           Flexible(
             child: Text(
-              'Run scripts from "${c.name}"?',
+              'Run scripts from "${q.name}"?',
               overflow: TextOverflow.ellipsis,
             ),
           ),
@@ -37,17 +43,15 @@ Future<ScriptConsent> showScriptConsentDialog(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'This collection was imported and has $scripts '
-              '${scripts == 1 ? 'script' : 'scripts'} (pre-request and '
-              'test). Scripts can read and change your variables, including '
-              'the active environment and globals, and send requests of '
-              'their own.',
+              '$intro $count (pre-request and test). Scripts can read and '
+              'change your variables, including the active environment and '
+              'globals, and send requests of their own.',
               style: const TextStyle(height: 1.45),
             ),
             const SizedBox(height: 10),
             Text(
-              'Allow them only if you trust where the collection came from. '
-              'Allowing is remembered for this collection.',
+              'Allow them only if you trust where the $what came from. '
+              'Allowing is remembered for this $what.',
               style: TextStyle(fontSize: 12.5, color: Palette.textDim),
             ),
           ],

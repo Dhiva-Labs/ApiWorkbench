@@ -254,9 +254,13 @@ class LoadTestService extends ChangeNotifier {
         if (dir == null) {
           // Logs hold URLs and response bodies: keep them in a folder
           // nobody else can open, and clear out what earlier runs left.
-          await removeStalePrivateDirs(
-            _logDirPrefix,
-            legacyNames: const ['apiworkbench-load'],
+          // The sweep only removes folders untouched for a day, so it runs
+          // in the background instead of holding up this run's start.
+          unawaited(
+            removeStalePrivateDirs(
+              _logDirPrefix,
+              legacyNames: const ['apiworkbench-load'],
+            ),
           );
         }
         log = await LoadLog.create(
