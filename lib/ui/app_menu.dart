@@ -18,6 +18,7 @@ import 'export_dialog.dart';
 import 'help_tip.dart';
 import 'import_dialog.dart';
 import 'settings/network_section.dart';
+import 'settings/secret_storage_notice.dart';
 
 /// Shared app menu (workspace import/export + settings), used by both the
 /// desktop brand header and the mobile app bar.
@@ -514,8 +515,12 @@ Future<void> showSettingsDialog(BuildContext context) async {
                 _section(
                   Icons.lock_outline,
                   'Security',
-                  help: 'How strictly https connections are checked.',
+                  help:
+                      'How strictly https connections are checked, and '
+                      'where passwords and tokens are kept.',
                   [
+                    SecretStorageNotice(status: state.secretStorage),
+                    const SizedBox(height: 12),
                     _switchRow(
                       'Verify TLS certificates',
                       verifySsl

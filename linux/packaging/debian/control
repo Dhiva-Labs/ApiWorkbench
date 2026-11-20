@@ -9,7 +9,7 @@ Rules-Requires-Root: no
 
 Package: apiworkbench
 Architecture: amd64
-Depends: ${misc:Depends}, libgtk-3-0, libglib2.0-0
+Depends: ${misc:Depends}, libgtk-3-0, libglib2.0-0, libsecret-1-0
 Description: Cross-platform API client for building and testing HTTP requests
  ApiWorkbench is a fast, keyboard-friendly API client in the spirit of
  Postman. It provides request tabs, a full request builder (all HTTP

@@ -44,7 +44,7 @@ Future<CollectionModel> restoreSnapshot(
 ) async {
   final current = state.collectionById(collectionId);
   if (current != null) await state.collectionHistory.snapshotNow(current);
-  final restored = snapshot.toCollection();
+  final restored = snapshot.toCollection(secretsFrom: current);
   final index = state.collections.indexWhere((c) => c.id == collectionId);
   state.mergeWorkspace([restored], const []);
   // mergeWorkspace appends; move the collection back to where it was.
@@ -115,7 +115,7 @@ class _VersionHistoryViewState extends State<VersionHistoryView> {
       _selected = s;
       _diff = current == null
           ? null
-          : diffCollections(s.toCollection(), current);
+          : diffCollections(s.toCollection(secretsFrom: current), current);
     });
   }
 

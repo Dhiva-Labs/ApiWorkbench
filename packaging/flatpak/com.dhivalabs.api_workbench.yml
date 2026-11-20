@@ -22,6 +22,9 @@ finish-args:
   - --share=network
   # Chaos Mode plays its sound effects through the runtime's GStreamer.
   - --socket=pulseaudio
+  # Passwords and tokens go to the desktop's Secret Service (GNOME Keyring,
+  # KWallet, KeePassXC) through the runtime's libsecret.
+  - --talk-name=org.freedesktop.secrets
   # CA certificate, client certificate and .proto paths can be typed in
   # Settings > Network and the gRPC view, and are read again on every start.
   # Saving and opening files goes through the file chooser portal, so read
